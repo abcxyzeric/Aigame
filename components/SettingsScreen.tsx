@@ -1,0 +1,297 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { AppSettings, HarmCategory, HarmBlockThreshold } from '../types';
+import { getSettings, saveSettings } from '../services/settingsService';
+import { testApiKeys, testSingleKey } from '../services/aiService';
+import { loadKeysFromTxtFile } from '../services/fileService';
+import { HARM_CATEGORIES, HARM_BLOCK_THRESHOLDS, DEFAULT_SAFETY_SETTINGS } from '../constants';
+import Icon from './common/Icon';
+import Button from './common/Button';
+import ToggleSwitch from './common/ToggleSwitch';
+
+interface SettingsScreenProps {
+  onBack: () => void;
+}
+
+type ValidationStatus = 'idle' | 'loading' | 'valid' | 'invalid' | 'rate_limited';
+
+const StatusIcon: React.FC<{ status: ValidationStatus }> = ({ status }) => {
+    switch (status) {
+        case 'loading':
+            return <div className="w-5 h-5 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" title="Đang kiểm tra..."></div>;
+        case 'valid':
+            return <Icon name="checkCircle" className="w-6 h-6 text-green-400" title="Key hợp lệ"/>;
+        case 'invalid':
+            return <Icon name="xCircle" className="w-6 h-6 text-red-400" title="Key không hợp lệ."/>;
+        case 'rate_limited':
+            return <Icon name="warning" className="w-6 h-6 text-amber-400" title="Key đã đạt giới hạn yêu cầu, HOẶC key không hợp lệ/chưa kích hoạt thanh toán. Vui lòng kiểm tra lại key của bạn." />;
+        default:
+            return <div className="w-6 h-6"></div>; // Placeholder for alignment
+    }
+};
+
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
+  const [settings, setSettings] = useState<AppSettings>({
+    apiKeyConfig: { keys: [''] }, // Start with one empty key input
+    safetySettings: DEFAULT_SAFETY_SETTINGS,
+  });
+  const [isTestingKeys, setIsTestingKeys] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const debounceTimers = useRef<{ [index: number]: number }>({});
+  const [validationStatus, setValidationStatus] = useState<{ [index: number]: ValidationStatus }>({});
+
+  useEffect(() => {
+    const loadedSettings = getSettings();
+    if (loadedSettings.apiKeyConfig.keys.length === 0) {
+      // Ensure there's always one empty input field to start with
+      loadedSettings.apiKeyConfig.keys.push('');
+    }
+    setSettings(loadedSettings);
+  }, []);
+
+  useEffect(() => {
+    // Cleanup timers on unmount
+    return () => {
+        Object.values(debounceTimers.current).forEach(clearTimeout);
+    };
+  }, []);
+
+
+  const handleSave = () => {
+    const settingsToSave = {
+      ...settings,
+      apiKeyConfig: {
+        keys: settings.apiKeyConfig.keys.filter(Boolean),
+      }
+    };
+    saveSettings(settingsToSave);
+    alert('Cài đặt đã được lưu!');
+    onBack();
+  };
+  
+  const handleTestAllKeys = async () => {
+    setIsTestingKeys(true);
+    try {
+        const result = await testApiKeys();
+        alert(result);
+    } catch (e) {
+        alert(e instanceof Error ? e.message : 'Lỗi không xác định khi kiểm tra key.');
+    } finally {
+        setIsTestingKeys(false);
+    }
+  };
+
+  const validateAndSaveKey = async (key: string, index: number) => {
+    if (!key.trim()) {
+        setValidationStatus(prev => ({ ...prev, [index]: 'idle' }));
+        return;
+    }
+    
+    setValidationStatus(prev => ({ ...prev, [index]: 'loading' }));
+    const result = await testSingleKey(key);
+    
+    // Use a function for state update to get the latest settings
+    setSettings(currentSettings => {
+        // Re-check the key from state to prevent race conditions if user types fast
+        if (currentSettings.apiKeyConfig.keys[index] === key) {
+            if (result === 'valid') {
+                setValidationStatus(prev => ({ ...prev, [index]: 'valid' }));
+                saveSettings(currentSettings); 
+            } else if (result === 'rate_limited') {
+                setValidationStatus(prev => ({ ...prev, [index]: 'rate_limited' }));
+                saveSettings(currentSettings); // Also save on rate_limited
+            } else { // 'invalid'
+                setValidationStatus(prev => ({ ...prev, [index]: 'invalid' }));
+            }
+        }
+        return currentSettings;
+    });
+
+  };
+
+
+  const handleKeyChange = (index: number, value: string) => {
+    const newKeys = [...settings.apiKeyConfig.keys];
+    newKeys[index] = value;
+    setSettings(prev => ({ ...prev, apiKeyConfig: { keys: newKeys } }));
+
+    if (debounceTimers.current[index]) {
+        clearTimeout(debounceTimers.current[index]);
+    }
+
+    setValidationStatus(prev => ({ ...prev, [index]: value.trim() ? 'loading' : 'idle' }));
+
+    if (value.trim()) {
+        debounceTimers.current[index] = window.setTimeout(() => {
+            validateAndSaveKey(value, index);
+        }, 800); // 800ms debounce delay
+    }
+  };
+
+  const addKeyInput = () => {
+    setSettings(prev => ({
+      ...prev,
+      apiKeyConfig: { keys: [...prev.apiKeyConfig.keys, ''] }
+    }));
+  };
+
+  const removeKeyInput = (index: number) => {
+    const newKeys = settings.apiKeyConfig.keys.filter((_, i) => i !== index);
+    setSettings(prev => ({ ...prev, apiKeyConfig: { keys: newKeys } }));
+    setValidationStatus(prev => {
+        const newStatus = {...prev};
+        delete newStatus[index];
+        return newStatus;
+    });
+    // Save settings after removal
+    saveSettings({ ...settings, apiKeyConfig: { keys: newKeys } });
+  };
+
+  const handleFileUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      try {
+        const loadedKeys = await loadKeysFromTxtFile(file);
+        const currentKeys = settings.apiKeyConfig.keys.filter(Boolean);
+        const newKeys = [...currentKeys, ...loadedKeys];
+        const newSettings = { ...settings, apiKeyConfig: { keys: newKeys }};
+        setSettings(newSettings);
+        saveSettings(newSettings); // Save immediately after loading from file
+        // Optionally, trigger validation for new keys
+        loadedKeys.forEach((key, i) => validateAndSaveKey(key, currentKeys.length + i));
+
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Lỗi không xác định khi đọc tệp');
+      }
+    }
+    if (event.target) {
+      event.target.value = '';
+    }
+  };
+  
+  const handleSafetyToggle = (enabled: boolean) => {
+    setSettings(prev => ({
+      ...prev,
+      safetySettings: { ...prev.safetySettings, enabled }
+    }));
+  };
+
+  const handleThresholdChange = (category: HarmCategory, threshold: HarmBlockThreshold) => {
+    const newSafetySettings = settings.safetySettings.settings.map(s =>
+      s.category === category ? { ...s, threshold } : s
+    );
+    setSettings(prev => ({
+      ...prev,
+      safetySettings: { ...prev.safetySettings, settings: newSafetySettings }
+    }));
+  };
+
+  const getInputClass = (status: ValidationStatus = 'idle') => {
+    const base = "flex-grow bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2 text-slate-200 transition";
+    switch(status) {
+        case 'valid': return `${base} focus:ring-2 focus:ring-green-500 focus:border-green-500 border-green-500/50`;
+        case 'invalid': return `${base} focus:ring-2 focus:ring-red-500 focus:border-red-500 border-red-500/50`;
+        case 'rate_limited': return `${base} focus:ring-2 focus:ring-amber-500 focus:border-amber-500 border-amber-500/50`;
+        case 'loading': return `${base} focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500`;
+        default: return `${base} focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500`;
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 md:p-8">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold text-slate-100">
+          Cài Đặt
+        </h1>
+        <Button onClick={onBack} variant="secondary" className="!w-auto !py-2 !px-4 !text-base">
+          <Icon name="back" className="w-5 h-5 mr-2"/>
+          Quay lại
+        </Button>
+      </div>
+      
+      {/* --- API Key Settings --- */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-bold mb-2 text-cyan-400">Thiết lập API Key (Tự động lưu)</h2>
+          <div className="text-sm text-slate-400 mb-4 space-y-1">
+              <p>Dán API key vào ô bên dưới. Key sẽ được tự động kiểm tra và lưu lại nếu hợp lệ.</p>
+          </div>
+          <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-2">
+              {settings.apiKeyConfig.keys.map((key, index) => (
+                  <div key={index} className="flex items-center space-x-2">
+                      <input 
+                          type="password"
+                          placeholder={`Dán API key ${index + 1} của bạn ở đây`}
+                          value={key}
+                          onChange={(e) => handleKeyChange(index, e.target.value)}
+                          className={getInputClass(validationStatus[index])}
+                      />
+                      <StatusIcon status={validationStatus[index] || 'idle'} />
+                      <button onClick={() => removeKeyInput(index)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-full transition disabled:opacity-50" disabled={settings.apiKeyConfig.keys.length <= 1 && settings.apiKeyConfig.keys[0] === ''}>
+                          <Icon name="trash" className="w-5 h-5"/>
+                      </button>
+                  </div>
+              ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-4 mt-4">
+            <Button onClick={addKeyInput} variant="secondary" className="!text-sm !py-2 !w-auto"><Icon name="plus" className="w-5 h-5 mr-2"/> Thêm API</Button>
+            <Button onClick={handleFileUploadClick} variant="secondary" className="!text-sm !py-2 !w-auto"><Icon name="upload" className="w-5 h-5 mr-2"/> Tải lên từ tệp (.txt)</Button>
+            <Button onClick={handleTestAllKeys} variant="special" className="!text-sm !py-2 !w-auto" disabled={isTestingKeys}>
+                {isTestingKeys ? 'Đang kiểm tra...' : 'Kiểm tra tất cả Keys'}
+            </Button>
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".txt" />
+          </div>
+      </div>
+
+      {/* --- Safety Settings --- */}
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-bold text-cyan-400">Cài đặt an toàn Gemini API</h2>
+          <p className="text-sm text-slate-400 mb-4">Cấu hình mức độ chặn nội dung không an toàn. Ảnh hưởng đến tất cả phản hồi AI.</p>
+          
+          <div className="bg-slate-900/70 border border-blue-900/50 rounded-md p-4 mb-6">
+            <h3 className="font-semibold text-slate-200">Chế độ hoạt động kép</h3>
+            <div className="text-xs text-slate-400 mt-2 space-y-2">
+              <p><strong className="text-slate-300">Bật lọc an toàn (Chế độ Tiêu chuẩn):</strong> Văn bản của bạn được gửi trực tiếp đến Gemini API và bộ lọc an toàn sẽ hoạt động theo các mức chặn bạn đã định cấu hình bên dưới. Sử dụng chế độ này cho nội dung thông thường.</p>
+              <p><strong className="text-slate-300">Tắt lọc an toàn (Chế độ Vượt qua An toàn):</strong> Để xử lý nội dung nhạy cảm (khi tùy chọn 18+ được bật) và tránh lỗi "prohibited", công cụ sẽ kích hoạt một giao thức đặc biệt. Văn bản đầu vào của bạn sẽ được làm mờ (obfuscated) và AI sẽ được hướng dẫn theo một "Giao thức Nghiên cứu Học thuật" để giải mã và xử lý nội dung gốc một cách trung thực và không bị kiểm duyệt.</p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between bg-slate-900/70 p-3 rounded-md mb-6">
+            <h3 className="font-semibold text-slate-200">Bật lọc an toàn Gemini API</h3>
+            <ToggleSwitch enabled={settings.safetySettings.enabled} setEnabled={handleSafetyToggle} />
+          </div>
+
+          <div className={`transition-opacity duration-300 ${settings.safetySettings.enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {settings.safetySettings.settings.map(({ category, threshold }) => (
+                  <div key={category}>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                      {HARM_CATEGORIES[category]}
+                    </label>
+                    <select
+                      value={threshold}
+                      onChange={(e) => handleThresholdChange(category, e.target.value as HarmBlockThreshold)}
+                      className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2 text-slate-200 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                    >
+                      {Object.entries(HARM_BLOCK_THRESHOLDS).map(([key, value]) => (
+                        <option key={key} value={key}>{value}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+            </div>
+          </div>
+      </div>
+
+      <div className="mt-8 flex justify-end">
+        <Button onClick={handleSave} variant="primary" className="!w-auto !text-lg !px-8">
+          Lưu Cài Đặt & Quay Lại
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default SettingsScreen;
