@@ -1,4 +1,4 @@
-netlify.toml
+# netlify.toml
 [build]
   # Thư mục chứa các file build cuối cùng của dự án frontend của bạn.
   # Thay đổi 'build', 'dist', 'public' hoặc tên thư mục output của dự án bạn.
