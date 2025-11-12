@@ -16,17 +16,17 @@
   to = "/index.html"
   status = 200
 
-Các phần tùy chọn khác bạn có thể thêm vào:
-[context.production]
-Các cài đặt đặc biệt chỉ áp dụng cho môi trường production (sau khi deploy chính thức).
-Ví dụ:
-environment = { API_URL = "https://api.yourgame.com/prod" }
-[context.deploy-preview]
-Các cài đặt đặc biệt cho các bản deploy preview (khi bạn tạo PR trên GitHub/GitLab).
-Ví dụ:
-environment = { API_URL = "https://api.yourgame.com/dev" }
-[dev]
-Cài đặt cho môi trường phát triển cục bộ khi dùng netlify dev.
+# Các phần tùy chọn khác bạn có thể thêm vào:
+# [context.production]
+# Các cài đặt đặc biệt chỉ áp dụng cho môi trường production (sau khi deploy chính thức).
+# Ví dụ:
+# environment = { API_URL = "https://api.yourgame.com/prod" }
+# [context.deploy-preview]
+# Các cài đặt đặc biệt cho các bản deploy preview (khi bạn tạo PR trên GitHub/GitLab).
+# Ví dụ:
+# environment = { API_URL = "https://api.yourgame.com/dev" }
+# [dev]
+#Cài đặt cho môi trường phát triển cục bộ khi dùng netlify dev.
 command = "npm start"  # Lệnh để khởi chạy dev server của bạn (ví dụ: React App)
 port = 3000            # Cổng mà dev server của bạn đang chạy
 publish = "public"     # Thư mục local mà dev server sẽ phục vụn
