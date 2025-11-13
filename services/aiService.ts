@@ -1,12 +1,10 @@
 
 
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
-import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest } from '../types';
-import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS } from '../constants';
+import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion } from '../types';
+import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
 
@@ -68,7 +66,15 @@ function handleApiError(error: unknown, safetySettings: SafetySettingsConfig): E
 
 function processNarration(text: string): string {
     // De-obfuscate words like [â-m-đ-ạ-o] back to 'âm đạo'
-    return text.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
+    let processedText = text.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
+    
+    // Strip tags inside <thought> tags to prevent rendering issues
+    processedText = processedText.replace(/<thought>(.*?)<\/thought>/gs, (match, innerContent) => {
+        const strippedInnerContent = innerContent.replace(/<\/?(entity|important|status|exp)>/g, '');
+        return `<thought>${strippedInnerContent}</thought>`;
+    });
+
+    return processedText;
 }
 
 
@@ -174,6 +180,29 @@ async function generateJson<T>(prompt: string, schema: any, systemInstruction?: 
     throw handleApiError(error, safetySettings);
   }
 }
+
+const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, content: string}[]): string => {
+    if (!knowledge || knowledge.length === 0) return '';
+    
+    const summaries = knowledge.filter(k => k.name.endsWith('.txt'));
+    const arcs = knowledge.filter(k => k.name.endsWith('.json'));
+
+    let prompt = '\n\n--- KIẾN THỨC NỀN (Bối cảnh tham khảo bổ sung) ---\n';
+    prompt += 'Sử dụng các thông tin sau làm kiến thức nền. ƯU TIÊN đọc TÓM TẮT TỔNG QUAN trước, sau đó dùng các tệp PHÂN TÍCH CHI TIẾT để làm rõ khi cần.\n';
+
+    if (summaries.length > 0) {
+        prompt += '\n### TÓM TẮT TỔNG QUAN ###\n';
+        prompt += summaries.map(s => s.content).join('\n\n');
+    }
+
+    if (arcs.length > 0) {
+        prompt += '\n\n### PHÂN TÍCH CHI TIẾT TỪNG PHẦN ###\n';
+        prompt += arcs.map(a => `--- NGUỒN: ${a.name} ---\n${a.content}`).join('\n\n');
+    }
+
+    prompt += '\n--- KẾT THÚC KIẾN THÚC NỀN ---';
+    return prompt;
+};
 
 // --- Specific Generators ---
 
@@ -283,7 +312,128 @@ export const generateEntityDescription = (config: WorldConfig, entity: InitialEn
     return generate(prompt);
 };
 
-export async function generateWorldFromIdea(idea: string): Promise<WorldConfig> {
+export async function generateFandomSummary(workName: string, authorName?: string): Promise<string> {
+    const authorInfo = authorName ? ` (tác giả: ${authorName})` : '';
+    const prompt = `Bạn là một chuyên gia phân tích văn học. Nhiệm vụ của bạn là viết một bản tóm tắt CỰC KỲ CHI TIẾT và TOÀN DIỆN về tác phẩm "${workName}"${authorInfo}. 
+    Bản tóm tắt phải bao gồm các phần chính, mỗi phần được mô tả kỹ lưỡng:
+    1.  **Tổng quan Cốt truyện:** Tóm tắt toàn bộ diễn biến chính từ đầu đến cuối.
+    2.  **Giới thiệu Nhân vật:** Mô tả chi tiết về các nhân vật chính, nhân vật phụ quan trọng, và các phe phản diện, bao gồm vai trò, tính cách và mục tiêu của họ.
+    3.  **Bối cảnh Thế giới:** Mô tả chi tiết về thế giới, các quốc gia, địa điểm quan trọng và văn hóa.
+    4.  **Hệ thống Sức mạnh / Luật lệ:** Giải thích chi tiết về các hệ thống sức mạnh, ma thuật, hoặc các quy tắc đặc biệt của thế giới.
+    5.  **Các Chủ đề chính:** Phân tích các chủ đề triết học hoặc xã hội cốt lõi của tác phẩm.
+
+    Hãy trả lời bằng một bài văn bản thuần túy, có cấu trúc rõ ràng. Nếu không tìm thấy thông tin, hãy trả về chuỗi "WORK_NOT_FOUND".`;
+    
+    const result = await generate(prompt, "Bạn là một chuyên gia phân tích văn học.");
+    if (result.includes('WORK_NOT_FOUND')) {
+        throw new Error(`Không tìm thấy thông tin chi tiết về tác phẩm "${workName}"${authorInfo}. Vui lòng kiểm tra lại tên.`);
+    }
+    return result;
+}
+
+export async function extractArcListFromSummary(summaryContent: string): Promise<string[]> {
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            arcs: { 
+                type: Type.ARRAY, 
+                description: "Một danh sách các chuỗi (string) chứa tên của tất cả các phần truyện (Arc/Saga) chính có trong bản tóm tắt.",
+                items: { type: Type.STRING } 
+            }
+        },
+        required: ['arcs']
+    };
+
+    const prompt = `Từ bản tóm tắt tác phẩm sau đây, hãy xác định và trích xuất tên của TẤT CẢ các phần truyện (Arc hoặc Saga) chính. Trả về một đối tượng JSON chỉ chứa một mảng chuỗi có tên là "arcs".
+
+--- BẢN TÓM TẮT ---
+${summaryContent}
+--- KẾT THÚC BẢN TÓM TẮT ---`;
+
+    const result = await generateJson<{ arcs: string[] }>(prompt, schema);
+    return result.arcs || [];
+}
+
+export async function generateFandomGenesis(summaryContent: string, arcName: string, workName: string, authorName?: string): Promise<string> {
+    const authorInfo = authorName ? ` (tác giả: ${authorName})` : '';
+    
+    const fandomGenesisSchema = {
+        type: Type.OBJECT,
+        properties: {
+            arc_name: { type: Type.STRING, description: "Tên chính xác của Arc đang được tóm tắt." },
+            plot_and_events_summary: { 
+                type: Type.STRING, 
+                description: "Một đoạn văn tóm tắt chi tiết về diễn biến cốt truyện chính và các sự kiện quan trọng xảy ra trong Arc này." 
+            },
+            character_summary: {
+                type: Type.OBJECT,
+                properties: {
+                    detailed_characters: {
+                        type: Type.ARRAY,
+                        description: "Danh sách các nhân vật chính VÀ nhân vật phụ QUAN TRỌNG xuất hiện trong Arc này. Cung cấp mô tả chi tiết cho họ.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                name: { type: Type.STRING },
+                                role_and_summary: { type: Type.STRING, description: "Mô tả vai trò, tính cách, và hành động chính của nhân vật trong Arc này." }
+                            },
+                            required: ['name', 'role_and_summary']
+                        }
+                    },
+                    mentioned_characters: {
+                        type: Type.ARRAY,
+                        description: "Danh sách tên của các nhân vật phụ khác xuất hiện trong Arc nhưng ít quan trọng hơn. CHỈ liệt kê tên, KHÔNG mô tả.",
+                        items: { type: Type.STRING }
+                    }
+                },
+                required: ['detailed_characters', 'mentioned_characters']
+            },
+            location_and_lore_summary: {
+                type: Type.STRING,
+                description: "Một đoạn văn tóm tắt về các địa điểm quan trọng, các khái niệm lore, hoặc các tổ chức được giới thiệu hoặc đóng vai trò quan trọng trong Arc này."
+            }
+        },
+        required: ['arc_name', 'plot_and_events_summary', 'character_summary', 'location_and_lore_summary']
+    };
+    
+    const prompt = `Bạn là một chuyên gia phân tích văn học. Dưới đây là TÓM TẮT TỔNG QUAN về tác phẩm "${workName}"${authorInfo}.
+
+--- TÓM TẮT TỔNG QUAN ---
+${summaryContent}
+--- KẾT THÚC TÓM TẮT ---
+
+Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản tóm tắt CHI TIẾT SÂU SẮC, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
+
+QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
+1.  **PHẠM VI HẸP:** Chỉ trích xuất, tổng hợp và suy luận thông tin liên quan đến Arc "${arcName}".
+2.  **CẤU TRÚC PHÂN TÁCH:** Để tránh bị quá tải, hãy chia bản tóm tắt của bạn thành 3 phần rõ ràng theo schema JSON:
+    a. **Cốt truyện & Sự kiện:** Tóm tắt diễn biến chính của Arc.
+    b. **Nhân vật:**
+        - **Nhân vật chi tiết:** Cung cấp mô tả chi tiết cho nhân vật chính VÀ các nhân vật phụ có vai trò quan trọng trong Arc này.
+        - **Nhân vật được nhắc đến:** Với các nhân vật còn lại, CHỈ liệt kê tên của họ, không cần mô tả.
+    c. **Địa điểm & Lore:** Tóm tắt các địa điểm và khái niệm lore quan trọng trong Arc.
+3.  **CẤU TRÚC JSON BẮT BUỘC:** Trả về MỘT đối tượng JSON duy nhất, tuân thủ nghiêm ngặt schema đã cho.
+4.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một đối tượng JSON với trường "arc_name" chứa chuỗi "ARC_NOT_FOUND".
+`;
+
+    try {
+        const result = await generateJson<any>(prompt, fandomGenesisSchema, "Bạn là một chuyên gia phân tích văn học.", 'gemini-2.5-pro');
+
+        if (result.arc_name === 'ARC_NOT_FOUND') {
+            throw new Error(`Không tìm thấy thông tin về Arc "${arcName}" trong bản tóm tắt được cung cấp.`);
+        }
+        
+        // AI might forget the arc name, so enforce it.
+        result.arc_name = arcName;
+        
+        return JSON.stringify(result, null, 2); // Return pretty-printed JSON string
+    } catch (error) {
+        throw error;
+    }
+}
+
+
+export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
   const entitySchema = {
     type: Type.OBJECT,
     properties: {
@@ -342,8 +492,11 @@ export async function generateWorldFromIdea(idea: string): Promise<WorldConfig> 
       },
       required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
   };
+  
+  const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
 
   const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là tiểu thuyết, đồng nhân (fan fiction) và văn học mạng. Dựa trên ý tưởng ban đầu sau: "${idea}", hãy dành thời gian suy nghĩ kỹ lưỡng để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
+${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG:** Nếu ý tưởng nhắc đến một tác phẩm đã có (ví dụ: "đồng nhân truyện X"), hãy dựa trên kiến thức của bạn về tác phẩm đó để xây dựng thế giới, nhưng đồng thời phải tạo ra các yếu-tố-mới và độc-đáo để câu chuyện có hướng đi riêng.
@@ -355,7 +508,7 @@ YÊU CẦU BẮT BUỘC:
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
 
-export async function generateFanfictionWorld(idea: string): Promise<WorldConfig> {
+export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
   const entitySchema = {
     type: Type.OBJECT,
     properties: {
@@ -415,10 +568,13 @@ export async function generateFanfictionWorld(idea: string): Promise<WorldConfig
       required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
   };
   
+  const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
+
   const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là các tác phẩm gốc (tiểu thuyết, truyện tranh, game) và văn học mạng (đồng nhân, fan fiction). Dựa trên ý tưởng đồng nhân/fanfiction sau: "${idea}", hãy sử dụng kiến thức sâu rộng của bạn về tác phẩm gốc được đề cập để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
+${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
-1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Vận dụng toàn bộ kiến thức của bạn về thế giới, nhân vật, hệ thống sức mạnh và cốt truyện của tác phẩm đó làm nền tảng.
+1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Vận dụng toàn bộ kiến thức của bạn về thế giới, nhân vật, hệ thống sức mạnh và cốt truyện của tác phẩm đó làm nền tảng. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI.
 2.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
 3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
 4.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
@@ -440,7 +596,7 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
             type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể (NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực)." },
             personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết, hợp lý và sáng tạo về thực thể dựa trên bối cảnh." },
-            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí') để phân loại thực thể." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể." },
             details: { 
                 type: Type.OBJECT,
                 description: "Một đối tượng chứa các thuộc tính chi tiết nếu thực thể là 'Vật phẩm' (VD: vũ khí, áo giáp, trang sức). Để trống nếu không phải Vật phẩm. Các thuộc tính phải phù hợp với thể loại của thế giới (VD: fantasy thì có 'Sát thương phép', cyberpunk thì có 'Tốc độ hack').",
@@ -469,6 +625,49 @@ Trả về một đối tượng JSON tuân thủ schema đã cho.`;
     return generateJson<InitialEntity>(prompt, schema);
 };
 
+
+export const generateSuggestionsForCurrentState = (gameState: GameState): Promise<ActionSuggestion[]> => {
+    const { worldConfig, history } = gameState;
+    const systemInstruction = getGameMasterSystemInstruction(worldConfig.storyContext.genre);
+
+    const suggestionSchema = {
+        type: Type.OBJECT,
+        properties: {
+            description: { type: Type.STRING, description: "Mô tả hành động một cách NGẮN GỌN, SÚC TÍCH, tập trung vào hành động chính (VD: 'Kiểm tra chiếc rương', 'Hỏi chuyện người lính gác')." },
+            successRate: { type: Type.NUMBER, description: "Một con số từ 0 đến 100, thể hiện tỷ lệ thành công ước tính của hành động." },
+            risk: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các rủi ro có thể xảy ra." },
+            reward: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các phần thưởng có thể nhận được." }
+        },
+        required: ['description', 'successRate', 'risk', 'reward']
+    };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            suggestions: {
+                type: Type.ARRAY,
+                description: "Một danh sách gồm ĐÚNG 4 lựa chọn hành động đa dạng và hợp lý cho người chơi dựa trên tình huống hiện tại.",
+                items: suggestionSchema
+            }
+        },
+        required: ['suggestions']
+    };
+
+    const lastNarration = history.filter(turn => turn.type === 'narration').pop()?.content || "Cuộc phiêu lưu vừa bắt đầu.";
+
+    const prompt = `Đây là bối cảnh câu chuyện:
+- Thể loại: ${worldConfig.storyContext.genre}
+- Bối cảnh: ${worldConfig.storyContext.setting}
+- Nhân vật: ${worldConfig.character.name}
+
+Tình huống hiện tại được mô tả trong đoạn tường thuật cuối cùng:
+"${lastNarration.replace(/<[^>]*>/g, '').substring(0, 1500)}..."
+
+Dựa vào tình huống trên, hãy tạo ra ĐÚNG 4 gợi ý hành động đa dạng và hợp lý cho người chơi.`;
+
+    return generateJson<{ suggestions: ActionSuggestion[] }>(prompt, schema, systemInstruction)
+           .then(response => response.suggestions);
+};
 
 export async function testApiKeys(): Promise<string> {
     const { apiKeyConfig } = getSettings();
@@ -681,7 +880,7 @@ QUY TẮC BẮT BUỘC:
     a. **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
     b. **Học từ Người chơi:** Phân tích kỹ văn phong của người chơi. Lời thoại của nhân vật chính là kim chỉ nam cho bạn. Tính cách của nhân vật và NPC chỉ nên ảnh hưởng một phần đến hành động và lời nói của họ, quyết định cuối cùng phải dựa trên diễn biến câu chuyện và ngữ cảnh hiện tại.
     c. **Tham khảo Ký ức:** Trước mỗi lượt kể, hãy xem lại toàn bộ lịch sử trò chuyện để đảm bảo bạn không quên cách xưng hô đã được thiết lập. Sự thiếu nhất quán sẽ phá hỏng trải nghiệm.
-10. **ĐỘ DÀI VÀ CHẤT LƯỢNG (QUAN TRỌNG):** Phần kể chuyện của bạn phải có độ dài đáng kể (tối thiểu 4-5 đoạn văn chi tiết, khoảng 500 chữ) để người chơi đắm chìm vào thế giới. Khi có sự thay đổi về trạng thái nhân vật (sử dụng thẻ <status>), hãy **tích hợp nó một cách tự nhiên vào lời kể**, không biến nó thành nội dung chính duy nhất. Phần mô tả trạng thái chỉ là một phần của diễn biến, không thay thế cho toàn bộ câu chuyện.
+10. **ĐỘ DÀI VÀ CHẤT LƯỢNG (QUAN TRỌNG):** Phần kể chuyện của bạn phải có độ dài đáng kể để người chơi đắm chìm vào thế giới. Khi có sự thay đổi về trạng thái nhân vật (sử dụng thẻ <status>), hãy **tích hợp nó một cách tự nhiên vào lời kể**, không biến nó thành nội dung chính duy nhất. Phần mô tả trạng thái chỉ là một phần của diễn biến, không thay thế cho toàn bộ câu chuyện.
 11. **QUAN TRỌNG - JSON OUTPUT:** Khi bạn trả lời dưới dạng JSON, TUYỆT ĐỐI không sử dụng bất kỳ thẻ định dạng nào (ví dụ: <entity>, <important>) bên trong các trường chuỗi (string) của JSON. Dữ liệu JSON phải là văn bản thuần túy.
 12. **TRÍ NHỚ DÀI HẠN:** Để duy trì sự nhất quán cho câu chuyện dài (hàng trăm lượt chơi), bạn PHẢI dựa vào "Ký ức cốt lõi", "Tóm tắt các giai đoạn trước" và "Bách Khoa Toàn Thư" được cung cấp trong mỗi lượt. Đây là bộ nhớ dài hạn của bạn. Hãy sử dụng chúng để nhớ lại các sự kiện, nhân vật, và chi tiết quan trọng đã xảy ra, đảm bảo câu chuyện luôn liền mạch và logic.`;
 
@@ -850,6 +1049,11 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         : '';
         
     const encyclopediaSummary = buildEncyclopediaSummary(gameState);
+    
+    const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(worldConfig.backgroundKnowledge);
+
+    const lengthMap: { [key: string]: number } = { 'Ngắn': 500, 'Mặc định': 700, 'Trung bình': 750, 'Chi tiết, dài': 1200 };
+    const minWords = lengthMap[worldConfig.aiResponseLength || 'Mặc định'] || 700;
 
     const statusEffectSchema = {
         type: Type.OBJECT,
@@ -1005,12 +1209,12 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
 
 
     const prompt = `Đây là thông tin về thế giới và nhân vật:
-    ${JSON.stringify({ ...worldConfig, temporaryRules: undefined }, null, 2)}
+    ${JSON.stringify({ ...worldConfig, temporaryRules: undefined, backgroundKnowledge: undefined }, null, 2)}
     ${adultContentDirectives}
     ${temporaryRulesPrompt}
 
     --- BỘ NHỚ CỦA QUẢN TRÒ (CONTEXT DÀI HẠN) ---
-    QUAN TRỌNG: Để duy trì tính nhất quán của câu chuyện, hãy coi đây là nguồn thông tin chính xác nhất về những gì đã xảy ra trước đây. Hãy dựa vào Ký ức, Tóm tắt, và Bách Khoa Toàn Thư để nhớ lại các chi tiết quan trọng.
+    QUAN TRỌNG: Để duy trì tính nhất quán của câu chuyện, hãy coi đây là nguồn thông tin chính xác nhất về những gì đã xảy ra trước đây. Hãy dựa vào Ký ức, Tóm tắt, Bách Khoa và KIẾN THỨC NỀN để nhớ lại các chi tiết quan trọng.
     Thông tin nhân vật chính:
     ${JSON.stringify(character, null, 2)}
     
@@ -1021,6 +1225,7 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     ${summaries.length > 0 ? summaries.map((s, i) => `Giai đoạn ${i + 1}:\n${s}`).join('\n\n') : "Chưa có tóm tắt nào."}
     
     ${encyclopediaSummary}
+    ${backgroundKnowledgePrompt}
 
     Trạng thái hiện tại của nhân vật chính:
     ${playerStatus.length > 0 ? playerStatus.map(s => `- ${s.name} (${s.type}): ${s.description}`).join('\n') : "Không có trạng thái nào."}
@@ -1033,13 +1238,13 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     --- QUY TRÌNH SUY LUẬN BẮT BUỘC (Thực hiện nội bộ trước khi trả lời) ---
     TRƯỚC KHI VIẾT PHẦN KỂ CHUYỆN, hãy âm thầm thực hiện các bước phân tích sau trong đầu của bạn (không viết ra ngoài):
     1.  **Phân tích hành động của người chơi:** Hiểu rõ yêu cầu cốt lõi và ý định đằng sau hành động đó là gì.
-    2.  **Quét toàn bộ bối cảnh:** Xem xét lại toàn bộ "BỘ NHỚ CỦA QUẢN TRÒ" (tính cách & mục tiêu nhân vật, ký ức cốt lõi, tóm tắt, trạng thái, vật phẩm, NPC, nhiệm vụ, Bách Khoa) và "Diễn biến gần đây nhất". Tất cả các yếu tố này phải được cân nhắc để đảm bảo tính nhất quán.
+    2.  **Quét toàn bộ bối cảnh:** Xem xét lại toàn bộ "BỘ NHỚ CỦA QUẢN TRÒ" (tính cách & mục tiêu nhân vật, ký ức cốt lõi, tóm tắt, trạng thái, vật phẩm, NPC, nhiệm vụ, Bách Khoa, KIẾN THỨC NỀN) và "Diễn biến gần đây nhất". Tất cả các yếu tố này phải được cân nhắc để đảm bảo tính nhất quán.
     3.  **Lên kế hoạch diễn biến:** Dựa trên phân tích, quyết định kết quả hợp lý nhất của hành động. Môi trường sẽ phản ứng ra sao? NPC sẽ hành động/suy nghĩ thế nào? Nhân vật chính có khám phá ra điều gì mới không?
     4.  **Tự điều chỉnh & Sáng tạo:** Rà soát lại kế hoạch để đảm bảo nó logic, nhất quán với các sự kiện trước đó và không đi ngược lại các "Luật Lệ Cốt Lõi". Dựa trên bối cảnh, hãy xem xét liệu có nên giới thiệu một tình tiết bất ngờ, một NPC mới, hay một thử thách để câu chuyện thêm hấp dẫn và kịch tính không.
     --- KẾT THÚC QUY TRÌNH SUY LUẬN ---
 
     Dựa vào TOÀN BỘ thông tin trên và kết quả từ quy trình suy luận của bạn, hãy thực hiện các nhiệm vụ sau:
-    1.  **Kể chuyện:** Viết tiếp câu chuyện một cách logic và chi tiết, có chiều sâu. Phần kể chuyện phải có độ dài đáng kể, **tối thiểu 500 chữ**, để người chơi thực sự đắm chìm vào thế giới.
+    1.  **Kể chuyện:** Viết tiếp câu chuyện một cách logic và chi tiết, có chiều sâu. Phần kể chuyện phải có độ dài đáng kể, **tối thiểu ${minWords} chữ**, để người chơi thực sự đắm chìm vào thế giới.
     2.  **Đưa ra gợi ý:** Tạo ra ĐÚNG 4 lựa chọn hành động đa dạng và hợp lý.
         - **LOGIC GỢI Ý ĐỐI THOẠI:** Phân tích lượt kể chuyện cuối cùng của Quản Trò. Nếu lượt đó kết thúc bằng một lời thoại của NPC, hoặc một NPC vừa xuất hiện và có khả năng tương tác, hãy đưa ra ÍT NHẤT MỘT gợi ý hành động là một câu thoại trực tiếp để người chơi lựa chọn. Gợi ý đối thoại nên được đặt trong ngoặc kép. Ví dụ: "Hỏi về thân phận của ông ta", ""Ta là ai?"", ""Câm miệng!"".
         - **ĐA DẠNG HÓA:** Các gợi ý khác nên bao gồm các hành động vật lý, kiểm tra, hoặc sử dụng kỹ năng để đảm bảo sự đa dạng.

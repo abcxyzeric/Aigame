@@ -32,6 +32,7 @@ export const DIFFICULTY_OPTIONS = [
 export const SEXUAL_CONTENT_STYLE_OPTIONS = ['Hoa mỹ', 'Trần tục', 'Gợi cảm'];
 export const VIOLENCE_LEVEL_OPTIONS = ['Nhẹ nhàng', 'Thực tế', 'Cực đoan'];
 export const STORY_TONE_OPTIONS = ['Tích cực', 'Trung tính', 'Đen tối', 'Dâm dục'];
+export const AI_RESPONSE_LENGTH_OPTIONS = ['Mặc định', 'Ngắn', 'Trung bình', 'Chi tiết, dài'];
 
 export const ENTITY_TYPE_OPTIONS = [
     'NPC', 
@@ -59,6 +60,8 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
     motivation: '',
   },
   difficulty: DIFFICULTY_OPTIONS[1],
+  aiResponseLength: AI_RESPONSE_LENGTH_OPTIONS[0],
+  backgroundKnowledge: [],
   allowAdultContent: false,
   sexualContentStyle: SEXUAL_CONTENT_STYLE_OPTIONS[0],
   violenceLevel: VIOLENCE_LEVEL_OPTIONS[0],

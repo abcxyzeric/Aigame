@@ -3,7 +3,7 @@ import React from 'react';
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
   icon?: React.ReactNode;
-  variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'special';
+  variant?: 'primary' | 'secondary' | 'success' | 'warning' | 'special' | 'info';
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -27,6 +27,8 @@ const Button: React.FC<ButtonProps> = ({
       'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white focus:ring-amber-400/50',
     special:
       'bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white focus:ring-violet-400/50',
+    info:
+      'bg-gradient-to-r from-sky-500 to-indigo-500 hover:from-sky-600 hover:to-indigo-600 text-white focus:ring-sky-400/50',
   };
 
   return (

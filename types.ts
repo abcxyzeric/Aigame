@@ -40,6 +40,8 @@ export interface WorldConfig {
   };
   character: CharacterConfig;
   difficulty: string;
+  aiResponseLength?: string;
+  backgroundKnowledge?: { name: string; content: string }[];
   allowAdultContent: boolean;
   sexualContentStyle?: string;
   violenceLevel?: string;

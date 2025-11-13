@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 import Icon from './common/Icon';
 import Button from './common/Button';
@@ -12,7 +14,15 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.1.0 (Cập nhật hiện tại)",
+      version: "1.2.0 (Cập nhật hiện tại)",
+      notes: [
+        "**Kiến tạo từ Nguyên tác (Thử nghiệm):** Thêm một công cụ mạnh mẽ cho phép AI phân tích sâu các tác phẩm bạn yêu thích (truyện, phim, game...), tự động tạo ra các tệp dữ liệu lore chi tiết (.txt, .json) để bạn có thể sáng tạo thế giới đồng nhân một cách chính xác nhất.",
+        "**Độ Dài Phản Hồi Ưu Tiên Của AI:** Cho phép bạn tùy chỉnh độ dài tối thiểu của mỗi lượt kể chuyện do AI tạo ra, giúp kiểm soát nhịp độ của cuộc phiêu lưu.",
+        "**Kiến thức nền AI (Tùy chọn):** Cung cấp các tệp dữ liệu lore (.txt, .json) cho AI làm 'bộ nhớ tham khảo', giúp nó kiến tạo thế giới và dẫn dắt câu chuyện có chiều sâu, bám sát nguyên tác hơn.",
+      ]
+    },
+    {
+      version: "1.1.0",
       notes: [
         "**Bách Khoa Toàn Thư:** Cập nhật tính năng bách khoa toàn thư, giúp lưu trữ mọi dữ liệu về thế giới.",
         "**Hệ Thống Phân Trang:** Cập nhật tính năng trang, giờ đây cứ mỗi 10 lượt sẽ sang 1 trang mới và bạn hoàn toàn có thể quay lại các trang cũ.",

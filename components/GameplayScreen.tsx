@@ -416,17 +416,37 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   }, [gameState, isLoading]);
   
   const startGame = useCallback(async () => {
+    // If history has content, it's a loaded game.
     if (gameState.history.length > 0) {
-      setIsLoading(false);
+      setIsLoading(true); // Show a loading state while fetching suggestions.
+      setError(null);
+      
+      const narrationTurns = gameState.history.filter(h => h.type === 'narration');
+      const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
       const lastPage = totalPages > 0 ? totalPages - 1 : 0;
       setCurrentPage(lastPage);
+      
+      // Ensure default values for new fields in old saves.
       setGameState(prev => ({
           ...prev,
           companions: prev.companions || [],
           quests: prev.quests || [],
       }));
+
+      try {
+        // Generate new suggestions based on the loaded state.
+        const newSuggestions = await aiService.generateSuggestionsForCurrentState(gameState);
+        setSuggestions(newSuggestions);
+        setShowSuggestions(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Lỗi không thể tạo gợi ý khi tải game.');
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
+
+    // This part is for starting a brand new game.
     setSuggestions([]);
     setIsLoading(true);
     setError(null);
@@ -449,10 +469,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState.worldConfig, gameState.history.length, totalPages]);
+  }, [gameState]);
 
   useEffect(() => {
     startGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -464,7 +485,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       }
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [gameState.history, isInitialLoading, isTurnLoading, narrationTurns.length]);
+  }, [gameState.history, isInitialLoading, isTurnLoading, narrationTurns.length, currentPage]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -751,12 +772,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
              </div>
 
              {/* Mobile Menu */}
-             <div className="relative lg:hidden" ref={menuRef}>
+             <div className="relative lg:hidden z-[60]" ref={menuRef}>
                 <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-slate-300 hover:bg-slate-700 rounded-full transition">
                     <Icon name="ellipsisVertical" className="w-5 h-5" />
                 </button>
                 {isMenuOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-[60] p-2 animate-fade-in-up">
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-lg p-2 animate-fade-in-up">
                         <MenuButton onClick={() => setIsInformationModalOpen(true)} icon="info" label="Thông Tin" variant="pink" />
                         <MenuButton onClick={handleManualSave} icon="save" label="Lưu Game" variant="green" />
                         <MenuButton onClick={() => setIsTempRulesModalOpen(true)} icon="rules" label="Luật Tạm Thời" variant="blue" />
@@ -803,19 +824,16 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
         {/* Main Content: Log and Input */}
         <main className="flex-1 flex flex-col bg-slate-800/50 rounded-lg p-2 sm:p-4 overflow-hidden relative">
-          {(isInitialLoading || isTurnLoading) && (
+          {isInitialLoading && (
             <div className="absolute inset-0 bg-slate-800/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 animate-fade-in">
               <div className="w-12 h-12 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin"></div>
               <p className="mt-4 text-slate-300 font-semibold text-lg">
-                {isInitialLoading ? 'AI đang kiến tạo thế giới...' : 'AI đang suy nghĩ...'}
+                AI đang kiến tạo thế giới...
               </p>
-               {isTurnLoading && (
-                <p className="mt-1 text-slate-400 text-sm">Đang tạo ra diễn biến tiếp theo cho câu chuyện của bạn.</p>
-               )}
             </div>
           )}
 
-          <div ref={logContainerRef} onClick={handleNarrationContainerClick} className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-6 transition-opacity duration-300 cursor-pointer ${isTurnLoading ? 'opacity-40' : 'opacity-100'}`}>
+          <div ref={logContainerRef} onClick={handleNarrationContainerClick} className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-6 cursor-pointer`}>
             <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-green-400">Diễn biến câu chuyện:</h2>
@@ -838,6 +856,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 )}
               </div>
             ))}
+            {isTurnLoading && (
+              <div className="mt-6 flex flex-col items-center p-4">
+                  <div className="w-8 h-8 border-4 border-fuchsia-400 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="mt-3 text-slate-300 font-semibold">AI đang suy nghĩ...</p>
+                  <p className="mt-1 text-slate-400 text-sm">Đang tạo ra diễn biến tiếp theo cho câu chuyện của bạn.</p>
+              </div>
+            )}
             <div ref={logEndRef} />
           </div>
 

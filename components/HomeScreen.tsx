@@ -14,9 +14,10 @@ interface HomeScreenProps {
   onLoadGame: (config: WorldConfig) => void;
   onNavigateToSettings: () => void;
   onLoadSavedGame: (state: GameState) => void;
+  onNavigateToFandomGenesis: () => void;
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavigateToSettings, onLoadSavedGame }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavigateToSettings, onLoadSavedGame, onNavigateToFandomGenesis }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasSaveFile, setHasSaveFile] = useState(false);
   const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
@@ -106,7 +107,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
           >
             Tải Game Đã Lưu
           </Button>
-          <Button onClick={handleLoadFromJson} icon={<Icon name="upload" />} variant="warning">
+          <Button onClick={handleLoadFromJson} icon={<Icon name="upload" />} variant="secondary">
             Tải Thiết Lập/Game Từ Tệp (.json)
           </Button>
           <input
@@ -116,10 +117,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
             className="hidden"
             accept=".json"
           />
-          <Button onClick={() => setIsUpdateLogOpen(true)} icon={<Icon name="news" />} variant="special">
+          <Button onClick={onNavigateToFandomGenesis} icon={<Icon name="magic" />} variant="special">
+            Kiến tạo từ Nguyên tác
+          </Button>
+          <Button onClick={() => setIsUpdateLogOpen(true)} icon={<Icon name="news" />} variant="warning">
             Xem Cập Nhật Game
           </Button>
-          <Button onClick={onNavigateToSettings} icon={<Icon name="settings" />} variant="secondary">
+          <Button onClick={onNavigateToSettings} icon={<Icon name="settings" />} variant="info">
             Cài Đặt
           </Button>
         </div>

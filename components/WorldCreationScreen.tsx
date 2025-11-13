@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { WorldConfig, InitialEntity, CharacterConfig } from '../types';
 import { 
@@ -10,17 +9,20 @@ import {
     SEXUAL_CONTENT_STYLE_OPTIONS,
     VIOLENCE_LEVEL_OPTIONS,
     STORY_TONE_OPTIONS,
-    ENTITY_TYPE_OPTIONS
+    ENTITY_TYPE_OPTIONS,
+    AI_RESPONSE_LENGTH_OPTIONS
 } from '../constants';
 import * as aiService from '../services/aiService';
 import { getSettings, saveSettings } from '../services/settingsService';
 import Accordion from './common/Accordion';
 import Icon from './common/Icon';
 import Button from './common/Button';
-import { saveWorldConfigToFile, loadWorldConfigFromFile } from '../services/fileService';
+import { saveWorldConfigToFile, loadWorldConfigFromFile, loadTextFromFile } from '../services/fileService';
 import AiAssistButton from './common/AiAssistButton';
 import ApiKeyModal from './common/ApiKeyModal';
 import NotificationModal from './common/NotificationModal';
+import FandomFileLoadModal from './FandomFileLoadModal';
+import { FandomFile } from '../services/fandomFileService';
 
 interface WorldCreationScreenProps {
   onBack: () => void;
@@ -73,8 +75,12 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notificationContent, setNotificationContent] = useState({ title: '', messages: [''] });
+  const [isFanficSelectModalOpen, setIsFanficSelectModalOpen] = useState(false);
+  const [isKnowledgeSelectModalOpen, setIsKnowledgeSelectModalOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fanficFileInputRef = useRef<HTMLInputElement>(null);
+  const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
 
   const isSafetyFilterEnabled = getSettings().safetySettings.enabled;
 
@@ -87,7 +93,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
             ...DEFAULT_WORLD_CONFIG.character,
             ...initialConfig.character,
             skills: Array.isArray(initialConfig.character.skills) ? initialConfig.character.skills : []
-        }
+        },
+        backgroundKnowledge: initialConfig.backgroundKnowledge || [],
       };
       setConfig(sanitizedConfig);
     } else {
@@ -309,7 +316,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     const task = async () => {
       setLoadingStates(prev => ({...prev, worldIdea: true}));
       try {
-        const newConfig = await aiService.generateWorldFromIdea(storyIdea);
+        const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
         setLoadingStates(prev => ({...prev, worldIdea: false}));
@@ -327,7 +334,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     const task = async () => {
       setLoadingStates(prev => ({...prev, worldFanfictionIdea: true}));
       try {
-        const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea);
+        const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
         setLoadingStates(prev => ({...prev, worldFanfictionIdea: false}));
@@ -350,6 +357,10 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   const handleLoadConfigClick = () => {
     fileInputRef.current?.click();
   };
+  
+  const handleLoadFanficFileClick = () => {
+    fanficFileInputRef.current?.click();
+  }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -369,6 +380,96 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       event.target.value = ''; // Reset file input
     }
   };
+  
+  const handleFanficFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        try {
+            const newKnowledgeFiles: { name: string; content: string }[] = [];
+            for (const file of Array.from(files)) {
+                const content = await loadTextFromFile(file);
+                newKnowledgeFiles.push({ name: file.name, content });
+            }
+            
+            const existingNames = new Set((config.backgroundKnowledge || []).map(k => k.name));
+            const finalNewKnowledge = newKnowledgeFiles.filter(k => !existingNames.has(k.name));
+
+            setConfig(prev => ({
+                ...prev,
+                backgroundKnowledge: [...(prev.backgroundKnowledge || []), ...finalNewKnowledge]
+            }));
+            
+            setNotificationContent({ 
+                title: 'Thành công!', 
+                messages: [`Đã tải ${files.length} tệp và thêm vào Kiến thức nền AI.`] 
+            });
+            setIsNotificationOpen(true);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
+            setNotificationContent({ title: 'Lỗi Tải Tệp', messages: [errorMessage] });
+            setIsNotificationOpen(true);
+        }
+    }
+     if (event.target) {
+      event.target.value = ''; // Reset file input
+    }
+  };
+
+  const handleConfirmFanficSelection = (selectedFiles: FandomFile[]) => {
+    const knowledge = selectedFiles.map(f => ({ name: f.name, content: f.content }));
+    const existingNames = new Set((config.backgroundKnowledge || []).map(k => k.name));
+    const newKnowledge = knowledge.filter(k => !existingNames.has(k.name));
+    handleSimpleChange('backgroundKnowledge', [...(config.backgroundKnowledge || []), ...newKnowledge]);
+    
+    setIsFanficSelectModalOpen(false);
+    setNotificationContent({ title: 'Thành công!', messages: [`Đã chọn ${selectedFiles.length} tệp và thêm vào Kiến thức nền AI.`] });
+    setIsNotificationOpen(true);
+  };
+
+
+  const handleConfirmKnowledgeSelection = (selectedFiles: FandomFile[]) => {
+    const knowledge = selectedFiles.map(f => ({ name: f.name, content: f.content }));
+    handleSimpleChange('backgroundKnowledge', knowledge);
+    setIsKnowledgeSelectModalOpen(false);
+  };
+
+  const handleKnowledgeFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+        const newKnowledgeFiles: { name: string; content: string }[] = [];
+        for (const file of Array.from(files)) {
+            const content = await loadTextFromFile(file);
+            newKnowledgeFiles.push({ name: file.name, content });
+        }
+        
+        setConfig(prev => ({
+            ...prev,
+            backgroundKnowledge: [...(prev.backgroundKnowledge || []), ...newKnowledgeFiles]
+        }));
+        
+        setNotificationContent({ 
+            title: 'Thành công!', 
+            messages: [`Đã tải lên ${files.length} tệp làm kiến thức nền.`] 
+        });
+        setIsNotificationOpen(true);
+
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định';
+        setNotificationContent({ title: 'Lỗi Tải Tệp', messages: [errorMessage] });
+        setIsNotificationOpen(true);
+    }
+    
+    if (event.target) {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveKnowledgeFile = (indexToRemove: number) => {
+    const newKnowledge = (config.backgroundKnowledge || []).filter((_, index) => index !== indexToRemove);
+    handleSimpleChange('backgroundKnowledge', newKnowledge);
+  };
 
   return (
     <>
@@ -383,12 +484,42 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         title={notificationContent.title}
         messages={notificationContent.messages}
       />
+       <FandomFileLoadModal 
+        isOpen={isFanficSelectModalOpen}
+        onClose={() => setIsFanficSelectModalOpen(false)}
+        onConfirm={handleConfirmFanficSelection}
+        mode="multiple"
+        title="Chọn Nguyên Tác Đồng Nhân Từ Kho"
+      />
+       <FandomFileLoadModal 
+        isOpen={isKnowledgeSelectModalOpen}
+        onClose={() => setIsKnowledgeSelectModalOpen(false)}
+        onConfirm={handleConfirmKnowledgeSelection}
+        mode="multiple"
+        title="Chọn Kho Kiến Thức Nền"
+      />
        <input
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
         accept=".json"
+      />
+      <input
+        type="file"
+        ref={fanficFileInputRef}
+        onChange={handleFanficFileChange}
+        className="hidden"
+        accept=".txt,.json"
+        multiple
+      />
+      <input
+        type="file"
+        ref={knowledgeFileInputRef}
+        onChange={handleKnowledgeFileChange}
+        className="hidden"
+        accept=".txt,.json"
+        multiple
       />
       <div className="max-w-7xl mx-auto p-4 sm:p-6 md:p-8">
         <div className="flex justify-between items-center mb-6">
@@ -427,8 +558,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 <Icon name="magic" className="w-6 h-6 mr-3" />
                 Ý Tưởng Đồng Nhân / Fanfiction (AI Hỗ Trợ)
             </h3>
-            <p className='text-sm text-slate-400 mb-3'>Nhập tên tác phẩm và ý tưởng, AI sẽ dựa vào kiến thức về tác phẩm gốc để tạo ra thế giới mới.</p>
-            <div className="flex flex-col sm:flex-row items-center gap-2">
+            <p className='text-sm text-slate-400 mb-3'>Nhập tên tác phẩm và ý tưởng. Tải lên các tệp nguyên tác (.txt, .json) sẽ tự động thêm chúng vào "Kiến thức nền AI" bên dưới để có kết quả chính xác nhất.</p>
+            <div className="flex flex-col sm:flex-row items-center gap-2 mb-3">
                 <StyledInput 
                     placeholder="VD: đồng nhân Naruto, nếu Obito không theo Madara..." 
                     value={fanfictionIdea}
@@ -442,6 +573,14 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 >
                     Kiến Tạo Đồng Nhân
                 </AiAssistButton>
+            </div>
+            <div className='flex flex-col sm:flex-row items-center gap-2'>
+                <Button onClick={handleLoadFanficFileClick} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
+                    <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy (.txt, .json)
+                </Button>
+                 <Button onClick={() => setIsFanficSelectModalOpen(true)} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
+                    <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho (.txt, .json)
+                </Button>
             </div>
         </div>
 
@@ -494,12 +633,47 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 <div className="order-2">
                     <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg mb-8 border-l-4 border-lime-500 p-4">
                         <h3 className="text-xl font-bold text-left text-lime-400 mb-4 flex items-center"><Icon name="difficulty" className="w-6 h-6 mr-3"/>Độ Khó & Nội Dung</h3>
-                        <FormRow label="Chọn Độ Khó" labelClassName="text-lime-300">
-                            <StyledSelect value={config.difficulty} onChange={e => handleSimpleChange('difficulty', e.target.value)}>
-                                {DIFFICULTY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                            </StyledSelect>
-                        </FormRow>
-                        <div className="flex items-center space-x-2 mt-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <FormRow label="Chọn Độ Khó" labelClassName="text-lime-300">
+                                <StyledSelect value={config.difficulty} onChange={e => handleSimpleChange('difficulty', e.target.value)}>
+                                    {DIFFICULTY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </StyledSelect>
+                            </FormRow>
+                             <FormRow label="Độ Dài Phản Hồi Ưu Tiên Của AI" labelClassName="text-lime-300">
+                                <StyledSelect value={config.aiResponseLength || AI_RESPONSE_LENGTH_OPTIONS[0]} onChange={e => handleSimpleChange('aiResponseLength', e.target.value)}>
+                                    {AI_RESPONSE_LENGTH_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </StyledSelect>
+                            </FormRow>
+                        </div>
+
+                        <div className="mt-4 border-t border-slate-700 pt-4">
+                            <FormRow label="Kiến thức nền AI (Tùy chọn)" labelClassName="text-lime-300">
+                                <p className="text-xs text-slate-400 mb-2">Chọn các tệp nguyên tác (.txt, .json) từ kho hoặc tải lên từ máy để AI sử dụng làm kiến thức nền khi tạo thế giới và dẫn truyện.</p>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button onClick={() => setIsKnowledgeSelectModalOpen(true)} variant="secondary" className="!w-auto !text-sm !py-2">
+                                        <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho
+                                    </Button>
+                                    <Button onClick={() => knowledgeFileInputRef.current?.click()} variant="secondary" className="!w-auto !text-sm !py-2">
+                                        <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy
+                                    </Button>
+                                </div>
+                                {config.backgroundKnowledge && config.backgroundKnowledge.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                        <p className="text-sm font-semibold text-slate-300">Đã chọn:</p>
+                                        <ul className="space-y-1">
+                                            {config.backgroundKnowledge.map((file, index) => (
+                                                <li key={index} className="flex items-center justify-between bg-slate-900/50 p-2 rounded-md text-sm">
+                                                    <span className="text-slate-300 truncate">{file.name}</span>
+                                                    <button onClick={() => handleRemoveKnowledgeFile(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </FormRow>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 mt-4 border-t border-slate-700 pt-4">
                             <input type="checkbox" id="adult-content" 
                                 checked={config.allowAdultContent}
                                 onChange={e => handleSimpleChange('allowAdultContent', e.target.checked)}

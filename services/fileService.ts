@@ -23,6 +23,13 @@ export const saveGameStateToFile = (state: GameState): void => {
   linkElement.click();
 };
 
+export const saveTextToFile = (content: string, fileName: string): void => {
+  const dataUri = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content);
+  const linkElement = document.createElement('a');
+  linkElement.setAttribute('href', dataUri);
+  linkElement.setAttribute('download', fileName);
+  linkElement.click();
+};
 
 export const loadWorldConfigFromFile = (file: File): Promise<WorldConfig> => {
   return new Promise((resolve, reject) => {
@@ -55,6 +62,33 @@ export const loadWorldConfigFromFile = (file: File): Promise<WorldConfig> => {
     };
     reader.readAsText(file);
   });
+};
+
+export const loadTextFromFile = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            reject(new Error('Không có tệp nào được chọn.'));
+            return;
+        }
+        if (!['text/plain', 'application/json'].includes(file.type)) {
+            reject(new Error('Vui lòng chọn một tệp .txt hoặc .json hợp lệ.'));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target?.result;
+            if (typeof text === 'string') {
+                resolve(text);
+            } else {
+                reject(new Error('Không thể đọc nội dung tệp.'));
+            }
+        };
+        reader.onerror = () => {
+            reject(new Error('Lỗi khi đọc tệp.'));
+        };
+        reader.readAsText(file);
+    });
 };
 
 export const loadKeysFromTxtFile = (file: File): Promise<string[]> => {

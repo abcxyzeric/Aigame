@@ -4,9 +4,10 @@ import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
 import SettingsScreen from './components/SettingsScreen';
 import GameplayScreen from './components/GameplayScreen';
+import FandomGenesisScreen from './components/FandomGenesisScreen';
 import { WorldConfig, GameState } from './types';
 
-type Screen = 'home' | 'create' | 'settings' | 'gameplay';
+type Screen = 'home' | 'create' | 'settings' | 'gameplay' | 'fandomGenesis';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
@@ -62,6 +63,10 @@ const App: React.FC = () => {
   const handleNavigateToSettings = useCallback(() => {
     setCurrentScreen('settings');
   }, []);
+  
+  const handleNavigateToFandomGenesis = useCallback(() => {
+    setCurrentScreen('fandomGenesis');
+  }, []);
 
   const handleBackToHome = useCallback(() => {
     setGameState(null);
@@ -75,6 +80,8 @@ const App: React.FC = () => {
         return <WorldCreationScreen onBack={handleBackToHome} initialConfig={editingConfig} onStartGame={handleStartGame} />;
       case 'settings':
         return <SettingsScreen onBack={handleBackToHome} />;
+      case 'fandomGenesis':
+        return <FandomGenesisScreen onBack={handleBackToHome} />;
       case 'gameplay':
         if (gameState) {
           return <GameplayScreen initialGameState={gameState} onBack={handleBackToHome} />;
@@ -90,6 +97,7 @@ const App: React.FC = () => {
             onLoadGame={handleLoadGame}
             onLoadSavedGame={handleLoadSavedGame}
             onNavigateToSettings={handleNavigateToSettings}
+            onNavigateToFandomGenesis={handleNavigateToFandomGenesis}
           />
         );
     }
