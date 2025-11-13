@@ -110,8 +110,18 @@ const InformationModal: React.FC<InformationModalProps> = ({ isOpen, onClose, ga
                 </div>
                  <div>
                   <h3 className="text-lg font-semibold text-pink-300 border-b border-pink-500/30 pb-1 mb-2">Kỹ Năng</h3>
-                  <p className="font-bold text-yellow-400">{stripTags(character.skills.name)}</p>
-                  <p className="text-sm text-slate-300">{stripTags(character.skills.description)}</p>
+                  {character.skills && character.skills.length > 0 ? (
+                    <ul className="space-y-3">
+                        {character.skills.map((skill, index) => (
+                             <li key={index} className="bg-slate-900/30 p-2 rounded-md">
+                                <p className="font-bold text-yellow-400">{stripTags(skill.name)}</p>
+                                <p className="text-sm text-slate-300">{stripTags(skill.description)}</p>
+                            </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <p className="text-slate-500 text-sm italic">Chưa học được kỹ năng nào.</p>
+                  )}
                 </div>
               </div>
 

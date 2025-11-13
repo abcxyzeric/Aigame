@@ -1,6 +1,6 @@
 
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { GameTurn } from '../types';
 import Icon from './common/Icon';
 
@@ -49,6 +49,19 @@ interface StoryLogModalProps {
 }
 
 const StoryLogModal: React.FC<StoryLogModalProps> = ({ isOpen, onClose, history, title }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen && scrollRef.current) {
+        // Use timeout to ensure content is rendered before scrolling
+        setTimeout(() => {
+            if (scrollRef.current) {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+            }
+        }, 50);
+    }
+  }, [isOpen, history]);
+
   if (!isOpen) return null;
 
   return (
@@ -68,7 +81,7 @@ const StoryLogModal: React.FC<StoryLogModalProps> = ({ isOpen, onClose, history,
           </button>
         </div>
 
-        <div className="flex-grow overflow-y-auto pr-3 space-y-6">
+        <div ref={scrollRef} className="flex-grow overflow-y-auto pr-3 space-y-6">
           {history.map((turn, index) => (
             <div key={index}>
               {turn.type === 'narration' ? (

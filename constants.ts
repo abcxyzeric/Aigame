@@ -33,7 +33,15 @@ export const SEXUAL_CONTENT_STYLE_OPTIONS = ['Hoa mỹ', 'Trần tục', 'Gợi 
 export const VIOLENCE_LEVEL_OPTIONS = ['Nhẹ nhàng', 'Thực tế', 'Cực đoan'];
 export const STORY_TONE_OPTIONS = ['Tích cực', 'Trung tính', 'Đen tối', 'Dâm dục'];
 
-export const ENTITY_TYPE_OPTIONS = ['NPC', 'Địa điểm', 'Vật phẩm', 'Phe phái/Thế lực'];
+export const ENTITY_TYPE_OPTIONS = [
+    'NPC', 
+    'Địa điểm', 
+    'Vật phẩm', 
+    'Phe phái/Thế lực', 
+    'Cảnh giới', 
+    'Công pháp / Kỹ năng'
+];
+
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   storyContext: {
@@ -47,7 +55,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
     customPersonality: '',
     gender: GENDER_OPTIONS[0],
     bio: '',
-    skills: { name: '', description: '' },
+    skills: [],
     motivation: '',
   },
   difficulty: DIFFICULTY_OPTIONS[1],

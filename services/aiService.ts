@@ -1,10 +1,13 @@
 
 
+
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
 import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest } from '../types';
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS } from '../constants';
+import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
 
 let ai: GoogleGenAI | null = null;
@@ -114,14 +117,14 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
   }
 }
 
-async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string): Promise<T> {
+async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash'): Promise<T> {
   const aiInstance = getAiInstance();
   const { safetySettings } = getSettings();
   const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
   
   try {
     const response = await aiInstance.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: model,
         contents: prompt,
         config: {
             systemInstruction,
@@ -199,12 +202,11 @@ export const generateCharacterBio = (config: WorldConfig): Promise<string> => {
     return generate(prompt);
 };
 
-export const generateCharacterSkills = (config: WorldConfig): Promise<{ name: string; description: string; }> => {
+// FIX: Changed function to return an array of skills and updated implementation.
+export const generateCharacterSkills = (config: WorldConfig): Promise<{ name: string; description: string; }[]> => {
     const { storyContext, character } = config;
-    const currentSkillName = character.skills.name.trim();
-    const currentSkillDesc = character.skills.description.trim();
 
-    const schema = {
+    const skillSchema = {
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING, description: "Tên của kỹ năng." },
@@ -213,24 +215,47 @@ export const generateCharacterSkills = (config: WorldConfig): Promise<{ name: st
         required: ['name', 'description']
     };
     
+    const schema = {
+        type: Type.ARRAY,
+        description: "Một danh sách từ 1-3 kỹ năng khởi đầu phù hợp.",
+        items: skillSchema
+    };
+
+    const prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}), hãy tạo ra một danh sách từ 1 đến 3 kỹ năng khởi đầu độc đáo và phù hợp cho nhân vật này, bao gồm cả tên và mô tả cho mỗi kỹ năng.`;
+
+    return generateJson<{ name: string; description: string; }[]>(prompt, schema);
+};
+
+export const generateSingleSkill = (config: WorldConfig, existingName?: string): Promise<{ name: string; description: string; }> => {
+    const { storyContext, character } = config;
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của kỹ năng." },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn, hấp dẫn về kỹ năng." }
+        },
+        required: ['name', 'description']
+    };
+    
     let prompt: string;
-    if (currentSkillName && !currentSkillDesc) {
-        prompt = `Một nhân vật tên là "${character.name}" với tiểu sử "${character.bio}" trong thế giới (Thể loại: ${storyContext.genre}) có một kỹ năng tên là "${currentSkillName}". Hãy viết một đoạn mô tả chi tiết và hấp dẫn cho kỹ năng này.`;
-    } else if (currentSkillName && currentSkillDesc) {
-        prompt = `Một nhân vật tên là "${character.name}" với tiểu sử "${character.bio}" trong thế giới (Thể loại: ${storyContext.genre}) có kỹ năng "${currentSkillName}" với mô tả: "${currentSkillDesc}". Hãy viết lại mô tả này để nó trở nên độc đáo và mạnh mẽ hơn.`;
+    if (existingName && existingName.trim()) {
+        prompt = `Một nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) trong thế giới (Thể loại: ${storyContext.genre}) có một kỹ năng tên là "${existingName}". Hãy viết một mô tả ngắn gọn và hấp dẫn cho kỹ năng này.`;
     } else {
-        prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra một kỹ năng khởi đầu độc đáo và phù hợp cho nhân vật này, bao gồm cả tên và mô tả.`;
+        prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra MỘT kỹ năng khởi đầu độc đáo và phù hợp, bao gồm cả tên và mô tả.`;
     }
 
     return generateJson<{ name: string; description: string; }>(prompt, schema);
 };
 
+// FIX: Correctly access character.skills as an array.
 export const generateCharacterMotivation = (config: WorldConfig): Promise<string> => {
     const { storyContext, character } = config;
     const currentMotivation = character.motivation.trim();
+    const skillsString = character.skills.map(s => s.name).filter(Boolean).join(', ') || 'Chưa có';
     const prompt = currentMotivation
-        ? `Nhân vật "${character.name}" (Tiểu sử: ${character.bio}, Kỹ năng: ${character.skills.name}) hiện có động lực là: "${currentMotivation}". Dựa vào toàn bộ thông tin về nhân vật và thế giới, hãy phát triển động lực này để nó trở nên cụ thể, có chiều sâu và tạo ra một mục tiêu rõ ràng hơn cho cuộc phiêu lưu.`
-        : `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}, Kỹ năng: ${character.skills.name}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy đề xuất một mục tiêu hoặc động lực hấp dẫn để bắt đầu cuộc phiêu lưu của họ. Trả lời bằng một câu ngắn gọn.`;
+        ? `Nhân vật "${character.name}" (Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) hiện có động lực là: "${currentMotivation}". Dựa vào toàn bộ thông tin về nhân vật và thế giới, hãy phát triển động lực này để nó trở nên cụ thể, có chiều sâu và tạo ra một mục tiêu rõ ràng hơn cho cuộc phiêu lưu.`
+        : `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy đề xuất một mục tiêu hoặc động lực hấp dẫn để bắt đầu cuộc phiêu lưu của họ. Trả lời bằng một câu ngắn gọn.`;
     return generate(prompt);
 };
 
@@ -246,7 +271,7 @@ export const generateEntityPersonality = (config: WorldConfig, entity: InitialEn
     const currentPersonality = entity.personality.trim();
     const prompt = currentPersonality
         ? `Tính cách hiện tại của NPC "${entity.name}" là: "${currentPersonality}". Dựa vào đó và bối cảnh thế giới "${config.storyContext.setting}", hãy viết lại một phiên bản mô tả tính cách chi tiết hơn, có thể thêm vào các thói quen, mâu thuẫn nội tâm hoặc các chi tiết nhỏ để làm nhân vật trở nên sống động.`
-        : `Mô tả ngắn gọn tính cách (1-2 câu) cho một NPC tên là "${entity.name}" trong bối cảnh thế giới: "${config.storyContext.setting}".`;
+        : `Mô tả RẤT ngắn gọn tính cách (1 câu) cho một NPC tên là "${entity.name}" trong bối cảnh thế giới: "${config.storyContext.setting}".`;
     return generate(prompt);
 };
 
@@ -254,7 +279,7 @@ export const generateEntityDescription = (config: WorldConfig, entity: InitialEn
     const currentDescription = entity.description.trim();
     const prompt = currentDescription
         ? `Mô tả hiện tại của thực thể "${entity.name}" (loại: "${entity.type}") là: "${currentDescription}". Dựa vào đó và bối cảnh thế giới "${config.storyContext.setting}", hãy viết lại một phiên bản mô tả chi tiết và hấp dẫn hơn, có thể thêm vào lịch sử, chi tiết ngoại hình, hoặc công dụng/vai trò của nó trong thế giới.`
-        : `Viết một mô tả ngắn gọn (2-3 câu) và hấp dẫn cho thực thể có tên "${entity.name}", thuộc loại "${entity.type}", trong bối cảnh thế giới: "${config.storyContext.setting}".`;
+        : `Viết một mô tả RẤT ngắn gọn (1-2 câu) và hấp dẫn cho thực thể có tên "${entity.name}", thuộc loại "${entity.type}", trong bối cảnh thế giới: "${config.storyContext.setting}".`;
     return generate(prompt);
 };
 
@@ -265,9 +290,10 @@ export async function generateWorldFromIdea(idea: string): Promise<WorldConfig> 
         name: { type: Type.STRING, description: "Tên của thực thể." },
         type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
         personality: { type: Type.STRING, description: "Mô tả tính cách (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
-        description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." }
+        description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." },
+        tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể." },
     },
-    required: ['name', 'type', 'description']
+    required: ['name', 'type', 'description', 'tags']
   };
 
   const schema = {
@@ -289,14 +315,18 @@ export async function generateWorldFromIdea(idea: string): Promise<WorldConfig> 
                   personality: { type: Type.STRING, enum: PERSONALITY_OPTIONS.slice(1), description: "Tính cách của nhân vật (không chọn 'Tuỳ chỉnh')." },
                   gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
                   bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật." },
+                  // FIX: Changed skills schema to be an array of objects to match the data type.
                   skills: { 
-                      type: Type.OBJECT,
-                      description: "Kỹ năng khởi đầu của nhân vật.",
-                      properties: {
-                          name: { type: Type.STRING },
-                          description: { type: Type.STRING }
-                      },
-                      required: ['name', 'description']
+                      type: Type.ARRAY,
+                      description: "Danh sách 1-3 kỹ năng khởi đầu của nhân vật.",
+                      items: {
+                          type: Type.OBJECT,
+                          properties: {
+                              name: { type: Type.STRING },
+                              description: { type: Type.STRING }
+                          },
+                          required: ['name', 'description']
+                      }
                   },
                   motivation: { type: Type.STRING, description: "Mục tiêu hoặc động lực chính của nhân vật." },
               },
@@ -306,22 +336,23 @@ export async function generateWorldFromIdea(idea: string): Promise<WorldConfig> 
           allowAdultContent: { type: Type.BOOLEAN, description: "Cho phép nội dung người lớn hay không." },
           initialEntities: {
               type: Type.ARRAY,
-              description: "Danh sách từ 3-5 thực thể ban đầu trong thế giới (NPC, địa điểm, vật phẩm, phe phái...).",
+              description: "Danh sách từ 5 đến 8 thực thể ban đầu trong thế giới (NPC, địa điểm, vật phẩm, phe phái...).",
               items: entitySchema
           }
       },
       required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
   };
 
-  const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là tiểu thuyết, đồng nhân (fan fiction) và văn học mạng. Dựa trên ý tưởng ban đầu sau: "${idea}", hãy dành thời gian suy nghĩ kỹ lưỡng để kiến tạo một cấu hình thế giới game hoàn chỉnh, chi tiết và có chiều sâu bằng tiếng Việt.
+  const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là tiểu thuyết, đồng nhân (fan fiction) và văn học mạng. Dựa trên ý tưởng ban đầu sau: "${idea}", hãy dành thời gian suy nghĩ kỹ lưỡng để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG:** Nếu ý tưởng nhắc đến một tác phẩm đã có (ví dụ: "đồng nhân truyện X"), hãy dựa trên kiến thức của bạn về tác phẩm đó để xây dựng thế giới, nhưng đồng thời phải tạo ra các yếu-tố-mới và độc-đáo để câu chuyện có hướng đi riêng.
 2.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
-3.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải chi tiết. Nhân vật phải có chiều sâu. Tạo ra 3-5 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
-4.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-5.  **KHÔNG SỬ DỤNG TAG:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
-  return generateJson<WorldConfig>(prompt, schema);
+3.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
+4.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+5.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+6.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
 
 export async function generateFanfictionWorld(idea: string): Promise<WorldConfig> {
@@ -331,9 +362,10 @@ export async function generateFanfictionWorld(idea: string): Promise<WorldConfig
         name: { type: Type.STRING, description: "Tên của thực thể." },
         type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
         personality: { type: Type.STRING, description: "Mô tả tính cách (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
-        description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." }
+        description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." },
+        tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể." },
     },
-    required: ['name', 'type', 'description']
+    required: ['name', 'type', 'description', 'tags']
   };
 
   const schema = {
@@ -355,14 +387,18 @@ export async function generateFanfictionWorld(idea: string): Promise<WorldConfig
                   personality: { type: Type.STRING, enum: PERSONALITY_OPTIONS.slice(1), description: "Tính cách của nhân vật (không chọn 'Tuỳ chỉnh')." },
                   gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
                   bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật, giải thích vai trò của họ trong thế giới đồng nhân này." },
+                  // FIX: Changed skills schema to be an array of objects and corrected typo.
                   skills: { 
-                      type: Type.OBJECT,
-                      description: "Kỹ năng khởi đầu của nhân vật, phải phù hợp với hệ thống sức mạnh của tác phẩm gốc.",
-                      properties: {
-                          name: { type: Type.STRING },
-                          description: { type: Type.STRING }
-                      },
-                      required: ['name', 'description']
+                      type: Type.ARRAY,
+                      description: "Danh sách 1-3 kỹ năng khởi đầu của nhân vật, phải phù hợp với hệ thống sức mạnh của tác phẩm gốc.",
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            description: { type: Type.STRING }
+                        },
+                        required: ['name', 'description']
+                      }
                   },
                   motivation: { type: Type.STRING, description: "Mục tiêu hoặc động lực chính của nhân vật trong kịch bản mới này." },
               },
@@ -372,24 +408,25 @@ export async function generateFanfictionWorld(idea: string): Promise<WorldConfig
           allowAdultContent: { type: Type.BOOLEAN, description: "Cho phép nội dung người lớn hay không." },
           initialEntities: {
               type: Type.ARRAY,
-              description: "Danh sách từ 3-5 thực thể ban đầu trong thế giới (có thể là nhân vật, địa điểm, vật phẩm từ tác phẩm gốc hoặc được tạo mới).",
+              description: "Danh sách từ 5 đến 8 thực thể ban đầu trong thế giới (có thể là nhân vật, địa điểm, vật phẩm từ tác phẩm gốc hoặc được tạo mới).",
               items: entitySchema
           }
       },
       required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
   };
   
-  const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là các tác phẩm gốc (tiểu thuyết, truyện tranh, game) và văn học mạng (đồng nhân, fan fiction). Dựa trên ý tưởng đồng nhân/fanfiction sau: "${idea}", hãy sử dụng kiến thức sâu rộng của bạn về tác phẩm gốc được đề cập để kiến tạo một cấu hình thế giới game hoàn chỉnh, chi tiết và có chiều sâu bằng tiếng Việt.
+  const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là các tác phẩm gốc (tiểu thuyết, truyện tranh, game) và văn học mạng (đồng nhân, fan fiction). Dựa trên ý tưởng đồng nhân/fanfiction sau: "${idea}", hãy sử dụng kiến thức sâu rộng của bạn về tác phẩm gốc được đề cập để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Vận dụng toàn bộ kiến thức của bạn về thế giới, nhân vật, hệ thống sức mạnh và cốt truyện của tác phẩm đó làm nền tảng.
 2.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
 3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
-4.  **CHẤT LƯỢNG CAO:** Tạo ra 3-5 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
-5.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-6.  **KHÔNG SỬ DỤNG TAG:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+4.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
+5.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+6.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+7.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
     
-  return generateJson<WorldConfig>(prompt, schema);
+  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
 
 export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: string): Promise<InitialEntity> => {
@@ -401,8 +438,9 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
         properties: {
             name: { type: Type.STRING, description: "Tên chính xác của thực thể được cung cấp." },
             type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể (NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực)." },
-            personality: { type: Type.STRING, description: "Mô tả tính cách (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
+            personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết, hợp lý và sáng tạo về thực thể dựa trên bối cảnh." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí') để phân loại thực thể." },
             details: { 
                 type: Type.OBJECT,
                 description: "Một đối tượng chứa các thuộc tính chi tiết nếu thực thể là 'Vật phẩm' (VD: vũ khí, áo giáp, trang sức). Để trống nếu không phải Vật phẩm. Các thuộc tính phải phù hợp với thể loại của thế giới (VD: fantasy thì có 'Sát thương phép', cyberpunk thì có 'Tốc độ hack').",
@@ -414,7 +452,7 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
                 }
             }
         },
-        required: ['name', 'type', 'description']
+        required: ['name', 'type', 'description', 'tags']
     };
 
     const prompt = `Trong bối cảnh câu chuyện sau:
@@ -423,7 +461,10 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
 - Diễn biến gần đây:
 ${recentHistory}
 
-Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy sáng tạo ra thông tin chi tiết cho thực thể này. Hãy suy đoán xem nó là NPC, vật phẩm, địa điểm hay một phe phái/thế lực. Nếu thực thể là 'Vật phẩm', hãy điền thêm các thông tin chi tiết vào trường 'details', bao gồm loại phụ, độ hiếm, chỉ số và hiệu ứng đặc biệt, sao cho phù hợp với thể loại và bối cảnh của thế giới. Trả về một đối tượng JSON tuân thủ schema đã cho.`;
+Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy sáng tạo ra thông tin chi tiết cho thực thể này. Hãy suy đoán xem nó là NPC, vật phẩm, địa điểm hay một phe phái/thế lực.
+- Nếu thực thể là 'Vật phẩm', hãy điền thêm các thông tin chi tiết vào trường 'details'.
+- QUAN TRỌNG: Hãy tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể này.
+Trả về một đối tượng JSON tuân thủ schema đã cho.`;
 
     return generateJson<InitialEntity>(prompt, schema);
 };
@@ -595,8 +636,17 @@ const getAdultContentDirectives = (config: WorldConfig): string => {
 }
 
 
-const getGameMasterSystemInstruction = (): string => {
-  return `Bạn là một Quản trò (Game Master - GM) cho một game nhập vai text-based, với khả năng kể chuyện sáng tạo và logic. 
+const getGameMasterSystemInstruction = (genre: string): string => {
+  const normalizedGenre = genre.toLowerCase();
+  let genreConfig = null;
+
+  if (normalizedGenre.includes('tu tiên') || normalizedGenre.includes('tiên hiệp') || normalizedGenre.includes('huyền huyễn')) {
+    genreConfig = GENRE_TAGGING_SYSTEMS['tu_tien'];
+  } else if (normalizedGenre.includes('sci-fi') || normalizedGenre.includes('khoa học viễn tưởng')) {
+    genreConfig = GENRE_TAGGING_SYSTEMS['sci_fi'];
+  }
+
+  let instruction = `Bạn là một Quản trò (Game Master - GM) cho một game nhập vai text-based, với khả năng kể chuyện sáng tạo và logic. 
 Nhiệm vụ của bạn là dẫn dắt câu chuyện dựa trên một thế giới đã được định sẵn và hành động của người chơi.
 QUY TẮC BẮT BUỘC:
 1.  **Ngôn ngữ:** TOÀN BỘ phản hồi của bạn BẮT BUỘC phải bằng TIẾNG VIỆT.
@@ -633,18 +683,32 @@ QUY TẮC BẮT BUỘC:
     c. **Tham khảo Ký ức:** Trước mỗi lượt kể, hãy xem lại toàn bộ lịch sử trò chuyện để đảm bảo bạn không quên cách xưng hô đã được thiết lập. Sự thiếu nhất quán sẽ phá hỏng trải nghiệm.
 10. **ĐỘ DÀI VÀ CHẤT LƯỢNG (QUAN TRỌNG):** Phần kể chuyện của bạn phải có độ dài đáng kể (tối thiểu 4-5 đoạn văn chi tiết, khoảng 500 chữ) để người chơi đắm chìm vào thế giới. Khi có sự thay đổi về trạng thái nhân vật (sử dụng thẻ <status>), hãy **tích hợp nó một cách tự nhiên vào lời kể**, không biến nó thành nội dung chính duy nhất. Phần mô tả trạng thái chỉ là một phần của diễn biến, không thay thế cho toàn bộ câu chuyện.
 11. **QUAN TRỌNG - JSON OUTPUT:** Khi bạn trả lời dưới dạng JSON, TUYỆT ĐỐI không sử dụng bất kỳ thẻ định dạng nào (ví dụ: <entity>, <important>) bên trong các trường chuỗi (string) của JSON. Dữ liệu JSON phải là văn bản thuần túy.
-12. **TRÍ NHỚ DÀI HẠN:** Để duy trì sự nhất quán cho câu chuyện dài (hàng trăm lượt chơi), bạn PHẢI dựa vào "Ký ức cốt lõi" và "Tóm tắt các giai đoạn trước" được cung cấp trong mỗi lượt. Đây là bộ nhớ dài hạn của bạn. Hãy sử dụng chúng để nhớ lại các sự kiện, nhân vật, và chi tiết quan trọng đã xảy ra, đảm bảo câu chuyện luôn liền mạch và logic.`;
+12. **TRÍ NHỚ DÀI HẠN:** Để duy trì sự nhất quán cho câu chuyện dài (hàng trăm lượt chơi), bạn PHẢI dựa vào "Ký ức cốt lõi", "Tóm tắt các giai đoạn trước" và "Bách Khoa Toàn Thư" được cung cấp trong mỗi lượt. Đây là bộ nhớ dài hạn của bạn. Hãy sử dụng chúng để nhớ lại các sự kiện, nhân vật, và chi tiết quan trọng đã xảy ra, đảm bảo câu chuyện luôn liền mạch và logic.`;
+
+  if (genreConfig) {
+      // Replace the old generic tagging rule (rule #8) with the new genre-specific one
+      const oldTaggingRuleRegex = /8\.\s+\*\*ĐỊNH DẠNG ĐẶC BIỆT \(QUAN TRỌNG\):.+?8\.5/s;
+      
+      const exclusionInstruction = `
+    g.  **QUAN TRỌNG - KHÔNG TAG TỪ KHÓA CHUNG:** TUYỆT ĐỐI KHÔNG được bọc các từ khóa chung và phổ biến sau đây trong bất kỳ thẻ nào. Hãy xem chúng là văn bản thông thường: ${genreConfig.commonKeywords.join(', ')}.
+      `;
+      
+      const newTaggingSystem = genreConfig.system + exclusionInstruction;
+      instruction = instruction.replace(oldTaggingRuleRegex, `${newTaggingSystem}\n8.5`);
+  }
+  
+  return instruction;
 };
 
 export const startGame = (config: WorldConfig): Promise<StartGameResponse> => {
-    const systemInstruction = getGameMasterSystemInstruction();
+    const systemInstruction = getGameMasterSystemInstruction(config.storyContext.genre);
     const adultContentDirectives = getAdultContentDirectives(config);
 
     const statusEffectSchema = {
         type: Type.OBJECT,
         properties: {
-            name: { type: Type.STRING, description: "Tên trạng thái (ngắn gọn, VD: 'Bị Thương', 'Hưng Phấn')." },
-            description: { type: Type.STRING, description: "Mô tả ngắn gọn về hiệu ứng của trạng thái." },
+            name: { type: Type.STRING, description: "Tên trạng thái (RẤT ngắn gọn, VD: 'Bị Thương', 'Hưng Phấn')." },
+            description: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn về hiệu ứng của trạng thái." },
             type: { type: Type.STRING, enum: ['buff', 'debuff'], description: "Loại trạng thái: 'buff' (tích cực) hoặc 'debuff' (tiêu cực)." }
         },
         required: ['name', 'description', 'type']
@@ -665,8 +729,8 @@ export const startGame = (config: WorldConfig): Promise<StartGameResponse> => {
         properties: {
             description: { type: Type.STRING, description: "Mô tả hành động một cách NGẮN GỌN, SÚC TÍCH, tập trung vào hành động chính (VD: 'Kiểm tra chiếc rương', 'Hỏi chuyện người lính gác')." },
             successRate: { type: Type.NUMBER, description: "Một con số từ 0 đến 100, thể hiện tỷ lệ thành công ước tính của hành động." },
-            risk: { type: Type.STRING, description: "Mô tả NGẮN GỌN các rủi ro có thể xảy ra." },
-            reward: { type: Type.STRING, description: "Mô tả NGẮN GỌN các phần thưởng có thể nhận được." }
+            risk: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các rủi ro có thể xảy ra." },
+            reward: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các phần thưởng có thể nhận được." }
         },
         required: ['description', 'successRate', 'risk', 'reward']
     };
@@ -720,10 +784,48 @@ Bây giờ, hãy bắt đầu cuộc phiêu lưu.`;
     return generateJson<StartGameResponse>(prompt, schema, systemInstruction);
 };
 
+function buildEncyclopediaSummary(gameState: GameState): string {
+    const summaryParts: string[] = [];
+    const { worldConfig, character, inventory, encounteredNPCs, encounteredFactions, discoveredEntities, companions, quests } = gameState;
+    const MAX_DESC_LENGTH = 80;
+
+    // Use a Map to de-duplicate entities by name
+    const addedEntities = new Map<string, string>();
+
+    const addSection = (title: string, items: any[], nameKey: string, descKey: string) => {
+        if (!items || items.length === 0) return;
+        
+        const validItems = items.filter(item => item && item[nameKey] && !addedEntities.has(item[nameKey].toLowerCase()));
+        if (validItems.length === 0) return;
+
+        summaryParts.push(`\n## ${title}`);
+        validItems.forEach(item => {
+            const name = item[nameKey];
+            const description = (item[descKey] || 'Chưa có mô tả').substring(0, MAX_DESC_LENGTH);
+            summaryParts.push(`- ${name}: ${description}...`);
+            addedEntities.set(name.toLowerCase(), title);
+        });
+    };
+    
+    addSection('Nhân vật & Đồng hành', [...encounteredNPCs, ...companions], 'name', 'description');
+    addSection('Vật phẩm trong túi', inventory, 'name', 'description');
+    addSection('Kỹ năng', character.skills, 'name', 'description');
+    addSection('Nhiệm vụ', quests, 'name', 'description');
+    addSection('Thế lực', encounteredFactions, 'name', 'description');
+
+    const allOtherEntities = [...(worldConfig.initialEntities || []), ...(discoveredEntities || [])];
+    addSection('Địa điểm', allOtherEntities.filter(e => e.type === 'Địa điểm'), 'name', 'description');
+    addSection('Khái niệm & Thực thể khác', allOtherEntities.filter(e => !addedEntities.has(e.name.toLowerCase())), 'name', 'description');
+
+    if (summaryParts.length === 0) return "Chưa có thông tin nào trong bách khoa toàn thư.";
+    
+    return `--- BÁCH KHOA TOÀN THƯ (Dữ liệu tham khảo tóm tắt) ---\n${summaryParts.join('\n')}`;
+}
+
 
 export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     const { worldConfig, character, history, memories, summaries, playerStatus, inventory, encounteredNPCs, encounteredFactions, companions, quests } = gameState;
-    const systemInstruction = getGameMasterSystemInstruction();
+    const systemInstruction = getGameMasterSystemInstruction(worldConfig.storyContext.genre);
     const adultContentDirectives = getAdultContentDirectives(worldConfig);
     const isBypassMode = worldConfig.allowAdultContent && !getSettings().safetySettings.enabled;
 
@@ -746,12 +848,14 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     const temporaryRulesPrompt = activeTemporaryRules 
         ? `\n\n--- LUẬT TẠM THỜI (QUAN TRỌNG) ---\nNgoài các luật lệ cốt lõi, hãy tuân thủ nghiêm ngặt các quy tắc hoặc tình huống tạm thời sau đây trong lượt này:\n${activeTemporaryRules}` 
         : '';
+        
+    const encyclopediaSummary = buildEncyclopediaSummary(gameState);
 
     const statusEffectSchema = {
         type: Type.OBJECT,
         properties: {
-            name: { type: Type.STRING, description: "Tên trạng thái (ngắn gọn, VD: 'Trúng Độc', 'Hưng Phấn')." },
-            description: { type: Type.STRING, description: "Mô tả ngắn gọn về hiệu ứng của trạng thái." },
+            name: { type: Type.STRING, description: "Tên trạng thái (RẤT ngắn gọn, VD: 'Trúng Độc', 'Hưng Phấn')." },
+            description: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn về hiệu ứng của trạng thái." },
             type: { type: Type.STRING, enum: ['buff', 'debuff'], description: "Loại trạng thái: 'buff' (tích cực) hoặc 'debuff' (tiêu cực)." }
         },
         required: ['name', 'description', 'type']
@@ -762,8 +866,8 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         properties: {
             description: { type: Type.STRING, description: "Mô tả hành động một cách NGẮN GỌN, SÚC TÍCH, tập trung vào hành động chính (VD: 'Kiểm tra chiếc rương', 'Hỏi chuyện người lính gác')." },
             successRate: { type: Type.NUMBER, description: "Một con số từ 0 đến 100, thể hiện tỷ lệ thành công ước tính của hành động." },
-            risk: { type: Type.STRING, description: "Mô tả NGẮN GỌN các rủi ro có thể xảy ra." },
-            reward: { type: Type.STRING, description: "Mô tả NGẮN GỌN các phần thưởng có thể nhận được." }
+            risk: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các rủi ro có thể xảy ra." },
+            reward: { type: Type.STRING, description: "Mô tả CỰC KỲ NGẮN GỌN các phần thưởng có thể nhận được." }
         },
         required: ['description', 'successRate', 'risk', 'reward']
     };
@@ -773,7 +877,8 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         properties: {
             name: { type: Type.STRING, description: "Tên của vật phẩm." },
             description: { type: Type.STRING, description: "Mô tả ngắn gọn về vật phẩm." },
-            quantity: { type: Type.NUMBER, description: "Số lượng vật phẩm." }
+            quantity: { type: Type.NUMBER, description: "Số lượng vật phẩm." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho vật phẩm." },
         },
         required: ['name', 'description', 'quantity']
     };
@@ -787,12 +892,15 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
             gender: { type: Type.STRING },
             bio: { type: Type.STRING, description: "Tiểu sử/ngoại hình của nhân vật. CẬP NHẬT nếu có thay đổi về ngoại hình hoặc danh tiếng." },
             skills: { 
-                type: Type.OBJECT,
-                properties: {
-                    name: { type: Type.STRING },
-                    description: { type: Type.STRING, description: "CẬP NHẬT mô tả kỹ năng nếu nhân vật trở nên thành thạo hơn." }
-                },
-                required: ['name', 'description']
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING },
+                        description: { type: Type.STRING, description: "CẬP NHẬT mô tả kỹ năng nếu nhân vật trở nên thành thạo hơn." }
+                    },
+                    required: ['name', 'description']
+                }
             },
             motivation: { type: Type.STRING, description: "CẬP NHẬT mục tiêu/động lực nếu có sự thay đổi lớn trong cốt truyện." },
         },
@@ -804,8 +912,9 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         properties: {
             name: { type: Type.STRING },
             description: { type: Type.STRING, description: "Mô tả về ngoại hình, lai lịch của NPC." },
-            personality: { type: Type.STRING, description: "Mô tả về tính cách của NPC." },
-            thoughtsOnPlayer: { type: Type.STRING, description: "Suy nghĩ, cảm nhận của NPC này về người chơi. CẬP NHẬT LIÊN TỤC sau mỗi tương tác." }
+            personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn về tính cách của NPC." },
+            thoughtsOnPlayer: { type: Type.STRING, description: "Suy nghĩ, cảm nhận của NPC này về người chơi. CẬP NHẬT LIÊN TỤC sau mỗi tương tác." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho NPC." },
         },
         required: ['name', 'description', 'personality', 'thoughtsOnPlayer']
     };
@@ -814,7 +923,8 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING },
-            description: { type: Type.STRING, description: "Mô tả chi tiết về lịch sử, mục tiêu, và sức ảnh hưởng của phe phái." }
+            description: { type: Type.STRING, description: "Mô tả chi tiết về lịch sử, mục tiêu, và sức ảnh hưởng của phe phái." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho phe phái." },
         },
         required: ['name', 'description']
     };
@@ -824,7 +934,8 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         properties: {
             name: { type: Type.STRING },
             description: { type: Type.STRING, description: "Mô tả về ngoại hình, lai lịch của đồng hành." },
-            personality: { type: Type.STRING, description: "Mô tả về tính cách của đồng hành (nếu có)." }
+            personality: { type: Type.STRING, description: "Mô tả về tính cách của đồng hành (nếu có)." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho đồng hành." },
         },
         required: ['name', 'description']
     };
@@ -833,7 +944,8 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING, description: "Tên nhiệm vụ (ngắn gọn)." },
-            description: { type: Type.STRING, description: "Mô tả chi tiết về mục tiêu và bối cảnh của nhiệm vụ." }
+            description: { type: Type.STRING, description: "Mô tả chi tiết về mục tiêu và bối cảnh của nhiệm vụ." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho nhiệm vụ." },
         },
         required: ['name', 'description']
     };
@@ -898,7 +1010,7 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     ${temporaryRulesPrompt}
 
     --- BỘ NHỚ CỦA QUẢN TRÒ (CONTEXT DÀI HẠN) ---
-    QUAN TRỌNG: Để duy trì tính nhất quán của câu chuyện, hãy coi đây là nguồn thông tin chính xác nhất về những gì đã xảy ra trước đây. Hãy dựa vào Ký ức và Tóm tắt để nhớ lại các chi tiết quan trọng.
+    QUAN TRỌNG: Để duy trì tính nhất quán của câu chuyện, hãy coi đây là nguồn thông tin chính xác nhất về những gì đã xảy ra trước đây. Hãy dựa vào Ký ức, Tóm tắt, và Bách Khoa Toàn Thư để nhớ lại các chi tiết quan trọng.
     Thông tin nhân vật chính:
     ${JSON.stringify(character, null, 2)}
     
@@ -908,23 +1020,11 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     Tóm tắt các giai đoạn trước:
     ${summaries.length > 0 ? summaries.map((s, i) => `Giai đoạn ${i + 1}:\n${s}`).join('\n\n') : "Chưa có tóm tắt nào."}
     
+    ${encyclopediaSummary}
+
     Trạng thái hiện tại của nhân vật chính:
     ${playerStatus.length > 0 ? playerStatus.map(s => `- ${s.name} (${s.type}): ${s.description}`).join('\n') : "Không có trạng thái nào."}
 
-    Túi đồ hiện tại của nhân vật chính:
-    ${inventory.length > 0 ? inventory.map(i => `- ${i.name} (SL: ${i.quantity}): ${i.description}`).join('\n') : "Túi đồ trống."}
-
-    Các NPC đã gặp:
-    ${encounteredNPCs.length > 0 ? encounteredNPCs.map(npc => `- ${npc.name}: ${npc.thoughtsOnPlayer}`).join('\n') : "Chưa gặp NPC nào."}
-    
-    Các phe phái đã biết:
-    ${encounteredFactions.length > 0 ? encounteredFactions.map(f => `- ${f.name}`).join('\n') : "Chưa biết phe phái nào."}
-    
-    Đồng hành hiện tại:
-    ${companions?.length > 0 ? companions.map(c => `- ${c.name}`).join('\n') : "Không có đồng hành nào."}
-
-    Nhiệm vụ đang làm:
-    ${quests?.length > 0 ? quests.map(q => `- ${q.name}`).join('\n') : "Không có nhiệm vụ nào."}
     --- KẾT THÚC BỘ NHỚ ---
     
     Đây là diễn biến gần đây nhất của câu chuyện (tối đa 12 lượt):
@@ -933,7 +1033,7 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     --- QUY TRÌNH SUY LUẬN BẮT BUỘC (Thực hiện nội bộ trước khi trả lời) ---
     TRƯỚC KHI VIẾT PHẦN KỂ CHUYỆN, hãy âm thầm thực hiện các bước phân tích sau trong đầu của bạn (không viết ra ngoài):
     1.  **Phân tích hành động của người chơi:** Hiểu rõ yêu cầu cốt lõi và ý định đằng sau hành động đó là gì.
-    2.  **Quét toàn bộ bối cảnh:** Xem xét lại toàn bộ "BỘ NHỚ CỦA QUẢN TRÒ" (tính cách & mục tiêu nhân vật, ký ức cốt lõi, tóm tắt, trạng thái, vật phẩm, NPC, nhiệm vụ) và "Diễn biến gần đây nhất". Tất cả các yếu tố này phải được cân nhắc để đảm bảo tính nhất quán.
+    2.  **Quét toàn bộ bối cảnh:** Xem xét lại toàn bộ "BỘ NHỚ CỦA QUẢN TRÒ" (tính cách & mục tiêu nhân vật, ký ức cốt lõi, tóm tắt, trạng thái, vật phẩm, NPC, nhiệm vụ, Bách Khoa) và "Diễn biến gần đây nhất". Tất cả các yếu tố này phải được cân nhắc để đảm bảo tính nhất quán.
     3.  **Lên kế hoạch diễn biến:** Dựa trên phân tích, quyết định kết quả hợp lý nhất của hành động. Môi trường sẽ phản ứng ra sao? NPC sẽ hành động/suy nghĩ thế nào? Nhân vật chính có khám phá ra điều gì mới không?
     4.  **Tự điều chỉnh & Sáng tạo:** Rà soát lại kế hoạch để đảm bảo nó logic, nhất quán với các sự kiện trước đó và không đi ngược lại các "Luật Lệ Cốt Lõi". Dựa trên bối cảnh, hãy xem xét liệu có nên giới thiệu một tình tiết bất ngờ, một NPC mới, hay một thử thách để câu chuyện thêm hấp dẫn và kịch tính không.
     --- KẾT THÚC QUY TRÌNH SUY LUẬN ---

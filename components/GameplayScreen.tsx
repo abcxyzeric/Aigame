@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest } from '../types';
 import * as aiService from '../services/aiService';
@@ -12,6 +14,7 @@ import MemoryModal from './MemoryModal';
 import StoryLogModal from './StoryLogModal';
 import InformationModal from './CharacterInfoModal';
 import EntityInfoModal from './common/EntityInfoModal';
+import EncyclopediaModal from './EncyclopediaModal';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -38,8 +41,9 @@ const InfoPanel: React.FC<{
   children: React.ReactNode;
   borderColorClass?: string;
   textColorClass?: string;
-}> = ({ title, iconName, children, borderColorClass = 'border-yellow-500', textColorClass = 'text-yellow-400' }) => {
-  const [isOpen, setIsOpen] = useState(true);
+  isInitiallyOpen?: boolean;
+}> = ({ title, iconName, children, borderColorClass = 'border-yellow-500', textColorClass = 'text-yellow-400', isInitiallyOpen = true }) => {
+  const [isOpen, setIsOpen] = useState(isInitiallyOpen);
 
   return (
     <div className={`bg-slate-800/60 border-l-4 ${borderColorClass} rounded-r-lg overflow-hidden flex flex-col`}>
@@ -134,16 +138,29 @@ const QuestList: React.FC<{ quests: Quest[], onSelect: (q: Quest) => void, onDel
 };
 
 
-const StatusTooltip: React.FC<{ statusName: string; statuses: StatusEffect[]; children: React.ReactNode }> = ({ statusName, statuses, children }) => {
-    const status = statuses.find(s => s.name.toLowerCase() === statusName.toLowerCase());
+const StatusTooltipWrapper: React.FC<{ statusName: string; statuses: StatusEffect[]; children: React.ReactNode; onClick: () => void }> = ({ statusName, statuses, children, onClick }) => {
+    const status = statuses.find(s => s.name.toLowerCase().trim() === statusName.toLowerCase().trim());
+    const specialStatuses = ['trúng độc', 'bị thương nặng', 'tẩu hỏa nhập ma', 'suy yếu']; // Keywords for special statuses
 
-    if (!status) {
-        return <>{children}</>;
+    // Always render a clickable button
+    const clickableElement = (
+        <button 
+            type="button" 
+            onClick={onClick} 
+            className="text-cyan-400 font-semibold cursor-pointer hover:underline focus:outline-none focus:ring-2 focus:ring-cyan-500 rounded-sm bg-transparent p-0 border-0 text-left"
+        >
+            {children}
+        </button>
+    );
+
+    // Only show tooltip for special statuses
+    if (!status || !specialStatuses.some(special => status.name.toLowerCase().includes(special))) {
+        return clickableElement;
     }
 
     return (
         <span className="relative group">
-            {children}
+            {clickableElement}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 hidden group-hover:block bg-slate-900 text-white text-xs rounded py-2 px-3 z-10 border border-slate-700 shadow-lg pointer-events-none">
                 <p className="font-bold mb-1">{status.name} ({status.type === 'buff' ? 'Tích cực' : 'Tiêu cực'})</p>
                 {status.description}
@@ -173,10 +190,10 @@ const FormattedNarration: React.FC<{ content: string; statuses: StatusEffect[]; 
                         case 'thought':
                             return <span key={index} className="text-cyan-300 italic">"{innerText}"</span>;
                         case 'status':
-                            return (
-                                <StatusTooltip key={index} statusName={innerText} statuses={statuses}>
-                                    <span className="text-cyan-400 font-semibold cursor-pointer hover:underline">{innerText}</span>
-                                </StatusTooltip>
+                             return (
+                                <StatusTooltipWrapper key={index} statusName={innerText} statuses={statuses} onClick={() => onEntityClick(innerText)}>
+                                    {innerText}
+                                </StatusTooltipWrapper>
                             );
                         case 'important':
                             return <button key={index} type="button" onClick={() => onEntityClick(innerText)} className="text-yellow-400 font-semibold cursor-pointer hover:underline focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded-sm bg-transparent p-0 border-0 text-left">{innerText}</button>;
@@ -231,6 +248,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [isTempRulesModalOpen, setIsTempRulesModalOpen] = useState(false);
   const [isStoryLogModalOpen, setIsStoryLogModalOpen] = useState(false);
   const [isInformationModalOpen, setIsInformationModalOpen] = useState(false);
+  const [isEncyclopediaModalOpen, setIsEncyclopediaModalOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showScrollUp, setShowScrollUp] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -238,50 +256,92 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
+  const [currentPage, setCurrentPage] = useState(0);
+
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
+  
+  const turnsPerPage = 10;
+  const narrationTurns = gameState.history.filter(h => h.type === 'narration');
+  const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
 
-  const turnCount = gameState.history.filter(turn => turn.type === 'narration').length;
+  const getTurnsForCurrentPage = () => {
+    if (narrationTurns.length === 0) return gameState.history;
+
+    const narrationIndicesInHistory = gameState.history
+        .map((turn, index) => (turn.type === 'narration' ? index : -1))
+        .filter(index => index !== -1);
+    
+    const startNarrationIndex = currentPage * turnsPerPage;
+    if (startNarrationIndex >= narrationIndicesInHistory.length) return [];
+    
+    const endNarrationIndex = Math.min(startNarrationIndex + turnsPerPage, narrationIndicesInHistory.length);
+
+    const historyStartIndex = narrationIndicesInHistory[startNarrationIndex];
+    // The slice should start from the action before the first narration of the page, unless it's the very first turn.
+    const sliceStart = historyStartIndex > 0 ? historyStartIndex -1 : 0;
+    
+    const historyEndIndex = narrationIndicesInHistory[endNarrationIndex - 1];
+    const sliceEnd = historyEndIndex + 1;
+
+    return gameState.history.slice(sliceStart, sliceEnd);
+  };
+  const currentTurns = getTurnsForCurrentPage();
+
+
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const isInitialLoading = isLoading && gameState.history.length === 0;
   const isTurnLoading = isLoading && gameState.history.length > 0;
 
   const handleEntityClick = useCallback(async (name: string) => {
     const lowerCaseName = name.toLowerCase().trim();
+    if (!lowerCaseName) return;
     if (lowerCaseName === gameState.character.name.toLowerCase().trim()) {
-        return; // Do not show info modal for the player character
+        setIsInformationModalOpen(true);
+        return;
     }
 
     let found: { title: string; description: string; type: string; details?: InitialEntity['details']; } | null = null;
-
-    // Search order: Skills, Inventory, Encountered (gameplay), Discovered (runtime), Initial (config)
-    // 1. Search Skills
-    if (gameState.character.skills.name.toLowerCase().trim() === lowerCaseName) {
-        found = { title: gameState.character.skills.name, description: gameState.character.skills.description, type: 'Kỹ năng' };
+    
+    // Search order: Statuses, Skills, Inventory, Companions, Quests, Encountered (gameplay), Discovered (runtime), Initial (config)
+    const status = gameState.playerStatus.find(s => s.name.toLowerCase().trim() === lowerCaseName);
+    if (status) {
+        found = { 
+            title: status.name, 
+            description: status.description, 
+            type: `Trạng thái (${status.type === 'buff' ? 'Tích cực' : 'Tiêu cực'})`,
+        };
     }
-    // 2. Search Inventory
+    if (!found) {
+        const skill = gameState.character.skills.find(s => s.name.toLowerCase().trim() === lowerCaseName);
+        if (skill) found = { title: skill.name, description: skill.description, type: 'Kỹ năng' };
+    }
     if (!found) {
         const item = gameState.inventory.find(i => i.name.toLowerCase().trim() === lowerCaseName);
         if (item) found = { title: item.name, description: item.description, type: 'Vật phẩm', details: item.details };
     }
-    // 3. Search Encountered NPCs (from gameplay)
+    if (!found) {
+        const companion = gameState.companions.find(c => c.name.toLowerCase().trim() === lowerCaseName);
+        if(companion) found = { title: companion.name, description: `${companion.description}\n\nTính cách: ${companion.personality || 'Chưa rõ'}`, type: 'Đồng hành' };
+    }
+     if (!found) {
+        const quest = gameState.quests.find(q => q.name.toLowerCase().trim() === lowerCaseName);
+        if(quest) found = { title: quest.name, description: quest.description, type: 'Nhiệm vụ' };
+    }
     if (!found) {
         const npc = gameState.encounteredNPCs.find(n => n.name.toLowerCase().trim() === lowerCaseName);
         if (npc) found = { title: npc.name, description: `${npc.description}\n\nTính cách: ${npc.personality}\n\nSuy nghĩ về người chơi: "${npc.thoughtsOnPlayer}"`, type: 'NPC' };
     }
-    // 4. Search Encountered Factions (from gameplay)
     if (!found) {
         const faction = gameState.encounteredFactions.find(f => f.name.toLowerCase().trim() === lowerCaseName);
         if (faction) found = { title: faction.name, description: faction.description, type: 'Phe phái/Thế lực' };
     }
-    // 5. Search newly discovered entities (runtime)
     if (!found) {
         const discovered = gameState.discoveredEntities?.find(e => e.name.toLowerCase().trim() === lowerCaseName);
         if (discovered) found = { title: discovered.name, description: discovered.description + (discovered.personality ? `\n\nTính cách: ${discovered.personality}`: ''), type: discovered.type, details: discovered.details };
     }
-    // 6. Search Initial Entities (from world config) as a fallback
     if (!found) {
         const entity = gameState.worldConfig.initialEntities.find(e => e.name.toLowerCase().trim() === lowerCaseName);
         if (entity) found = { title: entity.name, description: entity.description + (entity.personality ? `\n\nTính cách: ${entity.personality}`: ''), type: entity.type, details: entity.details };
@@ -295,7 +355,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         try {
             const newEntity = await aiService.generateEntityInfoOnTheFly(gameState, name);
             
-            // Save the newly generated entity to the state
             setGameState(prev => ({
                 ...prev,
                 discoveredEntities: [...(prev.discoveredEntities || []), newEntity]
@@ -359,6 +418,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const startGame = useCallback(async () => {
     if (gameState.history.length > 0) {
       setIsLoading(false);
+      const lastPage = totalPages > 0 ? totalPages - 1 : 0;
+      setCurrentPage(lastPage);
       setGameState(prev => ({
           ...prev,
           companions: prev.companions || [],
@@ -388,17 +449,22 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState]);
+  }, [gameState.worldConfig, gameState.history.length, totalPages]);
 
   useEffect(() => {
     startGame();
-  }, [startGame]);
+  }, []);
 
   useEffect(() => {
     if (!isInitialLoading) {
+      const newTotalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
+      const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
+      if (currentPage !== lastPage) {
+          setCurrentPage(lastPage);
+      }
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [gameState.history, isInitialLoading, isTurnLoading]);
+  }, [gameState.history, isInitialLoading, isTurnLoading, narrationTurns.length]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -617,6 +683,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         gameState={gameState}
         onItemDelete={handleDeleteItem}
       />
+       <EncyclopediaModal 
+        isOpen={isEncyclopediaModalOpen}
+        onClose={() => setIsEncyclopediaModalOpen(false)}
+        gameState={gameState}
+        setGameState={setGameState}
+      />
       <EntityInfoModal
         isOpen={!!entityModalContent}
         onClose={() => setEntityModalContent(null)}
@@ -660,14 +732,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 <span className="hidden sm:inline">Về Trang Chủ</span>
             </button>
             
-            <div className="flex items-center gap-4">
-              <div className="text-center">
-                <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[120px] sm:max-w-[200px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
-                <p className="text-xs text-fuchsia-400 hidden sm:block">Tính cách: {characterPersonality}</p>
-              </div>
-              <div className="bg-slate-900/50 border border-slate-700 px-3 py-1 rounded-lg text-center">
-                <span className="text-xs font-semibold text-slate-400 block">LƯỢT</span>
-                <span className="text-xl font-bold text-white leading-tight">{turnCount}</span>
+            <div className="text-center">
+              <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[150px] sm:max-w-[250px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
+              <div className="text-xs text-slate-400 flex items-center justify-center gap-x-3">
+                  <span className="text-fuchsia-400 hidden sm:inline">Tính cách: {characterPersonality}</span>
+                  <span>Lượt: {narrationTurns.length}</span>
               </div>
             </div>
              
@@ -677,6 +746,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                  <button onClick={handleManualSave} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-900/40 hover:bg-green-800/60 rounded-lg transition"><Icon name="save" className="w-4 h-4"/>Lưu Vào Tệp</button>
                  <button onClick={() => setIsTempRulesModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-300 bg-blue-900/40 hover:bg-blue-800/60 rounded-lg transition"><Icon name="rules" className="w-4 h-4"/>Luật Tạm Thời</button>
                  <button onClick={() => setIsMemoryModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition"><Icon name="memory" className="w-4 h-4"/>Ký Ức</button>
+                 <button onClick={() => setIsEncyclopediaModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-orange-300 bg-orange-900/40 hover:bg-orange-800/60 rounded-lg transition"><Icon name="encyclopedia" className="w-4 h-4"/>Bách Khoa</button>
                  <button onClick={handleRestart} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-pink-300 bg-pink-900/40 hover:bg-pink-800/60 rounded-lg transition"><Icon name="restart" className="w-4 h-4"/>Bắt Đầu Lại</button>
              </div>
 
@@ -686,11 +756,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                     <Icon name="ellipsisVertical" className="w-5 h-5" />
                 </button>
                 {isMenuOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-30 p-2 animate-fade-in-up">
+                    <div className="absolute top-full right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-[60] p-2 animate-fade-in-up">
                         <MenuButton onClick={() => setIsInformationModalOpen(true)} icon="info" label="Thông Tin" variant="pink" />
                         <MenuButton onClick={handleManualSave} icon="save" label="Lưu Game" variant="green" />
                         <MenuButton onClick={() => setIsTempRulesModalOpen(true)} icon="rules" label="Luật Tạm Thời" variant="blue" />
                         <MenuButton onClick={() => setIsMemoryModalOpen(true)} icon="memory" label="Ký Ức" variant="purple" />
+                        <MenuButton onClick={() => setIsEncyclopediaModalOpen(true)} icon="encyclopedia" label="Bách Khoa" variant="orange" />
                         <div className="my-1 border-t border-slate-700"></div>
                         <MenuButton onClick={handleRestart} icon="restart" label="Bắt Đầu Lại" variant="pink" />
                     </div>
@@ -706,6 +777,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 title="Trạng Thái Hiện Tại"
                 borderColorClass="border-cyan-500" 
                 textColorClass="text-cyan-400"
+                isInitiallyOpen={isDesktop}
             >
                 <StatusList statuses={gameState.playerStatus} onDelete={handleDeleteStatus} />
             </InfoPanel>
@@ -714,6 +786,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 title="Đồng Hành" 
                 borderColorClass="border-green-500" 
                 textColorClass="text-green-400"
+                isInitiallyOpen={isDesktop}
             >
                 <CompanionList companions={gameState.companions} onSelect={handleCompanionClick} />
             </InfoPanel>
@@ -722,6 +795,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 title="Nhiệm Vụ Đang Làm" 
                 borderColorClass="border-cyan-500" 
                 textColorClass="text-cyan-400"
+                isInitiallyOpen={isDesktop}
             >
                 <QuestList quests={gameState.quests} onSelect={handleQuestClick} onDelete={handleDeleteQuest} />
             </InfoPanel>
@@ -742,13 +816,15 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           )}
 
           <div ref={logContainerRef} onClick={handleNarrationContainerClick} className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-6 transition-opacity duration-300 cursor-pointer ${isTurnLoading ? 'opacity-40' : 'opacity-100'}`}>
-            <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-green-400">Diễn biến câu chuyện:</h2>
-                <button onClick={(e) => { e.stopPropagation(); setIsStoryLogModalOpen(true); }} className="text-slate-400 hover:text-white transition" title="Mở trong cửa sổ mới">
-                    <Icon name="expand" className="w-5 h-5" />
-                </button>
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-green-400">Diễn biến câu chuyện:</h2>
+                    <button onClick={(e) => { e.stopPropagation(); setIsStoryLogModalOpen(true); }} className="text-slate-400 hover:text-white transition" title="Mở trong cửa sổ mới">
+                        <Icon name="expand" className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
-            {gameState.history.map((turn, index) => (
+            {currentTurns.map((turn, index) => (
               <div key={index}>
                 {turn.type === 'narration' ? (
                   <FormattedNarration content={turn.content} statuses={gameState.playerStatus} onEntityClick={handleEntityClick} />
@@ -833,6 +909,17 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                   ) : 'Gửi'}
                 </Button>
               </div>
+            </div>
+            
+            {/* Pagination Controls */}
+            <div className="flex items-center justify-center gap-4 mt-3 flex-shrink-0">
+                <button onClick={() => setCurrentPage(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <Icon name="arrowUp" className="w-5 h-5 rotate-[-90deg]" />
+                </button>
+                <span className="text-sm text-slate-400 font-mono">Trang {currentPage + 1}/{totalPages}</span>
+                 <button onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <Icon name="arrowDown" className="w-5 h-5 rotate-[-90deg]" />
+                </button>
             </div>
           </div>
         </main>

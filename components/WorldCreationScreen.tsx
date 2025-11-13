@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { WorldConfig, InitialEntity, CharacterConfig } from '../types';
 import { 
@@ -79,7 +80,16 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
   useEffect(() => {
     if (initialConfig) {
-      setConfig(prev => ({...DEFAULT_WORLD_CONFIG, ...initialConfig}));
+      const sanitizedConfig = {
+        ...DEFAULT_WORLD_CONFIG,
+        ...initialConfig,
+        character: {
+            ...DEFAULT_WORLD_CONFIG.character,
+            ...initialConfig.character,
+            skills: Array.isArray(initialConfig.character.skills) ? initialConfig.character.skills : []
+        }
+      };
+      setConfig(sanitizedConfig);
     } else {
       setConfig(DEFAULT_WORLD_CONFIG);
     }
@@ -103,18 +113,22 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     }));
   }, []);
 
-  const handleSkillChange = useCallback((key: 'name' | 'description', value: string) => {
-    setConfig(prev => ({
-        ...prev,
-        character: {
-            ...prev.character,
-            skills: {
-                ...prev.character.skills,
-                [key]: value
-            }
-        }
-    }))
-  }, []);
+  const handleSkillChange = useCallback((index: number, key: 'name' | 'description', value: string) => {
+    const newSkills = [...config.character.skills];
+    newSkills[index] = { ...newSkills[index], [key]: value };
+    handleNestedChange('character', 'skills', newSkills);
+  }, [config.character.skills, handleNestedChange]);
+
+  const addSkill = useCallback(() => {
+    const newSkills = [...config.character.skills, { name: '', description: '' }];
+    handleNestedChange('character', 'skills', newSkills);
+  }, [config.character.skills, handleNestedChange]);
+
+  const removeSkill = useCallback((index: number) => {
+    const newSkills = config.character.skills.filter((_, i) => i !== index);
+    handleNestedChange('character', 'skills', newSkills);
+  }, [config.character.skills, handleNestedChange]);
+
 
   const handleCoreRuleChange = useCallback((index: number, value: string) => {
     const newList = [...config.coreRules];
@@ -240,13 +254,25 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         return;
     }
     runAiAssist('skills', () => aiService.generateCharacterSkills(config), res => {
-      setConfig(prev => ({ ...prev, character: { ...prev.character, skills: res } }));
+      handleNestedChange('character', 'skills', res);
+    });
+  };
+
+  const handleGenerateSingleSkill = (index: number) => {
+    const currentSkill = config.character.skills[index];
+    runAiAssist(`skill_${index}`, () => aiService.generateSingleSkill(config, currentSkill.name), res => {
+        const newSkills = [...config.character.skills];
+        newSkills[index] = { 
+            name: res.name || currentSkill.name, // Keep old name if AI only generated description
+            description: res.description 
+        };
+        handleNestedChange('character', 'skills', newSkills);
     });
   };
 
   const handleGenerateMotivation = () => {
-     if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim() || !config.character.name.trim() || !config.character.bio.trim() || !config.character.skills.name.trim()) {
-        setNotificationContent({ title: 'Thiếu thông tin', messages: ['AI cần biết "Thế loại", "Bối Cảnh", "Tên nhân vật", "Tiểu sử" và "Kỹ năng" để tạo ra động lực phù hợp.'] });
+     if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim() || !config.character.name.trim() || !config.character.bio.trim()) {
+        setNotificationContent({ title: 'Thiếu thông tin', messages: ['AI cần biết "Thế loại", "Bối Cảnh", "Tên nhân vật" và "Tiểu sử" để tạo ra động lực phù hợp.'] });
         setIsNotificationOpen(true);
         return;
     }
@@ -626,15 +652,30 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                             <StyledTextArea value={config.character.bio} onChange={e => handleNestedChange('character', 'bio', e.target.value)} rows={2} placeholder="VD: Là đứa con cuối cùng của một gia tộc cổ xưa..."/>
                         </div>
                          <div className="mb-4">
-                             <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between mb-1">
                                 <label className="block text-sm font-medium text-pink-300">Kỹ Năng Khởi Đầu (Tùy chọn):</label>
                                 <AiAssistButton isLoading={loadingStates['skills']} onClick={handleGenerateSkills} />
                             </div>
-                            <div className="space-y-2">
-                               <StyledInput value={config.character.skills.name} onChange={e => handleSkillChange('name', e.target.value)} placeholder="Tên kỹ năng. VD: Hỏa thuật, Đàm phán..."/>
-                               <StyledTextArea value={config.character.skills.description} onChange={e => handleSkillChange('description', e.target.value)} rows={2} placeholder="Mô tả kỹ năng. VD: Khả năng điều khiển lửa..."/>
+                            <div className="space-y-3">
+                                {config.character.skills.map((skill, index) => (
+                                    <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-semibold text-slate-400">Kỹ năng {index + 1}</span>
+                                                <AiAssistButton isLoading={loadingStates[`skill_${index}`]} onClick={() => handleGenerateSingleSkill(index)} />
+                                            </div>
+                                            <button onClick={() => removeSkill(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <StyledInput value={skill.name} onChange={e => handleSkillChange(index, 'name', e.target.value)} placeholder="Tên kỹ năng. VD: Hỏa thuật, Đàm phán..."/>
+                                            <StyledTextArea value={skill.description} onChange={e => handleSkillChange(index, 'description', e.target.value)} rows={2} placeholder="Mô tả kỹ năng. VD: Khả năng điều khiển lửa..."/>
+                                        </div>
+                                    </div>
+                                ))}
+                                <Button onClick={addSkill} variant="special" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Kỹ Năng</Button>
                             </div>
                         </div>
+
                          <div>
                             <div className="flex items-center justify-between mb-1">
                                 <label className="block text-sm font-medium text-pink-300">Mục Tiêu/Động Lực:</label>

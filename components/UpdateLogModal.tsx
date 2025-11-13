@@ -12,20 +12,10 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.2.0 (Cập nhật hiện tại)",
+      version: "1.1.0 (Cập nhật hiện tại)",
       notes: [
-        "**Cải tiến AI Dẫn truyện:** Nâng cấp khả năng logic và ghi nhớ của AI, giúp AI bám sát tính cách nhân vật và bối cảnh thế giới tốt hơn. AI giờ đây có khả năng tự suy luận và tạo ra các tình tiết bất ngờ dựa trên hành động của người chơi.",
-        "**Thêm Bảng Thông Tin Nhiệm Vụ & Đồng Hành:** Theo dõi các nhiệm vụ đang hoạt động và danh sách đồng hành trực tiếp trong màn hình chơi game.",
-        "**Hệ thống Gợi ý Hành động Nâng cao:** Các gợi ý hành động từ AI giờ đây sẽ logic hơn, bao gồm cả các lựa chọn đối thoại trực tiếp khi có NPC xuất hiện.",
-        "**Sửa lỗi & Tối ưu hóa:** Sửa một số lỗi liên quan đến việc lưu/tải game và tối ưu hóa hiệu suất chung.",
-      ]
-    },
-    {
-      version: "1.1.0",
-      notes: [
-        "**Hệ thống Ký Ức & Tóm Tắt:** AI giờ đây có khả năng ghi nhớ các sự kiện cốt lõi và tóm tắt các giai đoạn của câu chuyện, đảm bảo tính nhất quán cho các cuộc phiêu lưu dài hơi.",
-        "**Thêm Luật Lệ Tạm Thời:** Người chơi có thể thêm/bớt các quy tắc tạm thời ngay trong lúc chơi để thay đổi tình huống hoặc thử nghiệm các kịch bản khác nhau.",
-        "**Giao diện được Tinh chỉnh:** Cải thiện giao diện màn hình chơi game, giúp người chơi dễ dàng theo dõi thông tin hơn.",
+        "**Bách Khoa Toàn Thư:** Cập nhật tính năng bách khoa toàn thư, giúp lưu trữ mọi dữ liệu về thế giới.",
+        "**Hệ Thống Phân Trang:** Cập nhật tính năng trang, giờ đây cứ mỗi 10 lượt sẽ sang 1 trang mới và bạn hoàn toàn có thể quay lại các trang cũ.",
       ]
     },
     {

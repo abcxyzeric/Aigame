@@ -5,6 +5,7 @@ export interface InitialEntity {
   type: string;
   personality: string;
   description: string;
+  tags?: string[];
   details?: {
     subType?: string;
     rarity?: string;
@@ -20,9 +21,9 @@ export interface CharacterConfig {
   gender: string;
   bio: string;
   skills: {
-    name: string;
+    name:string;
     description: string;
-  };
+  }[];
   motivation: string;
 }
 
@@ -96,6 +97,7 @@ export interface GameItem {
   name: string;
   description: string;
   quantity: number;
+  tags?: string[];
   details?: {
     subType?: string;
     rarity?: string;
@@ -108,11 +110,13 @@ export interface Companion {
     name: string;
     description: string;
     personality?: string;
+    tags?: string[];
 }
 
 export interface Quest {
     name: string;
     description: string;
+    tags?: string[];
 }
 
 export interface EncounteredNPC {
@@ -120,11 +124,13 @@ export interface EncounteredNPC {
     description: string;
     personality: string;
     thoughtsOnPlayer: string;
+    tags?: string[];
 }
 
 export interface EncounteredFaction {
     name: string;
     description: string;
+    tags?: string[];
 }
 
 export interface GameState {
