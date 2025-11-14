@@ -184,3 +184,10 @@ export interface StartGameResponse {
   initialPlayerStatus?: StatusEffect[];
   initialInventory?: GameItem[];
 }
+
+export interface EncyclopediaUpdateResponse {
+    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
+    updatedEncounteredNPCs?: EncounteredNPC[];
+    updatedEncounteredFactions?: EncounteredFaction[];
+    updatedDiscoveredEntities?: InitialEntity[];
+}

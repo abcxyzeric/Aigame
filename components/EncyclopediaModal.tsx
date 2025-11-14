@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { GameState, InitialEntity, EncounteredNPC, Companion, GameItem, Quest, EncounteredFaction, CharacterConfig } from '../types';
+import { GameState, InitialEntity, EncounteredNPC, Companion, GameItem, Quest, EncounteredFaction } from '../types';
 import Icon from './common/Icon';
 import Button from './common/Button';
+import * as aiService from '../services/aiService';
 
 interface EncyclopediaModalProps {
   isOpen: boolean;
@@ -10,8 +11,11 @@ interface EncyclopediaModalProps {
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
 }
 
-type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts';
-type AllEntities = (EncounteredNPC | Companion | GameItem | {name: string, description: string, tags?: string[]} | EncounteredFaction | InitialEntity | Quest);
+type KnowledgeFile = { name: string, content: string };
+type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
+type AllEntities = (EncounteredNPC | Companion | GameItem | {name: string, description: string, tags?: string[]} | EncounteredFaction | InitialEntity | Quest | KnowledgeFile);
+
+const isKnowledgeItem = (item: AllEntities): item is KnowledgeFile => 'content' in item && !('description' in item);
 
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode; iconName: any; }> = ({ active, onClick, children, iconName }) => (
     <button
@@ -34,20 +38,42 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
     const [activeItem, setActiveItem] = useState<AllEntities | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editFormData, setEditFormData] = useState<any>(null);
+    const [isAiUpdating, setIsAiUpdating] = useState(false);
 
     const encyclopediaData = useMemo(() => {
-        if (!isOpen) return {};
+        if (!isOpen) return {
+            characters: [], items: [], skills: [], factions: [], locations: [], quests: [], concepts: [], knowledge: [],
+        };
 
         const allDiscovered = [...(gameState.worldConfig.initialEntities || []), ...(gameState.discoveredEntities || [])];
         
-        const data: {[key in Tab]?: any[]} = {
-            characters: [...gameState.encounteredNPCs, ...gameState.companions],
-            items: gameState.inventory,
-            skills: gameState.character.skills,
-            factions: gameState.encounteredFactions,
-            locations: allDiscovered.filter(e => e.type === 'Địa điểm'),
-            quests: gameState.quests,
-            concepts: allDiscovered.filter(e => !['NPC', 'Vật phẩm', 'Phe phái/Thế lực', 'Địa điểm'].includes(e.type)),
+        const uniqueByName = <T extends { name: string }>(arr: T[]): T[] => {
+            const seen = new Set<string>();
+            return arr.filter(item => {
+                if (!item || !item.name) return false;
+                const lowerName = item.name.toLowerCase();
+                return seen.has(lowerName) ? false : seen.add(lowerName);
+            });
+        };
+
+        const allKnownItems: (GameItem | InitialEntity)[] = uniqueByName([
+            ...gameState.inventory, 
+            ...allDiscovered.filter(e => e.type === 'Vật phẩm')
+        ]);
+        const allKnownSkills: ({name: string, description: string} | InitialEntity)[] = uniqueByName([
+            ...gameState.character.skills, 
+            ...allDiscovered.filter(e => e.type === 'Công pháp / Kỹ năng')
+        ]);
+
+        const data = {
+            characters: uniqueByName([...gameState.encounteredNPCs, ...gameState.companions]),
+            items: allKnownItems,
+            skills: allKnownSkills,
+            factions: uniqueByName(gameState.encounteredFactions),
+            locations: uniqueByName(allDiscovered.filter(e => e.type === 'Địa điểm')),
+            quests: uniqueByName(gameState.quests),
+            concepts: uniqueByName(allDiscovered.filter(e => !['NPC', 'Vật phẩm', 'Phe phái/Thế lực', 'Địa điểm', 'Công pháp / Kỹ năng'].includes(e.type))),
+            knowledge: gameState.worldConfig.backgroundKnowledge || [],
         };
         
         return data;
@@ -74,10 +100,10 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
     };
 
     const handleStartEdit = () => {
-        if (!activeItem) return;
+        if (!activeItem || isKnowledgeItem(activeItem)) return;
         setEditFormData({
             ...activeItem,
-            tags: (activeItem.tags || []).join(', '),
+            tags: ((activeItem as any).tags || []).join(', '),
         });
         setIsEditing(true);
     };
@@ -98,7 +124,7 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
             let updated = false;
 
             const updateList = (list: any[]) => {
-                if(updated) return list;
+                if(updated || !list) return list;
                 const itemIndex = list.findIndex(item => item.name === updatedItem.name);
                 if (itemIndex > -1) {
                     list[itemIndex] = updatedItem;
@@ -109,27 +135,26 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
 
             switch(activeTab) {
                 case 'characters':
-                    newState.encounteredNPCs = updateList([...newState.encounteredNPCs]);
-                    newState.companions = updateList([...newState.companions]);
+                    newState.encounteredNPCs = updateList([...(newState.encounteredNPCs || [])]);
+                    if (!updated) newState.companions = updateList([...(newState.companions || [])]);
                     break;
                 case 'items':
-                    newState.inventory = updateList([...newState.inventory]);
+                    newState.inventory = updateList([...(newState.inventory || [])]);
                     break;
                 case 'skills':
-                    newState.character = {...newState.character, skills: updateList([...newState.character.skills])};
+                    newState.character = {...newState.character, skills: updateList([...(newState.character.skills || [])])};
                     break;
                 case 'factions':
-                     newState.encounteredFactions = updateList([...newState.encounteredFactions]);
+                     newState.encounteredFactions = updateList([...(newState.encounteredFactions || [])]);
                     break;
                 case 'quests':
-                    newState.quests = updateList([...newState.quests]);
+                    newState.quests = updateList([...(newState.quests || [])]);
                     break;
                 case 'locations':
                 case 'concepts':
-                    newState.discoveredEntities = updateList([...newState.discoveredEntities]);
-                     // Also check initial entities as a fallback
+                    newState.discoveredEntities = updateList([...(newState.discoveredEntities || [])]);
                     if (!updated) {
-                       newState.worldConfig = {...newState.worldConfig, initialEntities: updateList([...newState.worldConfig.initialEntities])};
+                       newState.worldConfig = {...newState.worldConfig, initialEntities: updateList([...(newState.worldConfig.initialEntities || [])])};
                     }
                     break;
             }
@@ -148,7 +173,7 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
             const newState = { ...prev };
             const nameToDelete = activeItem.name;
 
-            const filterList = (list: any[]) => list.filter(item => item.name !== nameToDelete);
+            const filterList = (list: any[]) => list ? list.filter(item => item.name !== nameToDelete) : [];
 
              switch(activeTab) {
                 case 'characters':
@@ -180,6 +205,58 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
          setIsEditing(false);
     };
 
+    const handleAiUpdate = async () => {
+        if (!confirm("Hành động này sẽ yêu cầu AI đọc lại toàn bộ câu chuyện để cập nhật và làm giàu Bách Khoa Toàn Thư. Quá trình này có thể mất một chút thời gian và sử dụng API. Bạn có muốn tiếp tục?")) {
+            return;
+        }
+        setIsAiUpdating(true);
+        try {
+            const updates = await aiService.updateEncyclopediaWithAI(gameState);
+            
+            setGameState(prev => {
+                const newState = { ...prev };
+                
+                const mergeAndUpdate = (originalList: any[], updateList: any[] | undefined, keyField = 'name') => {
+                    if (!updateList || updateList.length === 0) return originalList;
+                    
+                    const updateMap = new Map(updateList.map(item => [item[keyField].toLowerCase(), item]));
+                    const existingNames = new Set(originalList.map(item => item[keyField].toLowerCase()));
+
+                    const mergedList = originalList.map(item => updateMap.get(item[keyField].toLowerCase()) || item);
+                    
+                    updateList.forEach(item => {
+                        if (!existingNames.has(item[keyField].toLowerCase())) {
+                            mergedList.push(item);
+                        }
+                    });
+                    return mergedList;
+                };
+
+                newState.encounteredNPCs = mergeAndUpdate(newState.encounteredNPCs || [], updates.updatedEncounteredNPCs);
+                newState.encounteredFactions = mergeAndUpdate(newState.encounteredFactions || [], updates.updatedEncounteredFactions);
+                newState.discoveredEntities = mergeAndUpdate(newState.discoveredEntities || [], updates.updatedDiscoveredEntities);
+                
+                if (updates.updatedCharacter) {
+                    newState.character = { 
+                        ...newState.character, 
+                        bio: updates.updatedCharacter.bio || newState.character.bio,
+                        motivation: updates.updatedCharacter.motivation || newState.character.motivation,
+                    };
+                }
+                
+                return newState;
+            });
+            
+            alert("Bách Khoa Toàn Thư đã được AI cập nhật!");
+
+        } catch (e) {
+            const error = e instanceof Error ? e.message : "Lỗi không xác định";
+            alert(`Lỗi khi cập nhật bằng AI: ${error}`);
+        } finally {
+            setIsAiUpdating(false);
+        }
+    };
+
 
     if (!isOpen) return null;
 
@@ -195,9 +272,26 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                         <Icon name="encyclopedia" className="w-6 h-6 mr-3" />
                         Bách Khoa Toàn Thư
                     </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white transition">
-                        <Icon name="xCircle" className="w-7 h-7" />
-                    </button>
+                     <div className="flex items-center gap-4">
+                        <Button onClick={handleAiUpdate} disabled={isAiUpdating} variant="special" className="!w-auto !py-1 !px-3 !text-sm">
+                            {isAiUpdating ? (
+                                <span className="flex items-center">
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Đang cập nhật...
+                                </span>
+                            ) : (
+                                <span className="flex items-center">
+                                    <Icon name="magic" className="w-4 h-4 mr-2"/> Cập nhật bằng AI
+                                </span>
+                            )}
+                        </Button>
+                        <button onClick={onClose} className="text-slate-400 hover:text-white transition">
+                            <Icon name="xCircle" className="w-7 h-7" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-grow flex overflow-hidden">
@@ -212,6 +306,9 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                             <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
                             <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
                             <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Khái niệm khác</TabButton>
+                            {encyclopediaData.knowledge.length > 0 && (
+                                <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến Thức Nền</TabButton>
+                            )}
                          </div>
                     </div>
                     {/* Middle Pane: List */}
@@ -232,7 +329,7 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                                         <li key={index}>
                                             <button onClick={() => handleSelectItem(item)} className={`w-full text-left p-2 rounded-md transition-colors ${activeItem?.name === item.name ? 'bg-purple-600/30' : 'hover:bg-slate-700/50'}`}>
                                                 <p className="font-semibold text-slate-100 truncate">{item.name}</p>
-                                                {'quantity' in item && <p className="text-xs text-slate-400">Số lượng: {item.quantity}</p>}
+                                                {'quantity' in item && typeof item.quantity === 'number' && <p className="text-xs text-slate-400">Số lượng: {item.quantity}</p>}
                                             </button>
                                         </li>
                                     ))}
@@ -248,16 +345,20 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                              <div>
                                 <div className="flex justify-between items-start">
                                     <h3 className="text-2xl font-bold text-purple-300 mb-2">{activeItem.name}</h3>
-                                    <div className="flex gap-2">
-                                        <Button onClick={handleStartEdit} variant="secondary" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="magic" className="w-4 h-4 mr-1"/>Chỉnh sửa</Button>
-                                        <Button onClick={handleDeleteItem} variant="warning" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="trash" className="w-4 h-4 mr-1"/>Xóa</Button>
-                                    </div>
+                                    {activeTab !== 'knowledge' && (
+                                        <div className="flex gap-2">
+                                            <Button onClick={handleStartEdit} variant="secondary" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="pencil" className="w-4 h-4 mr-1"/>Chỉnh sửa</Button>
+                                            <Button onClick={handleDeleteItem} variant="warning" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="trash" className="w-4 h-4 mr-1"/>Xóa</Button>
+                                        </div>
+                                    )}
                                 </div>
                                 
-                                {'type' in activeItem && <p className="text-sm text-slate-400 mb-4">Loại: {activeItem.type}</p>}
+                                {('type' in activeItem && activeItem.type) && <p className="text-sm text-slate-400 mb-4">Loại: {activeItem.type}</p>}
 
                                 <div className="mb-4">
-                                    <p className="text-slate-300 whitespace-pre-wrap leading-relaxed">{activeItem.description || 'Chưa có mô tả.'}</p>
+                                    <p className="text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                        {isKnowledgeItem(activeItem) ? activeItem.content : (activeItem as any).description || 'Chưa có mô tả.'}
+                                    </p>
                                 </div>
                                  {'personality' in activeItem && activeItem.personality && (
                                      <div className="mb-4">
@@ -272,11 +373,11 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                                     </div>
                                  )}
 
-                                {activeItem.tags && activeItem.tags.length > 0 && (
+                                {'tags' in activeItem && activeItem.tags && activeItem.tags.length > 0 && (
                                     <div className="mt-4">
                                         <strong className="text-slate-400 block mb-2">Tags:</strong>
                                         <div className="flex flex-wrap gap-2">
-                                            {activeItem.tags.map((tag, i) => (
+                                            {(activeItem.tags as string[]).map((tag, i) => (
                                                 <span key={i} className="bg-slate-700 text-slate-300 text-xs font-medium px-2.5 py-1 rounded-full">{tag}</span>
                                             ))}
                                         </div>

@@ -1,9 +1,7 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
-import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion } from '../types';
+import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, EncyclopediaUpdateResponse } from '../types';
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
@@ -181,22 +179,27 @@ async function generateJson<T>(prompt: string, schema: any, systemInstruction?: 
   }
 }
 
-const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, content: string}[]): string => {
+const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, content: string}[], hasDetailFiles: boolean = false): string => {
     if (!knowledge || knowledge.length === 0) return '';
     
-    const summaries = knowledge.filter(k => k.name.endsWith('.txt'));
-    const arcs = knowledge.filter(k => k.name.endsWith('.json'));
+    const summaries = knowledge.filter(k => k.name.startsWith('tom_tat_'));
+    const arcs = knowledge.filter(k => !k.name.startsWith('tom_tat_'));
 
     let prompt = '\n\n--- KIẾN THỨC NỀN (Bối cảnh tham khảo bổ sung) ---\n';
-    prompt += 'Sử dụng các thông tin sau làm kiến thức nền. ƯU TIÊN đọc TÓM TẮT TỔNG QUAN trước, sau đó dùng các tệp PHÂN TÍCH CHI TIẾT để làm rõ khi cần.\n';
+    if (hasDetailFiles) {
+        prompt += 'Sử dụng các thông tin sau làm kiến thức nền. TÓM TẮT TỔNG QUAN luôn được cung cấp. CHI TIẾT LIÊN QUAN được chọn lọc và cung cấp dựa trên diễn biến gần đây. Hãy ưu tiên sử dụng chúng để làm rõ bối cảnh khi cần.\n';
+    } else {
+        prompt += 'Sử dụng các thông tin sau làm kiến thức nền. ƯU TIÊN đọc TÓM TẮT TỔNG QUAN trước, sau đó dùng các tệp PHÂN TÍCH CHI TIẾT để làm rõ khi cần.\n';
+    }
+
 
     if (summaries.length > 0) {
         prompt += '\n### TÓM TẮT TỔNG QUAN ###\n';
-        prompt += summaries.map(s => s.content).join('\n\n');
+        prompt += summaries.map(s => `--- NGUỒN: ${s.name} ---\n${s.content}`).join('\n\n');
     }
 
     if (arcs.length > 0) {
-        prompt += '\n\n### PHÂN TÍCH CHI TIẾT TỪNG PHẦN ###\n';
+        prompt += `\n\n### ${hasDetailFiles ? 'CHI TIẾT LIÊN QUAN' : 'PHÂN TÍCH CHI TIẾT TỪNG PHẦN'} ###\n`;
         prompt += arcs.map(a => `--- NGUỒN: ${a.name} ---\n${a.content}`).join('\n\n');
     }
 
@@ -317,10 +320,11 @@ export async function generateFandomSummary(workName: string, authorName?: strin
     const prompt = `Bạn là một chuyên gia phân tích văn học. Nhiệm vụ của bạn là viết một bản tóm tắt CỰC KỲ CHI TIẾT và TOÀN DIỆN về tác phẩm "${workName}"${authorInfo}. 
     Bản tóm tắt phải bao gồm các phần chính, mỗi phần được mô tả kỹ lưỡng:
     1.  **Tổng quan Cốt truyện:** Tóm tắt toàn bộ diễn biến chính từ đầu đến cuối.
-    2.  **Giới thiệu Nhân vật:** Mô tả chi tiết về các nhân vật chính, nhân vật phụ quan trọng, và các phe phản diện, bao gồm vai trò, tính cách và mục tiêu của họ.
-    3.  **Bối cảnh Thế giới:** Mô tả chi tiết về thế giới, các quốc gia, địa điểm quan trọng và văn hóa.
-    4.  **Hệ thống Sức mạnh / Luật lệ:** Giải thích chi tiết về các hệ thống sức mạnh, ma thuật, hoặc các quy tắc đặc biệt của thế giới.
-    5.  **Các Chủ đề chính:** Phân tích các chủ đề triết học hoặc xã hội cốt lõi của tác phẩm.
+    2.  **DANH SÁCH CÁC ARC/SAGA (BẮT BUỘC):** Liệt kê ĐẦY ĐỦ TẤT CẢ các phần truyện (Arc/Saga) chính của tác phẩm theo thứ tự thời gian. Đây là yêu cầu BẮT BUỘC và cực kỳ quan trọng để đảm bảo không bỏ sót bất kỳ phần nào.
+    3.  **Giới thiệu Nhân vật:** Mô tả chi tiết về các nhân vật chính, nhân vật phụ quan trọng, và các phe phản diện, bao gồm vai trò, tính cách và mục tiêu của họ.
+    4.  **Bối cảnh Thế giới:** Mô tả chi tiết về thế giới, các quốc gia, địa điểm quan trọng và văn hóa.
+    5.  **Hệ thống Sức mạnh / Luật lệ:** Giải thích chi tiết về các hệ thống sức mạnh, ma thuật, hoặc các quy tắc đặc biệt của thế giới.
+    6.  **Các Chủ đề chính:** Phân tích các chủ đề triết học hoặc xã hội cốt lõi của tác phẩm.
 
     Hãy trả lời bằng một bài văn bản thuần túy, có cấu trúc rõ ràng. Nếu không tìm thấy thông tin, hãy trả về chuỗi "WORK_NOT_FOUND".`;
     
@@ -363,26 +367,26 @@ export async function generateFandomGenesis(summaryContent: string, arcName: str
             arc_name: { type: Type.STRING, description: "Tên chính xác của Arc đang được tóm tắt." },
             plot_and_events_summary: { 
                 type: Type.STRING, 
-                description: "Một đoạn văn tóm tắt chi tiết về diễn biến cốt truyện chính và các sự kiện quan trọng xảy ra trong Arc này." 
+                description: "Một đoạn văn tóm tắt TOÀN DIỆN và CỰC KỲ CHI TIẾT về diễn biến cốt truyện chính và các sự kiện quan trọng xảy ra trong Arc này. Bao gồm cả các sự kiện nhỏ, các chi tiết phụ và các tình tiết có vẻ không quan trọng nhưng góp phần xây dựng thế giới."
             },
             character_summary: {
                 type: Type.OBJECT,
                 properties: {
                     detailed_characters: {
                         type: Type.ARRAY,
-                        description: "Danh sách các nhân vật chính VÀ nhân vật phụ QUAN TRỌNG xuất hiện trong Arc này. Cung cấp mô tả chi tiết cho họ.",
+                        description: "Danh sách TOÀN BỘ các nhân vật có vai trò hoặc có lời thoại trong Arc này, kể cả những nhân vật chỉ xuất hiện thoáng qua. Cung cấp mô tả chi tiết cho tất cả họ.",
                         items: {
                             type: Type.OBJECT,
                             properties: {
                                 name: { type: Type.STRING },
-                                role_and_summary: { type: Type.STRING, description: "Mô tả vai trò, tính cách, và hành động chính của nhân vật trong Arc này." }
+                                role_and_summary: { type: Type.STRING, description: "Mô tả chi tiết vai trò, tính cách, và tất cả hành động chính của nhân vật trong Arc này, dù là nhỏ nhất." }
                             },
                             required: ['name', 'role_and_summary']
                         }
                     },
                     mentioned_characters: {
                         type: Type.ARRAY,
-                        description: "Danh sách tên của các nhân vật phụ khác xuất hiện trong Arc nhưng ít quan trọng hơn. CHỈ liệt kê tên, KHÔNG mô tả.",
+                        description: "Danh sách tên của các nhân vật được nhắc đến nhưng không xuất hiện trực tiếp trong Arc. CHỈ liệt kê tên, KHÔNG mô tả.",
                         items: { type: Type.STRING }
                     }
                 },
@@ -390,7 +394,7 @@ export async function generateFandomGenesis(summaryContent: string, arcName: str
             },
             location_and_lore_summary: {
                 type: Type.STRING,
-                description: "Một đoạn văn tóm tắt về các địa điểm quan trọng, các khái niệm lore, hoặc các tổ chức được giới thiệu hoặc đóng vai trò quan trọng trong Arc này."
+                description: "Một đoạn văn tóm tắt chi tiết về tất cả các địa điểm, các khái niệm lore, hoặc các tổ chức được giới thiệu hoặc đóng vai trò quan trọng trong Arc này, bao gồm cả những chi tiết nhỏ nhất."
             }
         },
         required: ['arc_name', 'plot_and_events_summary', 'character_summary', 'location_and_lore_summary']
@@ -402,18 +406,19 @@ export async function generateFandomGenesis(summaryContent: string, arcName: str
 ${summaryContent}
 --- KẾT THÚC TÓM TẮT ---
 
-Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản tóm tắt CHI TIẾT SÂU SẮC, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
+Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản tóm tắt CHI TIẾT SÂU SẮC và TOÀN DIỆN, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
 
 QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
 1.  **PHẠM VI HẸP:** Chỉ trích xuất, tổng hợp và suy luận thông tin liên quan đến Arc "${arcName}".
-2.  **CẤU TRÚC PHÂN TÁCH:** Để tránh bị quá tải, hãy chia bản tóm tắt của bạn thành 3 phần rõ ràng theo schema JSON:
-    a. **Cốt truyện & Sự kiện:** Tóm tắt diễn biến chính của Arc.
+2.  **ĐỘ CHI TIẾT TỐI ĐA:** BẮT BUỘC phải tóm tắt đầy đủ tất cả các chi tiết. Không được bỏ sót bất kỳ sự kiện nào, dù là nhỏ nhất. Liệt kê TẤT CẢ các nhân vật xuất hiện, kể cả những nhân vật phụ chỉ có một vài lời thoại hoặc hành động nhỏ.
+3.  **CẤU TRÚC PHÂN TÁCH:** Để tránh bị quá tải, hãy chia bản tóm tắt của bạn thành 3 phần rõ ràng theo schema JSON:
+    a. **Cốt truyện & Sự kiện:** Tóm tắt diễn biến chính và phụ của Arc một cách chi tiết nhất có thể.
     b. **Nhân vật:**
-        - **Nhân vật chi tiết:** Cung cấp mô tả chi tiết cho nhân vật chính VÀ các nhân vật phụ có vai trò quan trọng trong Arc này.
-        - **Nhân vật được nhắc đến:** Với các nhân vật còn lại, CHỈ liệt kê tên của họ, không cần mô tả.
-    c. **Địa điểm & Lore:** Tóm tắt các địa điểm và khái niệm lore quan trọng trong Arc.
-3.  **CẤU TRÚC JSON BẮT BUỘC:** Trả về MỘT đối tượng JSON duy nhất, tuân thủ nghiêm ngặt schema đã cho.
-4.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một đối tượng JSON với trường "arc_name" chứa chuỗi "ARC_NOT_FOUND".
+        - **Nhân vật chi tiết:** Cung cấp mô tả chi tiết cho TẤT CẢ các nhân vật xuất hiện trong Arc này, không phân biệt chính phụ.
+        - **Nhân vật được nhắc đến:** Với các nhân vật được đề cập nhưng không xuất hiện, CHỈ liệt kê tên của họ.
+    c. **Địa điểm & Lore:** Tóm tắt tất cả các địa điểm và khái niệm lore quan trọng trong Arc.
+4.  **CẤU TRÚC JSON BẮT BUỘC:** Trả về MỘT đối tượng JSON duy nhất, tuân thủ nghiêm ngặt schema đã cho.
+5.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một đối tượng JSON với trường "arc_name" chứa chuỗi "ARC_NOT_FOUND".
 `;
 
     try {
@@ -423,10 +428,33 @@ QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
             throw new Error(`Không tìm thấy thông tin về Arc "${arcName}" trong bản tóm tắt được cung cấp.`);
         }
         
-        // AI might forget the arc name, so enforce it.
         result.arc_name = arcName;
         
-        return JSON.stringify(result, null, 2); // Return pretty-printed JSON string
+        // Format into a readable text string instead of JSON
+        let formattedText = `# Tóm Tắt Arc: ${result.arc_name}\n\n`;
+        
+        formattedText += `## Cốt Truyện & Sự Kiện\n${result.plot_and_events_summary || 'Không có thông tin.'}\n\n`;
+        
+        formattedText += `## Nhân Vật\n`;
+        if (result.character_summary?.detailed_characters?.length > 0) {
+            formattedText += `### Nhân Vật Chi Tiết\n`;
+            result.character_summary.detailed_characters.forEach((char: any) => {
+                formattedText += `- **${char.name}:** ${char.role_and_summary}\n`;
+            });
+            formattedText += `\n`;
+        }
+        if (result.character_summary?.mentioned_characters?.length > 0) {
+            formattedText += `### Nhân Vật Được Nhắc Đến\n`;
+            result.character_summary.mentioned_characters.forEach((name: string) => {
+                formattedText += `- ${name}\n`;
+            });
+            formattedText += `\n`;
+        }
+        
+        formattedText += `## Địa Điểm & Lore\n${result.location_and_lore_summary || 'Không có thông tin.'}\n`;
+
+        return formattedText;
+
     } catch (error) {
         throw error;
     }
@@ -500,11 +528,12 @@ ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG:** Nếu ý tưởng nhắc đến một tác phẩm đã có (ví dụ: "đồng nhân truyện X"), hãy dựa trên kiến thức của bạn về tác phẩm đó để xây dựng thế giới, nhưng đồng thời phải tạo ra các yếu-tố-mới và độc-đáo để câu chuyện có hướng đi riêng.
-2.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
-3.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
-4.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-5.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-6.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
+3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
+4.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
+5.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+6.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+7.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
 
@@ -575,12 +604,13 @@ ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Vận dụng toàn bộ kiến thức của bạn về thế giới, nhân vật, hệ thống sức mạnh và cốt truyện của tác phẩm đó làm nền tảng. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI.
-2.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
-3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
-4.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
-5.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-6.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-7.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
+3.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
+4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
+5.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
+6.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+7.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+8.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
     
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
@@ -877,8 +907,8 @@ QUY TẮC BẮT BUỘC:
 8.5. **TÊN NHÂN VẬT CHÍNH:** TUYỆT ĐỐI KHÔNG bọc tên của nhân vật chính trong bất kỳ thẻ nào (<entity>, <important>, etc.). Tên của họ phải luôn là văn bản thuần túy.
 8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng các thẻ <entity> hoặc <important> bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
 9.  **XƯNG HÔ NHẤT QUÁN (TỐI QUAN TRỌNG):**
-    a. **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
-    b. **Học từ Người chơi:** Phân tích kỹ văn phong của người chơi. Lời thoại của nhân vật chính là kim chỉ nam cho bạn. Tính cách của nhân vật và NPC chỉ nên ảnh hưởng một phần đến hành động và lời nói của họ, quyết định cuối cùng phải dựa trên diễn biến câu chuyện và ngữ cảnh hiện tại.
+    a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
+    b. **HỌC TỪ NGƯỜI CHƠI & TÍNH CÁCH:** Phân tích kỹ văn phong của người chơi; lời thoại của họ là kim chỉ nam cho bạn. QUAN TRỌNG: Tính cách của nhân vật chính và các NPC là yếu tố THEN CHỐT định hình hành động, lời nói và suy nghĩ nội tâm của họ. Hãy sử dụng thông tin tính cách từ "Thông tin nhân vật chính" và "Bách Khoa Toàn Thư" để đảm bảo các nhân vật hành xử một cách nhất quán và có chiều sâu.
     c. **Tham khảo Ký ức:** Trước mỗi lượt kể, hãy xem lại toàn bộ lịch sử trò chuyện để đảm bảo bạn không quên cách xưng hô đã được thiết lập. Sự thiếu nhất quán sẽ phá hỏng trải nghiệm.
 10. **ĐỘ DÀI VÀ CHẤT LƯỢNG (QUAN TRỌNG):** Phần kể chuyện của bạn phải có độ dài đáng kể để người chơi đắm chìm vào thế giới. Khi có sự thay đổi về trạng thái nhân vật (sử dụng thẻ <status>), hãy **tích hợp nó một cách tự nhiên vào lời kể**, không biến nó thành nội dung chính duy nhất. Phần mô tả trạng thái chỉ là một phần của diễn biến, không thay thế cho toàn bộ câu chuyện.
 11. **QUAN TRỌNG - JSON OUTPUT:** Khi bạn trả lời dưới dạng JSON, TUYỆT ĐỐI không sử dụng bất kỳ thẻ định dạng nào (ví dụ: <entity>, <important>) bên trong các trường chuỗi (string) của JSON. Dữ liệu JSON phải là văn bản thuần túy.
@@ -1050,7 +1080,51 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         
     const encyclopediaSummary = buildEncyclopediaSummary(gameState);
     
-    const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(worldConfig.backgroundKnowledge);
+    // Dynamically select relevant background knowledge to prevent context overload
+    const lastPlayerAction = history.filter(t => t.type === 'action').pop()?.content || '';
+    const lastNarration = history.filter(t => t.type === 'narration').pop()?.content || '';
+    const recentContextText = `${lastPlayerAction} ${lastNarration}`.toLowerCase();
+
+    const allKnowledge = worldConfig.backgroundKnowledge || [];
+    const summaryFiles = allKnowledge.filter(k => k.name.startsWith('tom_tat_'));
+    const detailFiles = allKnowledge.filter(k => !k.name.startsWith('tom_tat_'));
+
+    let relevantDetailFiles: {name: string, content: string}[] = [];
+
+    if (detailFiles.length > 0 && recentContextText.trim()) {
+        const fileScores = detailFiles.map(file => {
+            let score = 0;
+            const fileNameWords = file.name.replace(/\.txt$/i, '').toLowerCase().split(/[\s_-]+/);
+            const contextWithoutTags = recentContextText.replace(/<[^>]*>/g, '');
+
+            fileNameWords.forEach(word => {
+                if (word.length > 3 && contextWithoutTags.includes(word)) {
+                    score += 5;
+                }
+            });
+
+            const entitiesInContext = [...(recentContextText.matchAll(/<entity>(.*?)<\/entity>/gs) || []), ...(recentContextText.matchAll(/<important>(.*?)<\/important>/gs) || [])]
+                .map(m => m[1].toLowerCase().trim());
+
+            entitiesInContext.forEach(entity => {
+                if (file.content.toLowerCase().includes(entity)) {
+                    score += 2;
+                }
+            });
+
+            return { file, score };
+        });
+
+        fileScores.sort((a, b) => b.score - a.score);
+
+        // Take the top 1 most relevant file to avoid overload
+        if (fileScores.length > 0 && fileScores[0].score > 0) {
+            relevantDetailFiles.push(fileScores[0].file);
+        }
+    }
+    
+    const selectedKnowledge = [...summaryFiles, ...relevantDetailFiles];
+    const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(selectedKnowledge.length > 0 ? selectedKnowledge : undefined, detailFiles.length > 0);
 
     const lengthMap: { [key: string]: number } = { 'Ngắn': 500, 'Mặc định': 700, 'Trung bình': 750, 'Chi tiết, dài': 1200 };
     const minWords = lengthMap[worldConfig.aiResponseLength || 'Mặc định'] || 700;
@@ -1267,4 +1341,118 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         e.  **QUẢN LÝ NHIỆM VỤ:** Dựa vào diễn biến, xác định xem người chơi có nhận nhiệm vụ mới không (thêm vào danh sách), hoặc có hoàn thành/thất bại nhiệm vụ nào không (xóa khỏi danh sách). Nhiệm vụ phải có tên ngắn gọn và mô tả rõ ràng. Trả về danh sách 'updatedQuests' đầy đủ.`;
 
     return generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
+};
+
+export const updateEncyclopediaWithAI = (gameState: GameState): Promise<EncyclopediaUpdateResponse> => {
+    const { history, worldConfig } = gameState;
+    const systemInstruction = "Bạn là một người ghi chép lịch sử (Scribe) cho một thế giới game nhập vai. Nhiệm vụ của bạn là đọc lại toàn bộ diễn biến câu chuyện và bản tóm tắt Bách Khoa Toàn Thư hiện tại, sau đó cập nhật và làm giàu thông tin cho các mục trong Bách Khoa.";
+
+    const fullHistory = history.map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
+    const encyclopediaSummary = buildEncyclopediaSummary(gameState);
+    
+    const worldSetupSummary = `
+--- THIẾT LẬP THẾ GIỚI BAN ĐẦU (NGUỒN GỐC THÔNG TIN) ---
+- Tên Thế Giới: ${worldConfig.storyContext.worldName}
+- Thể loại: ${worldConfig.storyContext.genre}
+- Bối cảnh: ${worldConfig.storyContext.setting}
+- Nhân vật chính: ${worldConfig.character.name} (${worldConfig.character.personality === 'Tuỳ chỉnh' ? worldConfig.character.customPersonality : worldConfig.character.personality})
+- Tiểu sử nhân vật: ${worldConfig.character.bio}
+- Các thực thể ban đầu: ${worldConfig.initialEntities.map(e => e.name).join(', ') || 'Không có.'}
+`;
+
+    const characterSchema = {
+        type: Type.OBJECT,
+        properties: {
+            bio: { type: Type.STRING, description: "Tiểu sử/ngoại hình của nhân vật. CẬP NHẬT nếu có thay đổi về ngoại hình hoặc danh tiếng." },
+            motivation: { type: Type.STRING, description: "CẬP NHẬT mục tiêu/động lực nếu có sự thay đổi lớn trong cốt truyện." },
+        },
+    };
+
+    const encounteredNPCSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            description: { type: Type.STRING, description: "Mô tả về ngoại hình, lai lịch của NPC." },
+            personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn về tính cách của NPC." },
+            thoughtsOnPlayer: { type: Type.STRING, description: "Suy nghĩ, cảm nhận của NPC này về người chơi. CẬP NHẬT LIÊN TỤC sau mỗi tương tác." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho NPC." },
+        },
+        required: ['name', 'description', 'personality', 'thoughtsOnPlayer']
+    };
+
+    const encounteredFactionSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            description: { type: Type.STRING, description: "Mô tả chi tiết về lịch sử, mục tiêu, và sức ảnh hưởng của phe phái." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho phe phái." },
+        },
+        required: ['name', 'description']
+    };
+    
+    const entitySchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên chính xác của thực thể." },
+            type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
+            personality: { type: Type.STRING, description: "(Tùy chọn, chỉ dành cho NPC) Mô tả tính cách." },
+            description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+            details: { 
+                type: Type.OBJECT,
+                description: "(Tùy chọn, chỉ dành cho Vật phẩm) Các thuộc tính chi tiết.",
+                properties: {
+                    subType: { type: Type.STRING },
+                    rarity: { type: Type.STRING },
+                    stats: { type: Type.STRING },
+                    effects: { type: Type.STRING }
+                }
+            }
+        },
+        required: ['name', 'type', 'description']
+    };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            updatedCharacter: { ...characterSchema, description: "Cập nhật lại tiểu sử/ngoại hình và động lực của nhân vật chính nếu có những thay đổi lớn." },
+            updatedEncounteredNPCs: {
+                type: Type.ARRAY,
+                description: "Danh sách các NPC có thông tin cần cập nhật. Chỉ bao gồm những NPC có thay đổi (mô tả, suy nghĩ về người chơi) hoặc NPC mới.",
+                items: encounteredNPCSchema
+            },
+            updatedEncounteredFactions: {
+                type: Type.ARRAY,
+                description: "Danh sách các Phe phái có thông tin cần cập nhật hoặc phe phái mới.",
+                items: encounteredFactionSchema
+            },
+            updatedDiscoveredEntities: {
+                type: Type.ARRAY,
+                description: "Danh sách các thực thể khác (Vật phẩm, Kỹ năng, Địa điểm...) có thông tin cần cập nhật hoặc mới được phát hiện trong câu chuyện.",
+                items: entitySchema
+            }
+        }
+    };
+
+    const prompt = `Bạn là một người ghi chép lịch sử (Scribe) cho một thế giới game nhập vai. Nhiệm vụ của bạn là đọc lại TOÀN BỘ thông tin có sẵn, bao gồm thiết lập thế giới ban đầu, diễn biến câu chuyện và Bách Khoa Toàn Thư hiện tại, sau đó cập nhật và làm giàu thông tin cho các mục trong Bách Khoa.
+
+${worldSetupSummary}
+
+--- BÁCH KHOA TOÀN THƯ HIỆN TẠI (TÓM TẮT) ---
+${encyclopediaSummary}
+
+--- TOÀN BỘ DIỄN BIẾN CÂU CHUYỆN ---
+${fullHistory.slice(-20000)}
+
+--- YÊU CẦU CẬP NHẬT (QUAN TRỌNG) ---
+Dựa vào **TOÀN BỘ** các nguồn thông tin trên (Thiết lập ban đầu, Bách Khoa hiện tại, và Diễn biến câu chuyện), hãy rà soát lại các mục trong Bách Khoa Toàn Thư và thực hiện các cập nhật sau:
+1.  **Cập nhật Mô tả:** Với các nhân vật, vật phẩm, địa điểm... đã có, hãy viết lại phần mô tả ('description') của chúng để trở nên chi tiết, sống động và chính xác hơn, phản ánh đúng những gì đã xảy ra trong câu chuyện và thông tin gốc từ thiết lập ban đầu.
+2.  **Cập nhật Suy nghĩ NPC:** Đối với các NPC đã gặp, hãy cập nhật trường 'thoughtsOnPlayer' để phản ánh mối quan hệ và suy nghĩ mới nhất của họ về người chơi dựa trên các tương tác gần đây.
+3.  **Thêm Mục Mới:** Nếu trong câu chuyện có xuất hiện các nhân vật, vật phẩm, địa điểm, hoặc khái niệm quan trọng mới (thường được đánh dấu bằng thẻ <entity> hoặc <important>) nhưng chưa có trong Bách Khoa, hãy tạo mục mới cho chúng.
+4.  **Cập nhật Nhân vật chính:** Nếu có những thay đổi lớn về ngoại hình, danh tiếng, hoặc mục tiêu của nhân vật chính, hãy cập nhật lại các trường 'bio' và 'motivation'.
+5.  **CHỈ TRẢ VỀ THAY ĐỔI:** Trong JSON output, chỉ bao gồm những mục có sự thay đổi hoặc được thêm mới. Không cần trả về những mục không có gì cập nhật.
+
+Hãy trả về một đối tượng JSON tuân thủ schema đã cho.`;
+
+    return generateJson<EncyclopediaUpdateResponse>(prompt, schema, systemInstruction, 'gemini-2.5-pro');
 };

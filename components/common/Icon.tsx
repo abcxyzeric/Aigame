@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-type IconName = 'play' | 'save' | 'upload' | 'news' | 'settings' | 'world' | 'user' | 'rules' | 'entity' | 'difficulty' | 'goal' | 'back' | 'plus' | 'trash' | 'magic' | 'checkCircle' | 'xCircle' | 'key' | 'warning' | 'status' | 'companions' | 'quest' | 'memory' | 'info' | 'restart' | 'arrowUp' | 'arrowDown' | 'ellipsisVertical' | 'download' | 'expand' | 'encyclopedia' | 'pencil';
+type IconName = 'play' | 'save' | 'upload' | 'news' | 'settings' | 'world' | 'user' | 'rules' | 'entity' | 'difficulty' | 'goal' | 'back' | 'plus' | 'trash' | 'magic' | 'checkCircle' | 'xCircle' | 'key' | 'warning' | 'status' | 'companions' | 'quest' | 'memory' | 'info' | 'restart' | 'arrowUp' | 'arrowDown' | 'ellipsisVertical' | 'download' | 'expand' | 'encyclopedia' | 'pencil' | 'undo';
 
 // Fix: Extend React.SVGProps to allow passing standard SVG attributes like 'title'.
 // The `title` prop is added explicitly to support tooltips via an SVG <title> element.
@@ -44,7 +44,8 @@ const Icon: React.FC<IconProps> = ({ name, className = 'w-6 h-6', title, ...prop
     download: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />,
     expand: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75h4.5m0 0v4.5m0-4.5L12 12m6.75-6.75h-4.5m0 0v4.5m0-4.5L12 12m0 0-8.25 8.25M12 12l8.25 8.25" />,
     encyclopedia: <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H12m0 0H7.5m12 0h-4.5m-4.5 0H3.75M3.75 3.75v16.5c0 .621.504 1.125 1.125 1.125h14.25c.621 0 1.125-.504 1.125-1.125V3.75M3.75 3.75c0-.621.504-1.125 1.125-1.125h14.25c.621 0 1.125.504 1.125 1.125" />,
-    pencil: <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+    pencil: <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />,
+    undo: <path strokeLinecap="round" strokeLinejoin="round" d="M15 15V9.75a3.75 3.75 0 0 0-3.75-3.75H3.75m0 0L7.5 9.75M3.75 6 7.5 2.25" />
   };
 
   return (

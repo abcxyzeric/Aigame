@@ -14,7 +14,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.2.0 (Cập nhật hiện tại)",
+      version: "1.2.5 (Cập nhật hiện tại)",
+      notes: [
+        "**Kiến tạo từ Nguyên tác (Cải thiện):** Nâng cấp đáng kể độ chi tiết của các bản tóm tắt, đảm bảo AI nắm bắt đầy đủ các Arc/Saga, sự kiện nhỏ và nhân vật phụ, giúp thế giới đồng nhân trở nên sâu sắc và chính xác hơn.",
+        "**Sửa lỗi & Tinh chỉnh Giao diện:** Thêm thanh cuộn cho mục 'Kiến Tạo Thực Thể Ban Đầu' để quản lý danh sách dài dễ dàng hơn. Cải thiện Bách Khoa Toàn Thư với khả năng cập nhật tự động bằng AI và tích hợp thông tin từ kiến thức nền.",
+      ]
+    },
+    {
+      version: "1.2.0",
       notes: [
         "**Kiến tạo từ Nguyên tác (Thử nghiệm):** Thêm một công cụ mạnh mẽ cho phép AI phân tích sâu các tác phẩm bạn yêu thích (truyện, phim, game...), tự động tạo ra các tệp dữ liệu lore chi tiết (.txt, .json) để bạn có thể sáng tạo thế giới đồng nhân một cách chính xác nhất.",
         "**Độ Dài Phản Hồi Ưu Tiên Của AI:** Cho phép bạn tùy chỉnh độ dài tối thiểu của mỗi lượt kể chuyện do AI tạo ra, giúp kiểm soát nhịp độ của cuộc phiêu lưu.",

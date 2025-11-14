@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest } from '../types';
 import * as aiService from '../services/aiService';
@@ -244,6 +241,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [error, setError] = useState<string | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
   const [isTempRulesModalOpen, setIsTempRulesModalOpen] = useState(false);
   const [isStoryLogModalOpen, setIsStoryLogModalOpen] = useState(false);
@@ -574,6 +572,40 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setIsMenuOpen(false); // Close menu if open
     setShowRestartConfirm(true);
   };
+  
+  const handleUndoTurn = () => {
+    setIsMenuOpen(false);
+    setShowUndoConfirm(true);
+  };
+
+  const handleConfirmUndo = async () => {
+    if (gameState.history.length < 2) return;
+    
+    setShowUndoConfirm(false);
+    setIsLoading(true);
+    setError(null);
+    
+    const newHistory = gameState.history.slice(0, -2);
+    // Create a temporary state for generating suggestions,
+    // but only update the main state if suggestions are successful.
+    const tempGameState = { ...gameState, history: newHistory };
+    
+    try {
+        const newSuggestions = await aiService.generateSuggestionsForCurrentState(tempGameState);
+        
+        // Success, now update the real state
+        setGameState(tempGameState);
+        setSuggestions(newSuggestions);
+        setShowSuggestions(true);
+        gameService.saveGame(tempGameState);
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý.';
+        setError(`Không thể lùi lại một lượt: ${errorMessage}`);
+    } finally {
+        setIsLoading(false);
+    }
+  };
 
   const handleManualSave = useCallback(() => {
     fileService.saveGameStateToFile(gameState);
@@ -671,8 +703,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     ? gameState.character.customPersonality 
     : gameState.character.personality;
   
-  const MenuButton: React.FC<{onClick: () => void, icon: any, label: string, variant: string}> = ({onClick, icon, label, variant}) => (
-      <button onClick={onClick} className={`w-full flex items-center px-4 py-2 text-sm text-left rounded-md hover:bg-slate-700 transition`}>
+  const MenuButton: React.FC<{onClick: () => void, icon: any, label: string, variant: string, disabled?: boolean}> = ({onClick, icon, label, variant, disabled = false}) => (
+      <button onClick={onClick} disabled={disabled} className={`w-full flex items-center px-4 py-2 text-sm text-left rounded-md hover:bg-slate-700 transition ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-slate-800' : ''}`}>
           <Icon name={icon} className={`w-5 h-5 mr-3 text-${variant}-400`}/>
           {label}
       </button>
@@ -744,6 +776,19 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             </div>
         </div>
       )}
+      {showUndoConfirm && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up">
+                <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2>
+                <p className="text-slate-300 mb-2">Hành động này sẽ chỉ xóa lượt đi cuối cùng của bạn và AI khỏi nhật ký.</p>
+                <p className="text-amber-400 text-sm mb-6">Lưu ý: Các thay đổi về trạng thái, vật phẩm, ký ức... sẽ <strong className="font-bold">KHÔNG</strong> được hoàn tác.</p>
+                <div className="flex justify-end gap-4">
+                    <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button>
+                    <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button>
+                </div>
+            </div>
+        </div>
+      )}
       <div className="flex flex-col h-screen bg-slate-900 text-slate-200 font-sans p-2 sm:p-4 gap-2 sm:gap-4">
         {/* Header */}
         <header className="flex-shrink-0 bg-slate-800/50 p-2 rounded-lg">
@@ -768,6 +813,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                  <button onClick={() => setIsTempRulesModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-300 bg-blue-900/40 hover:bg-blue-800/60 rounded-lg transition"><Icon name="rules" className="w-4 h-4"/>Luật Tạm Thời</button>
                  <button onClick={() => setIsMemoryModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition"><Icon name="memory" className="w-4 h-4"/>Ký Ức</button>
                  <button onClick={() => setIsEncyclopediaModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-orange-300 bg-orange-900/40 hover:bg-orange-800/60 rounded-lg transition"><Icon name="encyclopedia" className="w-4 h-4"/>Bách Khoa</button>
+                 <button onClick={handleUndoTurn} disabled={gameState.history.length < 2} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-yellow-300 bg-yellow-900/40 hover:bg-yellow-800/60 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"><Icon name="undo" className="w-4 h-4"/>Lùi 1 Lượt</button>
                  <button onClick={handleRestart} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-pink-300 bg-pink-900/40 hover:bg-pink-800/60 rounded-lg transition"><Icon name="restart" className="w-4 h-4"/>Bắt Đầu Lại</button>
              </div>
 
@@ -784,6 +830,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                         <MenuButton onClick={() => setIsMemoryModalOpen(true)} icon="memory" label="Ký Ức" variant="purple" />
                         <MenuButton onClick={() => setIsEncyclopediaModalOpen(true)} icon="encyclopedia" label="Bách Khoa" variant="orange" />
                         <div className="my-1 border-t border-slate-700"></div>
+                        <MenuButton onClick={handleUndoTurn} icon="undo" label="Lùi 1 Lượt" variant="yellow" disabled={gameState.history.length < 2} />
                         <MenuButton onClick={handleRestart} icon="restart" label="Bắt Đầu Lại" variant="pink" />
                     </div>
                 )}

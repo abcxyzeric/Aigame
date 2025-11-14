@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { WorldConfig, InitialEntity, CharacterConfig } from '../types';
 import { 
@@ -96,6 +95,13 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         },
         backgroundKnowledge: initialConfig.backgroundKnowledge || [],
       };
+      sanitizedConfig.backgroundKnowledge.sort((a, b) => {
+            const aIsSummary = a.name.startsWith('tom_tat_');
+            const bIsSummary = b.name.startsWith('tom_tat_');
+            if (aIsSummary && !bIsSummary) return -1;
+            if (!aIsSummary && bIsSummary) return 1;
+            return a.name.localeCompare(b.name);
+      });
       setConfig(sanitizedConfig);
     } else {
       setConfig(DEFAULT_WORLD_CONFIG);
@@ -394,9 +400,19 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
             const existingNames = new Set((config.backgroundKnowledge || []).map(k => k.name));
             const finalNewKnowledge = newKnowledgeFiles.filter(k => !existingNames.has(k.name));
 
+            const combined = [...(config.backgroundKnowledge || []), ...finalNewKnowledge];
+            // Sort after adding new files
+            combined.sort((a, b) => {
+                const aIsSummary = a.name.startsWith('tom_tat_');
+                const bIsSummary = b.name.startsWith('tom_tat_');
+                if (aIsSummary && !bIsSummary) return -1;
+                if (!aIsSummary && bIsSummary) return 1;
+                return a.name.localeCompare(b.name);
+            });
+
             setConfig(prev => ({
                 ...prev,
-                backgroundKnowledge: [...(prev.backgroundKnowledge || []), ...finalNewKnowledge]
+                backgroundKnowledge: combined
             }));
             
             setNotificationContent({ 
@@ -416,6 +432,15 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   };
 
   const handleConfirmFanficSelection = (selectedFiles: FandomFile[]) => {
+    // Sort files: summary files first.
+    selectedFiles.sort((a, b) => {
+      const aIsSummary = a.name.startsWith('tom_tat_');
+      const bIsSummary = b.name.startsWith('tom_tat_');
+      if (aIsSummary && !bIsSummary) return -1;
+      if (!aIsSummary && bIsSummary) return 1;
+      return a.name.localeCompare(b.name); // otherwise, sort alphabetically
+    });
+
     const knowledge = selectedFiles.map(f => ({ name: f.name, content: f.content }));
     const existingNames = new Set((config.backgroundKnowledge || []).map(k => k.name));
     const newKnowledge = knowledge.filter(k => !existingNames.has(k.name));
@@ -428,6 +453,14 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
 
   const handleConfirmKnowledgeSelection = (selectedFiles: FandomFile[]) => {
+    // Sort files: summary files first.
+    selectedFiles.sort((a, b) => {
+        const aIsSummary = a.name.startsWith('tom_tat_');
+        const bIsSummary = b.name.startsWith('tom_tat_');
+        if (aIsSummary && !bIsSummary) return -1;
+        if (!aIsSummary && bIsSummary) return 1;
+        return a.name.localeCompare(b.name); // otherwise, sort alphabetically
+    });
     const knowledge = selectedFiles.map(f => ({ name: f.name, content: f.content }));
     handleSimpleChange('backgroundKnowledge', knowledge);
     setIsKnowledgeSelectModalOpen(false);
@@ -444,9 +477,19 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
             newKnowledgeFiles.push({ name: file.name, content });
         }
         
+        const combined = [...(config.backgroundKnowledge || []), ...newKnowledgeFiles];
+        // Sort after adding new files
+        combined.sort((a, b) => {
+            const aIsSummary = a.name.startsWith('tom_tat_');
+            const bIsSummary = b.name.startsWith('tom_tat_');
+            if (aIsSummary && !bIsSummary) return -1;
+            if (!aIsSummary && bIsSummary) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        
         setConfig(prev => ({
             ...prev,
-            backgroundKnowledge: [...(prev.backgroundKnowledge || []), ...newKnowledgeFiles]
+            backgroundKnowledge: combined
         }));
         
         setNotificationContent({ 
@@ -490,6 +533,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         onConfirm={handleConfirmFanficSelection}
         mode="multiple"
         title="Chọn Nguyên Tác Đồng Nhân Từ Kho"
+        fileTypeFilter="txt"
       />
        <FandomFileLoadModal 
         isOpen={isKnowledgeSelectModalOpen}
@@ -497,6 +541,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         onConfirm={handleConfirmKnowledgeSelection}
         mode="multiple"
         title="Chọn Kho Kiến Thức Nền"
+        fileTypeFilter="txt"
       />
        <input
         type="file"
@@ -510,7 +555,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         ref={fanficFileInputRef}
         onChange={handleFanficFileChange}
         className="hidden"
-        accept=".txt,.json"
+        accept=".txt"
         multiple
       />
       <input
@@ -518,7 +563,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         ref={knowledgeFileInputRef}
         onChange={handleKnowledgeFileChange}
         className="hidden"
-        accept=".txt,.json"
+        accept=".txt"
         multiple
       />
       <div className="max-w-7xl mx-auto p-4 sm:p-6 md:p-8">
@@ -558,7 +603,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 <Icon name="magic" className="w-6 h-6 mr-3" />
                 Ý Tưởng Đồng Nhân / Fanfiction (AI Hỗ Trợ)
             </h3>
-            <p className='text-sm text-slate-400 mb-3'>Nhập tên tác phẩm và ý tưởng. Tải lên các tệp nguyên tác (.txt, .json) sẽ tự động thêm chúng vào "Kiến thức nền AI" bên dưới để có kết quả chính xác nhất.</p>
+            <p className='text-sm text-slate-400 mb-3'>Nhập tên tác phẩm và ý tưởng. Tải lên các tệp nguyên tác (.txt) sẽ tự động thêm chúng vào "Kiến thức nền AI" bên dưới để có kết quả chính xác nhất.</p>
             <div className="flex flex-col sm:flex-row items-center gap-2 mb-3">
                 <StyledInput 
                     placeholder="VD: đồng nhân Naruto, nếu Obito không theo Madara..." 
@@ -576,10 +621,10 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
             </div>
             <div className='flex flex-col sm:flex-row items-center gap-2'>
                 <Button onClick={handleLoadFanficFileClick} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
-                    <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy (.txt, .json)
+                    <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy (.txt)
                 </Button>
                  <Button onClick={() => setIsFanficSelectModalOpen(true)} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
-                    <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho (.txt, .json)
+                    <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho (.txt)
                 </Button>
             </div>
         </div>
@@ -648,7 +693,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
                         <div className="mt-4 border-t border-slate-700 pt-4">
                             <FormRow label="Kiến thức nền AI (Tùy chọn)" labelClassName="text-lime-300">
-                                <p className="text-xs text-slate-400 mb-2">Chọn các tệp nguyên tác (.txt, .json) từ kho hoặc tải lên từ máy để AI sử dụng làm kiến thức nền khi tạo thế giới và dẫn truyện.</p>
+                                <p className="text-xs text-slate-400 mb-2">Chọn các tệp nguyên tác (.txt) từ kho hoặc tải lên từ máy để AI sử dụng làm kiến thức nền khi tạo thế giới và dẫn truyện.</p>
                                 <div className="flex flex-wrap gap-2">
                                     <Button onClick={() => setIsKnowledgeSelectModalOpen(true)} variant="secondary" className="!w-auto !text-sm !py-2">
                                         <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho
@@ -660,7 +705,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                 {config.backgroundKnowledge && config.backgroundKnowledge.length > 0 && (
                                     <div className="mt-3 space-y-2">
                                         <p className="text-sm font-semibold text-slate-300">Đã chọn:</p>
-                                        <ul className="space-y-1">
+                                        <ul className="space-y-1 max-h-52 overflow-y-auto pr-2">
                                             {config.backgroundKnowledge.map((file, index) => (
                                                 <li key={index} className="flex items-center justify-between bg-slate-900/50 p-2 rounded-md text-sm">
                                                     <span className="text-slate-300 truncate">{file.name}</span>
@@ -723,7 +768,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 {/* Kiến Tạo Thực Thể Ban Đầu */}
                 <div className="order-6">
                     <Accordion title="Kiến Tạo Thực Thể Ban Đầu (Tùy chọn)" icon={<Icon name="entity" />} titleClassName='text-green-400' borderColorClass='border-green-500'>
-                         <div className="space-y-4">
+                         <div className="max-h-96 overflow-y-auto pr-2 space-y-4">
                             {config.initialEntities.map((entity, index) => (
                                 <div key={index} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

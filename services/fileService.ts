@@ -1,4 +1,3 @@
-
 import { WorldConfig, GameState } from '../types';
 
 export const saveWorldConfigToFile = (config: WorldConfig): void => {
@@ -70,8 +69,8 @@ export const loadTextFromFile = (file: File): Promise<string> => {
             reject(new Error('Không có tệp nào được chọn.'));
             return;
         }
-        if (!['text/plain', 'application/json'].includes(file.type)) {
-            reject(new Error('Vui lòng chọn một tệp .txt hoặc .json hợp lệ.'));
+        if (file.type !== 'text/plain') {
+            reject(new Error('Vui lòng chọn một tệp .txt hợp lệ.'));
             return;
         }
 
