@@ -118,6 +118,7 @@ export interface Companion {
 export interface Quest {
     name: string;
     description: string;
+    status: 'đang tiến hành' | 'hoàn thành';
     tags?: string[];
 }
 

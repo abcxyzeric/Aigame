@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest } from '../types';
 import * as aiService from '../services/aiService';
@@ -11,7 +12,9 @@ import MemoryModal from './MemoryModal';
 import StoryLogModal from './StoryLogModal';
 import InformationModal from './CharacterInfoModal';
 import EntityInfoModal from './common/EntityInfoModal';
-import EncyclopediaModal from './EncyclopediaModal';
+// FIX: Use a named import for EncyclopediaModal to resolve the module error.
+import { EncyclopediaModal } from './EncyclopediaModal';
+import InfoPanel from './common/InfoPanel';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -30,41 +33,6 @@ const useMediaQuery = (query: string) => {
   }, [matches, query]);
 
   return matches;
-};
-
-const InfoPanel: React.FC<{
-  title: string;
-  iconName: any;
-  children: React.ReactNode;
-  borderColorClass?: string;
-  textColorClass?: string;
-  isInitiallyOpen?: boolean;
-}> = ({ title, iconName, children, borderColorClass = 'border-yellow-500', textColorClass = 'text-yellow-400', isInitiallyOpen = true }) => {
-  const [isOpen, setIsOpen] = useState(isInitiallyOpen);
-
-  return (
-    <div className={`bg-slate-800/60 border-l-4 ${borderColorClass} rounded-r-lg overflow-hidden flex flex-col`}>
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full flex-shrink-0">
-        <div className="flex items-center justify-between w-full p-3 group">
-          <div className="flex items-center min-w-0">
-            <Icon name={iconName} className="w-5 h-5 mr-2 flex-shrink-0" />
-            <h3 className={`text-sm font-bold ${textColorClass} text-left truncate`}>
-              {title}
-            </h3>
-          </div>
-          <Icon name={isOpen ? 'arrowUp' : 'arrowDown'} className="w-4 h-4 text-slate-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
-        </div>
-      </button>
-      
-      <div 
-        className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}
-      >
-        <div className="px-3 pb-3 overflow-y-auto max-h-36">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
 };
 
 const StatusList: React.FC<{ statuses: StatusEffect[], onDelete: (statusName: string) => void }> = ({ statuses, onDelete }) => {
@@ -115,12 +83,15 @@ const CompanionList: React.FC<{ companions: Companion[], onSelect: (c: Companion
 };
 
 const QuestList: React.FC<{ quests: Quest[], onSelect: (q: Quest) => void, onDelete: (name: string) => void }> = ({ quests, onSelect, onDelete }) => {
-    if (!quests || quests.length === 0) {
+    const activeQuests = (quests || []).filter(q => !q.status || q.status === 'đang tiến hành');
+    
+    if (activeQuests.length === 0) {
         return <p className="text-xs text-slate-400">Không có nhiệm vụ nào đang hoạt động.</p>;
     }
+
     return (
         <ul className="space-y-2 text-xs">
-            {quests.map((quest, index) => (
+            {activeQuests.map((quest, index) => (
                 <li key={index} className="group flex items-center justify-between gap-2 p-1 rounded hover:bg-slate-700/50">
                     <button onClick={() => onSelect(quest)} className="text-left flex-grow min-w-0">
                         <strong className="text-cyan-300 truncate block">{quest.name}</strong>
@@ -255,13 +226,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
   const [currentPage, setCurrentPage] = useState(0);
+  const [isPaginating, setIsPaginating] = useState(false);
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
   
-  const turnsPerPage = 10;
+  const turnsPerPage = 5;
   const narrationTurns = gameState.history.filter(h => h.type === 'narration');
   const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
 
@@ -374,7 +346,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleActionSubmit = useCallback(async (actionContent: string) => {
     if (!actionContent.trim() || isLoading) return;
 
-    const newAction: GameTurn = { type: 'action', content: actionContent.trim() };
+    const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     const newHistory = [...gameState.history, newAction];
     setSuggestions([]);
     setGameState(prev => ({ ...prev, history: newHistory }));
@@ -400,9 +372,15 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         companions: updatedCompanions || gameState.companions,
         quests: updatedQuests || gameState.quests,
       };
+
+      const newNarrationTurns = updatedGameState.history.filter(h => h.type === 'narration');
+      const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
+      const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
+      
       setGameState(updatedGameState);
       setSuggestions(suggestions);
       setShowSuggestions(true);
+      setCurrentPage(lastPage);
       gameService.saveGame(updatedGameState);
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
@@ -470,20 +448,27 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   }, [gameState]);
 
   useEffect(() => {
-    startGame();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // This logic will run on mount for a new game, and again whenever
+    // the history is cleared by the restart function.
+    if (gameState.history.length === 0) {
+        startGame();
+    }
+  }, [gameState.history.length, startGame]);
 
   useEffect(() => {
-    if (!isInitialLoading) {
-      const newTotalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
-      const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
-      if (currentPage !== lastPage) {
-          setCurrentPage(lastPage);
-      }
-      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const lastTurn = gameState.history[gameState.history.length - 1];
+
+    if (isPaginating) {
+        logContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsPaginating(false);
+    } else if (!isInitialLoading) {
+        // Scroll if it's a player action OR if it's the very first turn of the game (which is always a narration)
+        if (lastTurn?.type === 'action' || gameState.history.length === 1) {
+            logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }
-  }, [gameState.history, isInitialLoading, isTurnLoading, narrationTurns.length, currentPage]);
+  }, [currentPage, isPaginating, isInitialLoading, gameState.history.length]);
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -554,7 +539,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         companions: [],
         quests: [],
     }));
-    // The loading state will be handled by startGame itself.
+    // The loading state and new story generation will be handled by the useEffect watching history.length.
   };
 
   const handleSaveAndRestart = () => {
@@ -578,33 +563,32 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setShowUndoConfirm(true);
   };
 
-  const handleConfirmUndo = async () => {
-    if (gameState.history.length < 2) return;
+  const handleConfirmUndo = () => {
+    // We can only undo a narration that follows an action.
+    if (gameState.history.length < 2 || gameState.history[gameState.history.length - 1].type !== 'narration') {
+      setShowUndoConfirm(false);
+      return;
+    }
     
     setShowUndoConfirm(false);
-    setIsLoading(true);
     setError(null);
-    
-    const newHistory = gameState.history.slice(0, -2);
-    // Create a temporary state for generating suggestions,
-    // but only update the main state if suggestions are successful.
-    const tempGameState = { ...gameState, history: newHistory };
-    
-    try {
-        const newSuggestions = await aiService.generateSuggestionsForCurrentState(tempGameState);
-        
-        // Success, now update the real state
-        setGameState(tempGameState);
-        setSuggestions(newSuggestions);
-        setShowSuggestions(true);
-        gameService.saveGame(tempGameState);
 
-    } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý.';
-        setError(`Không thể lùi lại một lượt: ${errorMessage}`);
-    } finally {
-        setIsLoading(false);
-    }
+    // Slice history to remove only the last AI narration.
+    // The player's action will now be the last turn in the history and will be displayed.
+    const newHistory = gameState.history.slice(0, -1);
+    
+    const newState = { ...gameState, history: newHistory };
+    setGameState(newState);
+    
+    // Clear player input instead of restoring it.
+    setPlayerInput('');
+    
+    // Hide suggestions and don't refetch them to be faster.
+    setSuggestions([]);
+    setShowSuggestions(false); 
+    
+    // Save the undone state
+    gameService.saveGame(newState);
   };
 
   const handleManualSave = useCallback(() => {
@@ -664,8 +648,46 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleDeleteItem = useCallback((itemName: string) => {
     if (confirm(`Bạn có chắc muốn xóa vật phẩm "${itemName}" không?`)) {
         setGameState(prev => {
-            const newInventory = prev.inventory.filter(i => i.name !== itemName);
-            const newState = { ...prev, inventory: newInventory };
+            const lowerCaseItemName = itemName.toLowerCase();
+            const newInventory = prev.inventory.filter(i => i.name.toLowerCase() !== lowerCaseItemName);
+            const newDiscovered = prev.discoveredEntities.filter(e => e.name.toLowerCase() !== lowerCaseItemName || e.type !== 'Vật phẩm');
+            const newInitial = prev.worldConfig.initialEntities.filter(e => e.name.toLowerCase() !== lowerCaseItemName || e.type !== 'Vật phẩm');
+
+            const newState = {
+                ...prev,
+                inventory: newInventory,
+                discoveredEntities: newDiscovered,
+                worldConfig: {
+                    ...prev.worldConfig,
+                    initialEntities: newInitial,
+                }
+            };
+            gameService.saveGame(newState);
+            return newState;
+        });
+    }
+  }, []);
+
+  const handleDeleteSkill = useCallback((skillName: string) => {
+    if (confirm(`Bạn có chắc muốn xóa kỹ năng "${skillName}" không?`)) {
+        setGameState(prev => {
+            const lowerCaseSkillName = skillName.toLowerCase();
+            const newSkills = prev.character.skills.filter(s => s.name.toLowerCase() !== lowerCaseSkillName);
+            const newDiscovered = prev.discoveredEntities.filter(e => e.name.toLowerCase() !== lowerCaseSkillName || e.type !== 'Công pháp / Kỹ năng');
+            const newInitial = prev.worldConfig.initialEntities.filter(e => e.name.toLowerCase() !== lowerCaseSkillName || e.type !== 'Công pháp / Kỹ năng');
+
+            const newState = {
+                ...prev,
+                character: {
+                    ...prev.character,
+                    skills: newSkills
+                },
+                discoveredEntities: newDiscovered,
+                worldConfig: {
+                    ...prev.worldConfig,
+                    initialEntities: newInitial
+                }
+            };
             gameService.saveGame(newState);
             return newState;
         });
@@ -698,6 +720,16 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         });
     }
   }, []);
+  
+  const handlePageChange = (updater: (p: number) => number) => {
+    setCurrentPage(prev => {
+        const newPage = updater(prev);
+        if (newPage !== prev) {
+            setIsPaginating(true);
+        }
+        return newPage;
+    });
+  };
 
   const characterPersonality = gameState.character.personality === 'Tuỳ chỉnh' 
     ? gameState.character.customPersonality 
@@ -735,6 +767,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         onClose={() => setIsInformationModalOpen(false)}
         gameState={gameState}
         onItemDelete={handleDeleteItem}
+        onSkillDelete={handleDeleteSkill}
       />
        <EncyclopediaModal 
         isOpen={isEncyclopediaModalOpen}
@@ -931,7 +964,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             {suggestions.length > 0 && !isTurnLoading && (
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-lg font-bold text-green-400">Lựa chọn của người:</h3>
+                  <h3 className="text-lg font-bold text-green-400">Lựa chọn của ngươi:</h3>
                   <button
                     onClick={() => setShowSuggestions(!showSuggestions)}
                     className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition"
@@ -985,11 +1018,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             
             {/* Pagination Controls */}
             <div className="flex items-center justify-center gap-4 mt-3 flex-shrink-0">
-                <button onClick={() => setCurrentPage(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                <button onClick={() => handlePageChange(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
                     <Icon name="arrowUp" className="w-5 h-5 rotate-[-90deg]" />
                 </button>
                 <span className="text-sm text-slate-400 font-mono">Trang {currentPage + 1}/{totalPages}</span>
-                 <button onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                 <button onClick={() => handlePageChange(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
                     <Icon name="arrowDown" className="w-5 h-5 rotate-[-90deg]" />
                 </button>
             </div>

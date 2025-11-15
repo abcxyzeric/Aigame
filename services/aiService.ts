@@ -1,3 +1,5 @@
+
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
@@ -72,111 +74,165 @@ function processNarration(text: string): string {
         return `<thought>${strippedInnerContent}</thought>`;
     });
 
+    // Strip tags inside quoted text ""
+    processedText = processedText.replace(/"(.*?)"/g, (match, innerContent) => {
+        const strippedInnerContent = innerContent.replace(/<[^>]*>/g, '');
+        return `"${strippedInnerContent}"`;
+    });
+
     return processedText;
 }
 
 
 async function generate(prompt: string, systemInstruction?: string): Promise<string> {
-  const aiInstance = getAiInstance();
-  const { safetySettings } = getSettings();
+    const { safetySettings } = getSettings();
+    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    
+    const MAX_RETRIES = 3;
+    let lastError: Error | null = null;
   
-  const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
-
-  try {
-     const response = await aiInstance.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-            systemInstruction,
-            safetySettings: activeSafetySettings as unknown as SafetySetting[]
-        }
-     });
-    
-    const finishReason = response.candidates?.[0]?.finishReason;
-    const safetyRatings = response.candidates?.[0]?.safetyRatings;
-
-    if (!response.text && finishReason === 'SAFETY') {
-        console.error("Gemini API response blocked due to safety settings.", { finishReason, safetyRatings });
-        let blockDetails = "Lý do: Bộ lọc an toàn.";
-        if (safetyRatings && safetyRatings.length > 0) {
-            blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
-        }
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      try {
+        const aiInstance = getAiInstance(); // Get a potentially new key on each retry
+  
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                systemInstruction,
+                safetySettings: activeSafetySettings as unknown as SafetySetting[]
+            }
+        });
         
-        if (safetySettings.enabled) {
-            throw new Error(`Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài đặt để tạo nội dung tự do hơn. (${blockDetails})`);
-        } else {
-            throw new Error(`Phản hồi từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. Điều này có thể xảy ra với nội dung cực kỳ nhạy cảm. Vui lòng điều chỉnh lại hành động. (${blockDetails})`);
+        const candidate = response.candidates?.[0];
+        const finishReason = candidate?.finishReason;
+        const safetyRatings = candidate?.safetyRatings;
+  
+        if (!response.text) {
+            if (finishReason === 'SAFETY') {
+                console.error("Gemini API response blocked due to safety settings.", { finishReason, safetyRatings });
+                let blockDetails = "Lý do: Bộ lọc an toàn.";
+                if (safetyRatings && safetyRatings.length > 0) {
+                    blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
+                }
+                
+                if (safetySettings.enabled) {
+                    throw new Error(`Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài đặt để tạo nội dung tự do hơn. (${blockDetails})`);
+                } else {
+                    throw new Error(`Phản hồi từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. Điều này có thể xảy ra với nội dung cực kỳ nhạy cảm. Vui lòng điều chỉnh lại hành động. (${blockDetails})`);
+                }
+            }
+  
+            const reason = finishReason || 'Không rõ lý do';
+            console.error(`Gemini API returned no text on attempt ${i + 1}. Finish reason: ${reason}`, response);
+            lastError = new Error(`Phản hồi từ AI trống. Lý do: ${reason}.`);
+            if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+            continue; // Retry
         }
+  
+        const rawText = response.text.trim();
+        return processNarration(rawText); // Success!
+  
+      } catch (error) {
+        console.error(`Error in generate attempt ${i + 1}:`, error);
+        lastError = handleApiError(error, safetySettings);
+        
+        const rawMessage = lastError.message.toLowerCase();
+        if ((rawMessage.includes('api key') || rawMessage.includes('lỗi 429') || rawMessage.includes('rate limit')) && i < MAX_RETRIES - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            continue; // Retry
+        } else {
+            throw lastError; // Don't retry for other errors (e.g. safety)
+        }
+      }
     }
-    
-    if (!response.text) {
-        console.error("Gemini API returned no text.", response);
-        throw new Error("Phản hồi từ AI không hợp lệ hoặc trống. Vui lòng thử lại.");
-    }
-
-    const rawText = response.text.trim();
-    return processNarration(rawText);
-  } catch (error) {
-    throw handleApiError(error, safetySettings);
-  }
+  
+    throw lastError || new Error("AI không thể tạo phản hồi sau nhiều lần thử.");
 }
 
 async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash'): Promise<T> {
-  const aiInstance = getAiInstance();
-  const { safetySettings } = getSettings();
-  const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    const { safetySettings } = getSettings();
+    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
   
-  try {
-    const response = await aiInstance.models.generateContent({
-        model: model,
-        contents: prompt,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: schema,
-            safetySettings: activeSafetySettings as unknown as SafetySetting[]
-        }
-     });
-
-    const finishReason = response.candidates?.[0]?.finishReason;
-    const safetyRatings = response.candidates?.[0]?.safetyRatings;
-    const jsonString = response.text;
-
-    if (!jsonString && finishReason === 'SAFETY') {
-        console.error("Gemini API JSON response blocked due to safety settings.", { finishReason, safetyRatings });
-        let blockDetails = "Lý do: Bộ lọc an toàn.";
-        if (safetyRatings && safetyRatings.length > 0) {
-            blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
+    const MAX_RETRIES = 3;
+    let lastError: Error | null = null;
+  
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      try {
+        const aiInstance = getAiInstance(); // Get a potentially new key on each retry
+        
+        const response = await aiInstance.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: schema,
+                safetySettings: activeSafetySettings as unknown as SafetySetting[]
+            }
+         });
+  
+        const candidate = response.candidates?.[0];
+        const finishReason = candidate?.finishReason;
+        const safetyRatings = candidate?.safetyRatings;
+        const jsonString = response.text;
+  
+        if (!jsonString) {
+            if (finishReason === 'SAFETY') {
+                console.error("Gemini API JSON response blocked due to safety settings.", { finishReason, safetyRatings });
+                let blockDetails = "Lý do: Bộ lọc an toàn.";
+                if (safetyRatings && safetyRatings.length > 0) {
+                    blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
+                }
+                
+                if (safetySettings.enabled) {
+                    throw new Error(`Phản hồi JSON từ AI đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc trong Cài đặt. (${blockDetails})`);
+                } else {
+                    throw new Error(`Phản hồi JSON từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. (${blockDetails})`);
+                }
+            } else {
+               const reason = finishReason || 'Không rõ lý do';
+               console.error(`Gemini API returned no JSON text on attempt ${i + 1}. Finish reason: ${reason}`, response);
+               lastError = new Error(`Phản hồi JSON từ AI trống. Lý do: ${reason}.`);
+               if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+               continue; // Retry
+            }
         }
         
-        if (safetySettings.enabled) {
-            throw new Error(`Phản hồi JSON từ AI đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc trong Cài đặt. (${blockDetails})`);
-        } else {
-            throw new Error(`Phản hồi JSON từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. (${blockDetails})`);
+        try {
+          const parsedJson = JSON.parse(jsonString) as T;
+          
+          if (typeof parsedJson === 'object' && parsedJson !== null && 'narration' in parsedJson && typeof (parsedJson as any).narration === 'string') {
+              (parsedJson as any).narration = processNarration((parsedJson as any).narration);
+          }
+      
+          return parsedJson; // Success! Exit the loop.
+        } catch (e) {
+            if (e instanceof SyntaxError) {
+              console.error(`JSON Parsing Error on attempt ${i + 1}:`, e);
+              console.error('Malformed JSON string from AI:', jsonString);
+              lastError = new Error(`Lỗi phân tích JSON từ AI: ${e.message}. Chuỗi nhận được: "${jsonString.substring(0, 100)}..."`);
+              if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+              continue; // Retry
+            }
+            throw e; // Rethrow other errors
         }
+  
+      } catch (error) {
+        console.error(`Error in generateJson attempt ${i + 1}:`, error);
+        lastError = handleApiError(error, safetySettings);
+        
+        const rawMessage = lastError.message.toLowerCase();
+        if ((rawMessage.includes('api key') || rawMessage.includes('lỗi 429') || rawMessage.includes('rate limit')) && i < MAX_RETRIES - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            continue; // Retry
+        } else {
+            throw lastError;
+        }
+      }
     }
-    
-    if (!jsonString) {
-        console.error("Gemini API returned no JSON text.", response);
-        throw new Error("Phản hồi JSON từ AI không hợp lệ hoặc trống. Vui lòng thử lại.");
-    }
-
-    const parsedJson = JSON.parse(jsonString) as T;
-    
-    // Process narration if it exists in the response
-    if (typeof parsedJson === 'object' && parsedJson !== null && 'narration' in parsedJson && typeof (parsedJson as any).narration === 'string') {
-        (parsedJson as any).narration = processNarration((parsedJson as any).narration);
-    }
-
-    return parsedJson;
-
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-        console.error('JSON Parsing Error:', error);
-        throw new Error(`Lỗi phân tích JSON từ AI: ${error.message}`);
-    }
-    throw handleApiError(error, safetySettings);
-  }
+  
+    throw lastError || new Error("AI không thể tạo phản hồi JSON sau nhiều lần thử.");
 }
 
 const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, content: string}[], hasDetailFiles: boolean = false): string => {
@@ -906,6 +962,7 @@ QUY TẮC BẮT BUỘC:
     - **Trạng thái:** Khi một trạng thái được áp dụng hoặc đề cập, hãy bọc TÊN CHÍNH XÁC của trạng thái đó (giống với tên trong 'updatedPlayerStatus') trong thẻ <status>. Ví dụ: 'Hắn cảm thấy cơ thể lạnh buốt, một dấu hiệu của việc <status>Trúng Độc</status>.' Thẻ này sẽ được hiển thị màu xanh lam (cyan) và có thể tương tác.
 8.5. **TÊN NHÂN VẬT CHÍNH:** TUYỆT ĐỐI KHÔNG bọc tên của nhân vật chính trong bất kỳ thẻ nào (<entity>, <important>, etc.). Tên của họ phải luôn là văn bản thuần túy.
 8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng các thẻ <entity> hoặc <important> bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
+8.7. **NHẬN DIỆN THỰC THỂ NHẤT QUÁN:** Khi bạn đề cập đến một thực thể đã tồn tại trong "Bách Khoa Toàn Thư", bạn BẮT BUỘC phải sử dụng lại TÊN CHÍNH XÁC của thực thể đó (bao gồm cả cách viết hoa) và bọc nó trong thẻ. Ví dụ: Nếu Bách Khoa có một nhân vật tên là "Monkey D. Luffy", khi bạn kể chuyện về anh ta, hãy luôn viết là "<entity>Monkey D. Luffy</entity>", TUYỆT ĐỐI KHÔNG viết là "<entity>luffy</entity>" hay "<entity>Luffy</entity>". Sự nhất quán này là tối quan trọng để hệ thống có thể nhận diện và hiển thị thông tin chính xác.
 9.  **XƯNG HÔ NHẤT QUÁN (TỐI QUAN TRỌNG):**
     a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
     b. **HỌC TỪ NGƯỜI CHƠI & TÍNH CÁCH:** Phân tích kỹ văn phong của người chơi; lời thoại của họ là kim chỉ nam cho bạn. QUAN TRỌNG: Tính cách của nhân vật chính và các NPC là yếu tố THEN CHỐT định hình hành động, lời nói và suy nghĩ nội tâm của họ. Hãy sử dụng thông tin tính cách từ "Thông tin nhân vật chính" và "Bách Khoa Toàn Thư" để đảm bảo các nhân vật hành xử một cách nhất quán và có chiều sâu.
@@ -1002,7 +1059,7 @@ ${adultContentDirectives}
     *   **Gợi mở cốt truyện:** Tích hợp một cách tự nhiên "Mục tiêu/Động lực" của nhân vật vào tình huống mở đầu, tạo ra một cái móc câu chuyện (plot hook) ngay lập tức.
     *   **Kết nối thế giới:** Nếu hợp lý, hãy khéo léo giới thiệu hoặc gợi ý về một trong những "Thực thể ban đầu" (NPC, địa điểm, vật phẩm) đã được cung cấp.
 3.  **SỬ DỤNG THẺ ĐỊNH DẠNG (BẮT BUỘC):** Khi bạn đề cập đến tên của nhân vật chính, các "Thực thể ban đầu" (từ \`initialEntities\`), kỹ năng của nhân vật, hoặc các vật phẩm quan trọng trong phần kể chuyện (narration), hãy **BẮT BUỘC** bọc chúng trong các thẻ định dạng phù hợp (\`<entity>\` cho NPC/địa điểm/phe phái, \`<important>\` cho vật phẩm/kỹ năng). Điều này là tối quan trọng để người chơi có thể tương tác với thế giới.
-4.  **Độ dài:** Phần mở đầu này cần có độ dài đáng kể để người chơi thực sự đắm mình vào thế giới, lý tưởng là **dưới 2500 từ**.
+4.  **Độ dài (QUAN TRỌNG):** **YÊU CẦU TUYỆT ĐỐI BẮT BUỘC: Độ dài của phần kể chuyện phải đạt TỐI THIỂU 1000 chữ và không vượt quá 2500 chữ.** Việc không đáp ứng độ dài tối thiểu sẽ bị coi là không hoàn thành nhiệm vụ. Hãy tạo ra một chương mở đầu chi tiết và lôi cuốn.
 5.  **Tạo Gợi Ý Ban Đầu:** Ngay sau khi viết xong phần mở đầu, hãy tạo ra **ĐÚNG 4 gợi ý hành động** đa dạng, hợp lý và hấp dẫn để người chơi có thể lựa chọn. Các gợi ý này phải phù hợp với tình huống bạn vừa tạo ra.
 6.  **Tạo Trạng Thái Ban Đầu (Nếu có):** Dựa vào tiểu sử, nếu nhân vật bắt đầu với một trạng thái đặc biệt (VD: bị thương, mang một lời nguyền), hãy thêm nó vào danh sách 'initialPlayerStatus'. Nếu không, để trống trường này.
 7.  **Tạo Túi Đồ Ban Đầu (Nếu có):** Dựa vào "initialEntities", nếu có vật phẩm nào được định nghĩa, hãy thêm chúng vào danh sách 'initialInventory'.
@@ -1126,8 +1183,13 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     const selectedKnowledge = [...summaryFiles, ...relevantDetailFiles];
     const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(selectedKnowledge.length > 0 ? selectedKnowledge : undefined, detailFiles.length > 0);
 
-    const lengthMap: { [key: string]: number } = { 'Ngắn': 500, 'Mặc định': 700, 'Trung bình': 750, 'Chi tiết, dài': 1200 };
-    const minWords = lengthMap[worldConfig.aiResponseLength || 'Mặc định'] || 700;
+    const lengthMap: { [key: string]: { min: number; max: number } } = { 
+        'Ngắn': { min: 500, max: 1200 }, 
+        'Mặc định': { min: 750, max: 1600 }, 
+        'Trung bình': { min: 750, max: 1600 }, // Same as default as per user request context
+        'Chi tiết, dài': { min: 1200, max: 2500 } 
+    };
+    const lengthConfig = lengthMap[worldConfig.aiResponseLength || 'Mặc định'] || lengthMap['Mặc định'];
 
     const statusEffectSchema = {
         type: Type.OBJECT,
@@ -1223,9 +1285,10 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         properties: {
             name: { type: Type.STRING, description: "Tên nhiệm vụ (ngắn gọn)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết về mục tiêu và bối cảnh của nhiệm vụ." },
+            status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'], description: "Trạng thái của nhiệm vụ." },
             tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các tags phân loại cho nhiệm vụ." },
         },
-        required: ['name', 'description']
+        required: ['name', 'description', 'status']
     };
 
     const schema = {
@@ -1318,7 +1381,7 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
     --- KẾT THÚC QUY TRÌNH SUY LUẬN ---
 
     Dựa vào TOÀN BỘ thông tin trên và kết quả từ quy trình suy luận của bạn, hãy thực hiện các nhiệm vụ sau:
-    1.  **Kể chuyện:** Viết tiếp câu chuyện một cách logic và chi tiết, có chiều sâu. Phần kể chuyện phải có độ dài đáng kể, **tối thiểu ${minWords} chữ**, để người chơi thực sự đắm chìm vào thế giới.
+    1.  **Kể chuyện (QUAN TRỌNG NHẤT):** Viết **TIẾP** câu chuyện, tạo ra diễn biến **MỚI** một cách logic, chi tiết và có chiều sâu. **TUYỆT ĐỐI KHÔNG LẶP LẠI** nội dung hoặc tóm tắt lại hành động của người chơi hay diễn biến của lượt kể trước. Chỉ sử dụng chúng làm bối cảnh để **kết nối và đẩy câu chuyện về phía trước**. Phần kể chuyện (narration) phải có độ dài đáng kể để người chơi thực sự đắm chìm vào thế giới. **YÊU CẦU TUYỆT ĐỐI BẮT BUỘC VỀ ĐỘ DÀI: Độ dài của phần kể chuyện (narration) PHẢI nằm trong khoảng từ ${lengthConfig.min} đến ${lengthConfig.max} từ (words).** Việc không đáp ứng độ dài tối thiểu sẽ bị coi là không hoàn thành nhiệm vụ và sẽ dẫn đến kết quả không được chấp nhận. Đây là yêu cầu quan trọng nhất, hãy ưu tiên việc tạo ra một lượt kể chuyện dài và chất lượng, mô tả đầy đủ bối cảnh, hành động và nội tâm, thay vì một câu trả lời ngắn gọn.
     2.  **Đưa ra gợi ý:** Tạo ra ĐÚNG 4 lựa chọn hành động đa dạng và hợp lý.
         - **LOGIC GỢI Ý ĐỐI THOẠI:** Phân tích lượt kể chuyện cuối cùng của Quản Trò. Nếu lượt đó kết thúc bằng một lời thoại của NPC, hoặc một NPC vừa xuất hiện và có khả năng tương tác, hãy đưa ra ÍT NHẤT MỘT gợi ý hành động là một câu thoại trực tiếp để người chơi lựa chọn. Gợi ý đối thoại nên được đặt trong ngoặc kép. Ví dụ: "Hỏi về thân phận của ông ta", ""Ta là ai?"", ""Câm miệng!"".
         - **ĐA DẠNG HÓA:** Các gợi ý khác nên bao gồm các hành động vật lý, kiểm tra, hoặc sử dụng kỹ năng để đảm bảo sự đa dạng.
@@ -1338,7 +1401,9 @@ export const getNextTurn = (gameState: GameState): Promise<AiTurnResponse> => {
         b.  **QUAN TRỌNG - MÔ TẢ THỰC THỂ:** Bất kỳ NPC hoặc Phe phái mới nào bạn giới thiệu trong lượt kể chuyện (và thêm vào 'updatedEncounteredNPCs'/'updatedEncounteredFactions') PHẢI có một mô tả ('description') đầy đủ và chi tiết. Nếu thực thể đó đã tồn tại trong 'initialEntities' của thế giới, hãy sử dụng lại mô tả đó. Nếu là thực thể mới hoàn toàn, hãy tạo ra một mô tả sống động, phù hợp với bối cảnh.
         c.  **Trả về danh sách đầy đủ:** Trong 'updatedEncounteredNPCs' và 'updatedEncounteredFactions', trả về danh sách TOÀN BỘ các thực thể đã gặp, đã được cập nhật. Nếu không có gì thay đổi, chỉ cần trả lại danh sách cũ.
         d.  **QUẢN LÝ ĐỒNG HÀNH:** Dựa vào diễn biến, xác định xem có NPC hoặc sinh vật nào bắt đầu đi cùng người chơi không (thêm vào danh sách), hoặc có đồng hành nào rời đi, chết, hay tạm thời tách nhóm không (xóa khỏi danh sách). Trả về danh sách 'updatedCompanions' đầy đủ.
-        e.  **QUẢN LÝ NHIỆM VỤ:** Dựa vào diễn biến, xác định xem người chơi có nhận nhiệm vụ mới không (thêm vào danh sách), hoặc có hoàn thành/thất bại nhiệm vụ nào không (xóa khỏi danh sách). Nhiệm vụ phải có tên ngắn gọn và mô tả rõ ràng. Trả về danh sách 'updatedQuests' đầy đủ.`;
+        e.  **QUẢN LÝ NHIỆM VỤ:** Dựa vào diễn biến, xác định xem người chơi có nhận nhiệm vụ mới (thêm vào danh sách), hoặc cập nhật trạng thái của nhiệm vụ hiện tại không.
+            - **Phân biệt trạng thái:** Phân tích kỹ diễn biến câu chuyện và danh sách nhiệm vụ cũ. Nếu một mục tiêu nhiệm vụ đã được hoàn thành, hãy đổi 'status' của nó thành 'hoàn thành'. Nhiệm vụ mới hoặc đang dang dở phải có 'status' là 'đang tiến hành'. Nếu nhiệm vụ thất bại, hãy xóa nó khỏi danh sách.
+            - **Trả về danh sách đầy đủ:** Trả về danh sách 'updatedQuests' đầy đủ, bao gồm cả các nhiệm vụ đã hoàn thành để người chơi có thể theo dõi.`;
 
     return generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
 };

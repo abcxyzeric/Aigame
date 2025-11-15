@@ -14,7 +14,16 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.2.5 (Cập nhật hiện tại)",
+      version: "1.2.6 (Cập nhật hiện tại)",
+      notes: [
+        "**Sửa lỗi Phân Trang:** Khắc phục lỗi khiến việc chuyển trang đôi khi không hiển thị đúng lượt chơi.",
+        "**Cải thiện Lùi 1 Lượt:** Tính năng lùi lượt giờ đây hoạt động ổn định và trực quan hơn, giữ lại hành động của người chơi một cách chính xác.",
+        "**Fix Lỗi Thẻ Định Dạng:** Loại bỏ triệt để các thẻ định dạng (<entity>,...) xuất hiện không mong muốn trong hội thoại và hành động của người chơi.",
+        "**Cải thiện Độ dài AI:** Tinh chỉnh prompt để AI luôn đưa ra các đoạn tường thuật chi tiết, có chiều sâu, khắc phục tình trạng trả lời ngắn.",
+      ]
+    },
+    {
+      version: "1.2.5",
       notes: [
         "**Kiến tạo từ Nguyên tác (Cải thiện):** Nâng cấp đáng kể độ chi tiết của các bản tóm tắt, đảm bảo AI nắm bắt đầy đủ các Arc/Saga, sự kiện nhỏ và nhân vật phụ, giúp thế giới đồng nhân trở nên sâu sắc và chính xác hơn.",
         "**Sửa lỗi & Tinh chỉnh Giao diện:** Thêm thanh cuộn cho mục 'Kiến Tạo Thực Thể Ban Đầu' để quản lý danh sách dài dễ dàng hơn. Cải thiện Bách Khoa Toàn Thư với khả năng cập nhật tự động bằng AI và tích hợp thông tin từ kiến thức nền.",

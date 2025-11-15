@@ -32,7 +32,8 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 );
 
 
-const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState }) => {
+// FIX: Changed to a named export to resolve module resolution issues.
+export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState }) => {
     const [activeTab, setActiveTab] = useState<Tab>('characters');
     const [searchTerm, setSearchTerm] = useState('');
     const [activeItem, setActiveItem] = useState<AllEntities | null>(null);
@@ -89,7 +90,16 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
     }, [isOpen, activeTab]);
 
     const filteredList = useMemo(() => {
-        const list = encyclopediaData[activeTab] || [];
+        let list: AllEntities[] = encyclopediaData[activeTab] || [];
+        
+        if (activeTab === 'quests') {
+            list = [...list].sort((a, b) => {
+                const statusA = (a as Quest).status === 'hoàn thành' ? 1 : 0;
+                const statusB = (b as Quest).status === 'hoàn thành' ? 1 : 0;
+                return statusA - statusB;
+            });
+        }
+
         if (!searchTerm) return list;
         return list.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [encyclopediaData, activeTab, searchTerm]);
@@ -103,6 +113,7 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
         if (!activeItem || isKnowledgeItem(activeItem)) return;
         setEditFormData({
             ...activeItem,
+            status: (activeItem as Quest).status || 'đang tiến hành',
             tags: ((activeItem as any).tags || []).join(', '),
         });
         setIsEditing(true);
@@ -166,43 +177,34 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
     };
 
     const handleDeleteItem = () => {
-         if (!activeItem) return;
-         if (!confirm(`Bạn có chắc muốn xóa "${activeItem.name}" không? Thao tác này không thể hoàn tác.`)) return;
+        if (!activeItem) return;
+        if (!confirm(`Bạn có chắc muốn xóa "${activeItem.name}" không? Thao tác này không thể hoàn tác.`)) return;
 
-         setGameState(prev => {
+        setGameState(prev => {
+            const nameToDelete = activeItem.name.toLowerCase();
             const newState = { ...prev };
-            const nameToDelete = activeItem.name;
 
-            const filterList = (list: any[]) => list ? list.filter(item => item.name !== nameToDelete) : [];
+            const filterList = (list: any[]) => list ? list.filter(item => item.name.toLowerCase() !== nameToDelete) : [];
 
-             switch(activeTab) {
-                case 'characters':
-                    newState.encounteredNPCs = filterList(newState.encounteredNPCs);
-                    newState.companions = filterList(newState.companions);
-                    break;
-                case 'items':
-                    newState.inventory = filterList(newState.inventory);
-                    break;
-                case 'skills':
-                     newState.character = {...newState.character, skills: filterList(newState.character.skills)};
-                    break;
-                case 'factions':
-                     newState.encounteredFactions = filterList(newState.encounteredFactions);
-                    break;
-                case 'quests':
-                    newState.quests = filterList(newState.quests);
-                    break;
-                case 'locations':
-                case 'concepts':
-                    newState.discoveredEntities = filterList(newState.discoveredEntities);
-                    newState.worldConfig = {...newState.worldConfig, initialEntities: filterList(newState.worldConfig.initialEntities)};
-                    break;
-            }
-             return newState;
-         });
+            // Comprehensive deletion across all relevant lists
+            newState.inventory = filterList(newState.inventory);
+            newState.character = { ...newState.character, skills: filterList(newState.character.skills) };
+            newState.companions = filterList(newState.companions);
+            newState.encounteredNPCs = filterList(newState.encounteredNPCs);
+            newState.encounteredFactions = filterList(newState.encounteredFactions);
+            newState.quests = filterList(newState.quests);
+            newState.discoveredEntities = filterList(newState.discoveredEntities);
+            newState.worldConfig = { 
+                ...newState.worldConfig, 
+                initialEntities: filterList(newState.worldConfig.initialEntities),
+                backgroundKnowledge: filterList(newState.worldConfig.backgroundKnowledge || [])
+            };
+            
+            return newState;
+        });
 
-         setActiveItem(null);
-         setIsEditing(false);
+        setActiveItem(null);
+        setIsEditing(false);
     };
 
     const handleAiUpdate = async () => {
@@ -306,9 +308,6 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                             <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
                             <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
                             <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Khái niệm khác</TabButton>
-                            {encyclopediaData.knowledge.length > 0 && (
-                                <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến Thức Nền</TabButton>
-                            )}
                          </div>
                     </div>
                     {/* Middle Pane: List */}
@@ -328,7 +327,18 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                                     {filteredList.map((item, index) => (
                                         <li key={index}>
                                             <button onClick={() => handleSelectItem(item)} className={`w-full text-left p-2 rounded-md transition-colors ${activeItem?.name === item.name ? 'bg-purple-600/30' : 'hover:bg-slate-700/50'}`}>
-                                                <p className="font-semibold text-slate-100 truncate">{item.name}</p>
+                                                 <div className="flex justify-between items-center">
+                                                    <p className={`font-semibold truncate ${(item as Quest)?.status === 'hoàn thành' ? 'text-slate-500 line-through' : 'text-slate-100'}`}>
+                                                        {item.name}
+                                                    </p>
+                                                    {activeTab === 'quests' && (item as Quest).status && (
+                                                        <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                                            (item as Quest).status === 'hoàn thành' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                                                        }`}>
+                                                            {(item as Quest).status === 'hoàn thành' ? 'Hoàn thành' : 'Đang làm'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {'quantity' in item && typeof item.quantity === 'number' && <p className="text-xs text-slate-400">Số lượng: {item.quantity}</p>}
                                             </button>
                                         </li>
@@ -353,7 +363,15 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                                     )}
                                 </div>
                                 
-                                {('type' in activeItem && activeItem.type) && <p className="text-sm text-slate-400 mb-4">Loại: {activeItem.type}</p>}
+                                {('type' in activeItem && activeItem.type) && <p className="text-sm text-slate-400 mb-2">Loại: {activeItem.type}</p>}
+                                
+                                {activeTab === 'quests' && (activeItem as Quest).status && (
+                                     <span className={`text-sm font-semibold px-3 py-1 rounded-full mb-4 inline-block ${
+                                         (activeItem as Quest).status === 'hoàn thành' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'
+                                     }`}>
+                                         {(activeItem as Quest).status === 'hoàn thành' ? 'Đã Hoàn Thành' : 'Đang Tiến Hành'}
+                                     </span>
+                                )}
 
                                 <div className="mb-4">
                                     <p className="text-slate-300 whitespace-pre-wrap leading-relaxed">
@@ -387,7 +405,7 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                         ) : activeItem && isEditing ? (
                             <div>
                                 <h3 className="text-2xl font-bold text-purple-300 mb-4">Chỉnh sửa: {activeItem.name}</h3>
-                                <div className="space-y-4">
+                                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
                                      <div>
                                         <label className="block text-sm font-medium text-slate-300 mb-1">Tên</label>
                                         <input type="text" value={editFormData.name} onChange={e => handleFormChange('name', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
@@ -400,36 +418,43 @@ const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, 
                                         <label className="block text-sm font-medium text-slate-300 mb-1">Tính cách</label>
                                         <input type="text" value={editFormData.personality} onChange={e => handleFormChange('personality', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
                                      </div>}
-                                     <div>
-                                        <label className="block text-sm font-medium text-slate-300 mb-1">Tags (phân cách bằng dấu phẩy)</label>
+                                     {activeTab === 'quests' && 'status' in editFormData && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-300 mb-1">Trạng thái</label>
+                                            <select value={editFormData.status} onChange={e => handleFormChange('status', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2">
+                                                <option value="đang tiến hành">Đang tiến hành</option>
+                                                <option value="hoàn thành">Hoàn thành</option>
+                                            </select>
+                                        </div>
+                                     )}
+                                     {'tags' in editFormData && <div>
+                                        <label className="block text-sm font-medium text-slate-300 mb-1">Tags (phân cách bởi dấu phẩy)</label>
                                         <input type="text" value={editFormData.tags} onChange={e => handleFormChange('tags', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
-                                     </div>
+                                     </div>}
                                 </div>
-                                <div className="flex gap-4 mt-6">
-                                    <Button onClick={handleSaveEdit} variant="success" className="!w-auto !py-2 !px-4">Lưu thay đổi</Button>
-                                    <Button onClick={() => setIsEditing(false)} variant="secondary" className="!w-auto !py-2 !px-4">Hủy</Button>
+                                 <div className="flex gap-4 mt-6">
+                                    <Button onClick={handleSaveEdit} variant="primary" className="!w-auto !py-2 !px-4 !text-sm">Lưu Thay Đổi</Button>
+                                    <Button onClick={() => setIsEditing(false)} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm">Hủy</Button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-center text-slate-500">
+                            <div className="flex flex-col items-center justify-center h-full text-slate-500">
                                 <Icon name="encyclopedia" className="w-16 h-16 mb-4" />
-                                <h3 className="text-xl font-semibold">Bách Khoa Toàn Thư</h3>
-                                <p>Chọn một mục từ danh sách bên trái để xem chi tiết.</p>
+                                <p className="text-lg">Chọn một mục để xem chi tiết</p>
                             </div>
                         )}
                     </div>
                 </div>
-                
-                <style>{`
-                @keyframes fade-in-up {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-fade-in-up {
-                    animation: fade-in-up 0.3s ease-out forwards;
-                }
-                `}</style>
             </div>
+            <style>{`
+            @keyframes fade-in-up {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in-up {
+                animation: fade-in-up 0.3s ease-out forwards;
+            }
+            `}</style>
         </div>
     );
 };

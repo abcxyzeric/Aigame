@@ -7,6 +7,7 @@ interface InformationModalProps {
   onClose: () => void;
   gameState: GameState;
   onItemDelete: (itemName: string) => void;
+  onSkillDelete: (skillName: string) => void;
 }
 
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode; iconName: any; }> = ({ active, onClick, children, iconName }) => (
@@ -48,7 +49,7 @@ const EntityList: React.FC<{ title: string; entities: InitialEntity[]; color: st
 };
 
 
-const InformationModal: React.FC<InformationModalProps> = ({ isOpen, onClose, gameState, onItemDelete }) => {
+const InformationModal: React.FC<InformationModalProps> = ({ isOpen, onClose, gameState, onItemDelete, onSkillDelete }) => {
   const [activeTab, setActiveTab] = useState<'character' | 'world'>('character');
   
   if (!isOpen) return null;
@@ -113,9 +114,16 @@ const InformationModal: React.FC<InformationModalProps> = ({ isOpen, onClose, ga
                   {character.skills && character.skills.length > 0 ? (
                     <ul className="space-y-3">
                         {character.skills.map((skill, index) => (
-                             <li key={index} className="bg-slate-900/30 p-2 rounded-md">
-                                <p className="font-bold text-yellow-400">{stripTags(skill.name)}</p>
-                                <p className="text-sm text-slate-300">{stripTags(skill.description)}</p>
+                             <li key={index} className="bg-slate-900/30 p-2 rounded-md group">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-yellow-400">{stripTags(skill.name)}</p>
+                                        <p className="text-sm text-slate-300">{stripTags(skill.description)}</p>
+                                    </div>
+                                    <button onClick={() => onSkillDelete(skill.name)} className="p-1 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                        <Icon name="trash" className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </li>
                         ))}
                     </ul>
