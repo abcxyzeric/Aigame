@@ -129,14 +129,14 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
             const arcName = arcList[i];
             setArcProcessingProgress(prev => ({ ...prev, current: i + 1, currentArcName: arcName }));
             
-            const textContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
-            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.txt`;
-            fandomFileService.saveFandomFile(fileName, textContent);
+            const jsonContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
+            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.json`;
+            fandomFileService.saveFandomFile(fileName, JSON.stringify(jsonContent, null, 2));
             refreshSavedFiles(); // Refresh list to show the new file
         }
 
         setArcProcessingProgress({ current: arcList.length, total: arcList.length, status: 'done', currentArcName: '' });
-        setNotification({ isOpen: true, title: 'Hoàn tất!', messages: [`AI đã tóm tắt và lưu thành công ${arcList.length} tệp .txt vào kho.`] });
+        setNotification({ isOpen: true, title: 'Hoàn tất!', messages: [`AI đã tóm tắt và lưu thành công ${arcList.length} tệp .json vào kho.`] });
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định.';
         setNotification({ isOpen: true, title: 'Lỗi', messages: [errorMessage] });
@@ -184,7 +184,8 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
     if (!files || files.length === 0) return;
 
     try {
-        for (const file of Array.from(files)) {
+        // FIX: Iterate directly over the FileList to ensure correct typing.
+        for (const file of files) {
             const content = await file.text();
             fandomFileService.saveFandomFile(file.name, content);
         }
@@ -226,7 +227,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
         ref={fileUploadRef}
         onChange={handleFileUpload}
         className="hidden"
-        accept=".txt"
+        accept=".txt,.json"
         multiple
       />
       <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8">
@@ -262,8 +263,8 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
 
             {/* --- Step 2: Arc Analysis --- */}
             <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg p-6 border border-slate-700/50">
-                <h2 className="text-xl font-bold text-special-400 mb-2">Bước 2: Tóm Tắt Chi Tiết Tự Động Theo Arc (.txt)</h2>
-                <p className="text-slate-400 mb-4 text-sm">Chọn tệp tóm tắt tổng quan (có tên bắt đầu bằng `tom_tat_...`) từ kho. AI sẽ tự động phân tích và tóm tắt chi tiết về nhân vật, địa điểm, sự kiện... trong từng Arc/Saga, sau đó xuất ra các tệp .txt riêng biệt và lưu vào kho.</p>
+                <h2 className="text-xl font-bold text-special-400 mb-2">Bước 2: Tóm Tắt Chi Tiết Tự Động Theo Arc (.json)</h2>
+                <p className="text-slate-400 mb-4 text-sm">Chọn tệp tóm tắt tổng quan (có tên bắt đầu bằng `tom_tat_...`) từ kho. AI sẽ tự động phân tích và tóm tắt chi tiết về nhân vật, địa điểm, sự kiện... trong từng Arc/Saga, sau đó xuất ra các tệp .json riêng biệt và lưu vào kho, kèm theo Vector Hướng Dẫn Văn Phong.</p>
                 
                 <div className="flex flex-col sm:flex-row gap-4 items-center">
                     <Button onClick={() => setIsSummarySelectModalOpen(true)} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
@@ -278,7 +279,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                     <div className="mt-4 p-3 bg-slate-900/50 rounded-md text-sm text-slate-300 animate-fade-in">
                         {arcProcessingProgress.status === 'extracting_arcs' && <p className="flex items-center gap-2"><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang xác định các Arc...</p>}
                         {arcProcessingProgress.status === 'summarizing' && <p className="flex items-center gap-2"><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang tóm tắt Arc {arcProcessingProgress.current}/{arcProcessingProgress.total}: <span className="font-semibold text-purple-300">{arcProcessingProgress.currentArcName}</span>...</p>}
-                        {arcProcessingProgress.status === 'done' && <p className="font-semibold text-green-400">Hoàn tất! Đã tạo và lưu {arcProcessingProgress.total} tệp .txt vào kho.</p>}
+                        {arcProcessingProgress.status === 'done' && <p className="font-semibold text-green-400">Hoàn tất! Đã tạo và lưu {arcProcessingProgress.total} tệp .json vào kho.</p>}
                     </div>
                 )}
 

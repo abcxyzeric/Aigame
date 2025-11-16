@@ -14,7 +14,16 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.2.6 (Cập nhật hiện tại)",
+      version: "1.3.0 (Cập nhật lớn)",
+      notes: [
+        "**Hệ thống Thời Gian & Danh Vọng:** Giới thiệu hệ thống Thời gian và Danh vọng, giúp thế giới trở nên sống động hơn. AI giờ đây sẽ tự quyết định thời điểm bắt đầu câu chuyện (ngày/tháng/năm) dựa trên bối cảnh. Danh vọng của bạn, thay đổi qua từng hành động, sẽ ảnh hưởng trực tiếp đến cách các NPC tương tác.",
+        "**Cải thiện Giao diện Mobile:** Giao diện gameplay trên di động được thiết kế lại hoàn toàn. Toàn bộ các bảng thông tin (Trạng thái, Đồng hành, Nhiệm vụ...) được đưa vào một thanh menu bên cạnh có thể cuộn, giúp trải nghiệm gọn gàng và dễ sử dụng hơn.",
+        "**Nâng cấp Bách Khoa Toàn Thư:** Bách khoa toàn thư được đại tu với các tab chức năng mới: Phân Tích (thống kê dữ liệu), Quản Lý (nhập/xuất file .json), và Tối ưu hóa bằng AI (tự động dọn dẹp, hợp nhất các mục trùng lặp).",
+        "**Sửa Lỗi & Tinh Chỉnh:** Khắc phục lỗi không thể bấm vào các trạng thái để xem chi tiết. Sửa lỗi AI đôi khi lặp lại nội dung của lượt chơi trước, đảm bảo câu chuyện luôn liền mạch. Tinh chỉnh lại giao diện và độ ổn định chung.",
+      ]
+    },
+    {
+      version: "1.2.6",
       notes: [
         "**Sửa lỗi Phân Trang:** Khắc phục lỗi khiến việc chuyển trang đôi khi không hiển thị đúng lượt chơi.",
         "**Cải thiện Lùi 1 Lượt:** Tính năng lùi lượt giờ đây hoạt động ổn định và trực quan hơn, giữ lại hành động của người chơi một cách chính xác.",

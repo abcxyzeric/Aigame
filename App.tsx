@@ -38,6 +38,10 @@ const App: React.FC = () => {
       discoveredEntities: [],
       companions: [],
       quests: [],
+      suggestions: [],
+      worldTime: { year: 1, month: 1, day: 1, hour: 8 },
+      reputation: { score: 0, tier: 'Vô Danh' },
+      reputationTiers: [],
     });
     setCurrentScreen('gameplay');
   }, []);
@@ -54,6 +58,10 @@ const App: React.FC = () => {
       discoveredEntities: [], // For old saves
       companions: [], // For old saves
       quests: [], // For old saves
+      suggestions: [], // Fallback for old saves
+      worldTime: { year: 1, month: 1, day: 1, hour: 8 }, // Fallback cho file lưu cũ
+      reputation: { score: 0, tier: 'Vô Danh' }, // Fallback cho file lưu cũ
+      reputationTiers: [], // Fallback cho file lưu cũ
       ...state
     };
     setGameState(completeState);

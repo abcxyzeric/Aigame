@@ -79,9 +79,16 @@ export interface ApiKeyStorage {
   keys: string[];
 }
 
+export interface RagSettings {
+  summaryFrequency: number;
+  topK: number;
+  summarizeBeforeRag: boolean;
+}
+
 export interface AppSettings {
   apiKeyConfig: ApiKeyStorage;
   safetySettings: SafetySettingsConfig;
+  ragSettings: RagSettings;
 }
 
 export interface GameTurn {
@@ -136,6 +143,18 @@ export interface EncounteredFaction {
     tags?: string[];
 }
 
+export interface WorldTime {
+  year: number;
+  month: number;
+  day: number;
+  hour: number; // 0-23
+}
+
+export interface Reputation {
+  score: number; // -100 to 100
+  tier: string;
+}
+
 export interface GameState {
   worldConfig: WorldConfig;
   character: CharacterConfig;
@@ -149,6 +168,10 @@ export interface GameState {
   discoveredEntities: InitialEntity[];
   companions: Companion[];
   quests: Quest[];
+  suggestions?: ActionSuggestion[];
+  worldTime: WorldTime;
+  reputation: Reputation;
+  reputationTiers: string[]; // 5 tiers from most infamous to most famous
 }
 
 export interface SaveSlot extends GameState {
@@ -168,15 +191,15 @@ export interface ActionSuggestion {
 export interface AiTurnResponse {
   narration: string;
   suggestions: ActionSuggestion[];
-  updatedMemories?: string[];
   newSummary?: string;
-  updatedPlayerStatus?: StatusEffect[];
-  updatedInventory?: GameItem[];
-  updatedCharacter?: CharacterConfig;
-  updatedEncounteredNPCs?: EncounteredNPC[];
-  updatedEncounteredFactions?: EncounteredFaction[];
-  updatedCompanions?: Companion[];
-  updatedQuests?: Quest[];
+  timePassed?: {
+    hours?: number;
+    minutes?: number;
+  };
+  reputationChange?: {
+    score: number;
+    reason: string;
+  };
 }
 
 export interface StartGameResponse {
@@ -184,6 +207,15 @@ export interface StartGameResponse {
   suggestions: ActionSuggestion[];
   initialPlayerStatus?: StatusEffect[];
   initialInventory?: GameItem[];
+  initialWorldTime?: WorldTime;
+  timePassed?: {
+    hours?: number;
+    minutes?: number;
+  };
+  reputationChange?: {
+    score: number;
+    reason: string;
+  };
 }
 
 export interface EncyclopediaUpdateResponse {
@@ -191,4 +223,35 @@ export interface EncyclopediaUpdateResponse {
     updatedEncounteredNPCs?: EncounteredNPC[];
     updatedEncounteredFactions?: EncounteredFaction[];
     updatedDiscoveredEntities?: InitialEntity[];
+    updatedInventory?: GameItem[];
+    updatedPlayerStatus?: StatusEffect[];
+    updatedCompanions?: Companion[];
+    updatedQuests?: Quest[];
+    newMemories?: string[];
+}
+
+export interface EncyclopediaData {
+  encounteredNPCs: EncounteredNPC[];
+  encounteredFactions: EncounteredFaction[];
+  discoveredEntities: InitialEntity[];
+  inventory: GameItem[];
+  companions: Companion[];
+  quests: Quest[];
+  skills: { name: string; description: string; }[];
+}
+
+export interface EncyclopediaOptimizationResponse {
+    optimizedNPCs: EncounteredNPC[];
+    optimizedFactions: EncounteredFaction[];
+    optimizedDiscoveredEntities: InitialEntity[];
+    optimizedInventory: GameItem[];
+    optimizedCompanions: Companion[];
+    optimizedQuests: Quest[];
+    optimizedSkills: { name: string; description: string; }[];
+}
+
+
+export interface StyleGuideVector {
+    pronoun_rules: string;
+    exclusion_list: string[];
 }

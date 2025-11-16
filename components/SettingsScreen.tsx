@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppSettings, HarmCategory, HarmBlockThreshold } from '../types';
+import { AppSettings, HarmCategory, HarmBlockThreshold, RagSettings } from '../types';
 import { getSettings, saveSettings } from '../services/settingsService';
 import { testApiKeys, testSingleKey } from '../services/aiService';
 import { loadKeysFromTxtFile } from '../services/fileService';
@@ -7,6 +7,7 @@ import { HARM_CATEGORIES, HARM_BLOCK_THRESHOLDS, DEFAULT_SAFETY_SETTINGS } from 
 import Icon from './common/Icon';
 import Button from './common/Button';
 import ToggleSwitch from './common/ToggleSwitch';
+import Accordion from './common/Accordion';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -33,6 +34,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<AppSettings>({
     apiKeyConfig: { keys: [''] }, // Start with one empty key input
     safetySettings: DEFAULT_SAFETY_SETTINGS,
+    ragSettings: { summaryFrequency: 10, topK: 5, summarizeBeforeRag: true },
   });
   const [isTestingKeys, setIsTestingKeys] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +191,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     }));
   };
 
+  const handleRagSettingChange = (field: keyof RagSettings, value: any) => {
+    setSettings(prev => ({
+      ...prev,
+      ragSettings: {
+        ...prev.ragSettings,
+        [field]: value,
+      }
+    }));
+  };
+
   const getInputClass = (status: ValidationStatus = 'idle') => {
     const base = "flex-grow bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2 text-slate-200 transition";
     switch(status) {
@@ -212,9 +224,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         </Button>
       </div>
       
-      {/* --- API Key Settings --- */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-bold mb-2 text-cyan-400">Thiết lập API Key (Tự động lưu)</h2>
+      <Accordion title="Thiết lập API Key (Tự động lưu)" icon={<Icon name="key"/>} borderColorClass='border-cyan-500' titleClassName='text-cyan-400'>
           <div className="text-sm text-slate-400 mb-4 space-y-1">
               <p>Dán API key vào ô bên dưới. Key sẽ được tự động kiểm tra và lưu lại nếu hợp lệ.</p>
           </div>
@@ -243,13 +253,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             </Button>
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".txt" />
           </div>
-      </div>
+      </Accordion>
 
-      {/* --- Safety Settings --- */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-bold text-cyan-400">Cài đặt an toàn Gemini API</h2>
+      <Accordion title="Cài đặt an toàn Gemini API" icon={<Icon name="warning"/>} borderColorClass='border-blue-500' titleClassName='text-blue-400'>
           <p className="text-sm text-slate-400 mb-4">Cấu hình mức độ chặn nội dung không an toàn. Ảnh hưởng đến tất cả phản hồi AI.</p>
-          
           <div className="bg-slate-900/70 border border-blue-900/50 rounded-md p-4 mb-6">
             <h3 className="font-semibold text-slate-200">Chế độ hoạt động kép</h3>
             <div className="text-xs text-slate-400 mt-2 space-y-2">
@@ -257,12 +264,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               <p><strong className="text-slate-300">Tắt lọc an toàn (Chế độ Vượt qua An toàn):</strong> Để xử lý nội dung nhạy cảm (khi tùy chọn 18+ được bật) và tránh lỗi "prohibited", công cụ sẽ kích hoạt một giao thức đặc biệt. Văn bản đầu vào của bạn sẽ được làm mờ (obfuscated) và AI sẽ được hướng dẫn theo một "Giao thức Nghiên cứu Học thuật" để giải mã và xử lý nội dung gốc một cách trung thực và không bị kiểm duyệt.</p>
             </div>
           </div>
-
           <div className="flex items-center justify-between bg-slate-900/70 p-3 rounded-md mb-6">
             <h3 className="font-semibold text-slate-200">Bật lọc an toàn Gemini API</h3>
             <ToggleSwitch enabled={settings.safetySettings.enabled} setEnabled={handleSafetyToggle} />
           </div>
-
           <div className={`transition-opacity duration-300 ${settings.safetySettings.enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {settings.safetySettings.settings.map(({ category, threshold }) => (
@@ -283,7 +288,42 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 ))}
             </div>
           </div>
-      </div>
+      </Accordion>
+
+      <Accordion title="Hệ Thống Trí Nhớ Nâng Cao (RAG & Tóm Tắt)" icon={<Icon name="memory"/>} borderColorClass='border-purple-500' titleClassName='text-purple-400'>
+        <p className="text-sm text-slate-400 mb-4">Cấu hình cách AI ghi nhớ và truy xuất thông tin dài hạn để chống quá tải token và giúp game chạy được hàng ngàn lượt.</p>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="summary-frequency" className="block text-sm font-medium text-slate-300 mb-1">Tần suất Tóm tắt Tự động (số lượt)</label>
+            <input
+              type="number"
+              id="summary-frequency"
+              value={settings.ragSettings.summaryFrequency}
+              onChange={(e) => handleRagSettingChange('summaryFrequency', parseInt(e.target.value, 10))}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              min="5"
+            />
+            <p className="text-xs text-slate-500 mt-1">Cứ sau mỗi X lượt, AI sẽ tự động tóm tắt các diễn biến vừa qua.</p>
+          </div>
+          <div>
+            <label htmlFor="top-k" className="block text-sm font-medium text-slate-300 mb-1">Số kết quả RAG (Top K)</label>
+            <input
+              type="number"
+              id="top-k"
+              value={settings.ragSettings.topK}
+              onChange={(e) => handleRagSettingChange('topK', parseInt(e.target.value, 10))}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              min="1"
+              max="10"
+            />
+            <p className="text-xs text-slate-500 mt-1">Số lượng ký ức liên quan nhất AI sẽ truy xuất trong mỗi lượt chơi.</p>
+          </div>
+          <div className="flex items-center justify-between bg-slate-900/70 p-3 rounded-md">
+            <h3 className="font-semibold text-slate-200">Tóm tắt Lịch sử Truyện trước khi lia RAG</h3>
+            <ToggleSwitch enabled={settings.ragSettings.summarizeBeforeRag} setEnabled={(val) => handleRagSettingChange('summarizeBeforeRag', val)} />
+          </div>
+        </div>
+      </Accordion>
 
       <div className="mt-8 flex justify-end">
         <Button onClick={handleSave} variant="primary" className="!w-auto !text-lg !px-8">

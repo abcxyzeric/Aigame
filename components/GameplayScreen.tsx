@@ -1,7 +1,8 @@
 
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest } from '../types';
+// FIX: Added EncounteredNPC and EncounteredFaction to the import list to resolve 'Cannot find name' errors.
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
@@ -35,7 +36,7 @@ const useMediaQuery = (query: string) => {
   return matches;
 };
 
-const StatusList: React.FC<{ statuses: StatusEffect[], onDelete: (statusName: string) => void }> = ({ statuses, onDelete }) => {
+const StatusList: React.FC<{ statuses: StatusEffect[], onDelete: (statusName: string) => void, onSelect: (statusName: string) => void }> = ({ statuses, onDelete, onSelect }) => {
     if (!statuses || statuses.length === 0) {
         return <p className="text-xs text-slate-400">Không có trạng thái nào.</p>;
     }
@@ -43,21 +44,16 @@ const StatusList: React.FC<{ statuses: StatusEffect[], onDelete: (statusName: st
     return (
         <ul className="space-y-2 text-xs">
             {statuses.map((status, index) => (
-                <li key={index} className="group relative flex items-center justify-between">
-                    <div className="truncate">
+                <li key={index} className="flex items-center justify-between gap-2 p-1 rounded hover:bg-slate-700/50">
+                    <button onClick={() => onSelect(status.name)} className="text-left flex-grow min-w-0">
                         <p className="truncate">
                             <strong className={status.type === 'buff' ? 'text-green-400' : 'text-red-400'}>
                                 {status.name}
                             </strong>
                         </p>
-                    </div>
-                    {/* Tooltip */}
-                    <div className="absolute bottom-full left-0 mb-2 w-64 hidden group-hover:block bg-slate-900 text-white text-xs rounded py-2 px-3 z-10 border border-slate-700 shadow-lg">
-                        <p className="font-bold mb-1">{status.name} ({status.type === 'buff' ? 'Tích cực' : 'Tiêu cực'})</p>
-                        {status.description}
-                    </div>
-                     <button onClick={() => onDelete(status.name)} className="p-1 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Icon name="trash" className="w-3 h-3"/>
+                    </button>
+                    <button onClick={() => onDelete(status.name)} className="p-1 text-slate-400 hover:text-red-400 transition-opacity flex-shrink-0" title={`Xóa trạng thái ${status.name}`}>
+                        <Icon name="trash" className="w-4 h-4"/>
                     </button>
                 </li>
             ))}
@@ -204,6 +200,38 @@ const SuggestionCard: React.FC<{ suggestion: ActionSuggestion; onSelect: (descri
     );
 };
 
+const advanceTime = (currentTime: WorldTime, timePassed: { hours?: number; minutes?: number }): WorldTime => {
+    if (!timePassed || (!timePassed.hours && !timePassed.minutes)) return currentTime;
+
+    const newDate = new Date(0);
+    newDate.setUTCFullYear(currentTime.year);
+    newDate.setUTCMonth(currentTime.month - 1);
+    newDate.setUTCDate(currentTime.day);
+    newDate.setUTCHours(currentTime.hour);
+
+    if (timePassed.hours) {
+        newDate.setUTCHours(newDate.getUTCHours() + timePassed.hours);
+    }
+    if (timePassed.minutes) {
+        newDate.setUTCMinutes(newDate.getUTCMinutes() + timePassed.minutes);
+    }
+    
+    return {
+        year: newDate.getUTCFullYear(),
+        month: newDate.getUTCMonth() + 1,
+        day: newDate.getUTCDate(),
+        hour: newDate.getUTCHours(),
+    };
+};
+
+const getTimeOfDay = (hour: number): string => {
+    if (hour >= 6 && hour < 12) return 'Sáng';
+    if (hour >= 12 && hour < 14) return 'Trưa';
+    if (hour >= 14 && hour < 18) return 'Chiều';
+    if (hour >= 18 && hour < 22) return 'Tối';
+    return 'Đêm';
+};
+
 
 const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBack }) => {
   const [gameState, setGameState] = useState<GameState>({ ...initialGameState, companions: initialGameState.companions || [], quests: initialGameState.quests || [] });
@@ -218,10 +246,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [isStoryLogModalOpen, setIsStoryLogModalOpen] = useState(false);
   const [isInformationModalOpen, setIsInformationModalOpen] = useState(false);
   const [isEncyclopediaModalOpen, setIsEncyclopediaModalOpen] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [showScrollUp, setShowScrollUp] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
-  const [suggestions, setSuggestions] = useState<ActionSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<ActionSuggestion[]>(initialGameState.suggestions || []);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
@@ -264,6 +292,15 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const isInitialLoading = isLoading && gameState.history.length === 0;
   const isTurnLoading = isLoading && gameState.history.length > 0;
+
+  const getReputationTier = useCallback((score: number, tiers: string[]): string => {
+    if (tiers.length !== 5) return "Vô Danh"; // Fallback
+    if (score <= -75) return tiers[0];
+    if (score <= -25) return tiers[1];
+    if (score < 25) return tiers[2];
+    if (score < 75) return tiers[3];
+    return tiers[4];
+  }, []);
 
   const handleEntityClick = useCallback(async (name: string) => {
     const lowerCaseName = name.toLowerCase().trim();
@@ -349,6 +386,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     const newHistory = [...gameState.history, newAction];
     setSuggestions([]);
+    
+    // Optimistically update history for immediate UI feedback
     setGameState(prev => ({ ...prev, history: newHistory }));
     setPlayerInput('');
     setIsLoading(true);
@@ -356,21 +395,27 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
       const tempGameState = { ...gameState, history: newHistory };
-      const { narration, suggestions, updatedMemories, newSummary, updatedPlayerStatus, updatedInventory, updatedCharacter, updatedEncounteredNPCs, updatedEncounteredFactions, updatedCompanions, updatedQuests } = await aiService.getNextTurn(tempGameState);
+      const { narration, suggestions, newSummary, timePassed, reputationChange } = await aiService.getNextTurn(tempGameState);
+      
+      const newWorldTime = advanceTime(gameState.worldTime, timePassed || {});
       const finalHistory: GameTurn[] = [...newHistory, { type: 'narration', content: narration }];
+      
+      let newReputation = gameState.reputation;
+      if (reputationChange && gameState.reputationTiers.length === 5) {
+          const newScore = Math.max(-100, Math.min(100, gameState.reputation.score + reputationChange.score));
+          newReputation = {
+              score: newScore,
+              tier: getReputationTier(newScore, gameState.reputationTiers),
+          };
+      }
       
       const updatedGameState = { 
         ...gameState, 
         history: finalHistory,
-        character: updatedCharacter || gameState.character,
-        memories: updatedMemories || gameState.memories,
+        suggestions: suggestions,
         summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries,
-        playerStatus: updatedPlayerStatus || gameState.playerStatus,
-        inventory: updatedInventory || gameState.inventory,
-        encounteredNPCs: updatedEncounteredNPCs || gameState.encounteredNPCs,
-        encounteredFactions: updatedEncounteredFactions || gameState.encounteredFactions,
-        companions: updatedCompanions || gameState.companions,
-        quests: updatedQuests || gameState.quests,
+        worldTime: newWorldTime,
+        reputation: newReputation,
       };
 
       const newNarrationTurns = updatedGameState.history.filter(h => h.type === 'narration');
@@ -381,44 +426,56 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setSuggestions(suggestions);
       setShowSuggestions(true);
       setCurrentPage(lastPage);
-      gameService.saveGame(updatedGameState);
+      gameService.saveGame(updatedGameState); // Save the game state with the new history
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
       setError(errorMessage);
+      // Revert history if AI fails
       setGameState(prev => ({ ...prev, history: gameState.history }));
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, isLoading]);
+  }, [gameState, isLoading, getReputationTier]);
   
   const startGame = useCallback(async () => {
-    // If history has content, it's a loaded game.
-    if (gameState.history.length > 0) {
-      setIsLoading(true); // Show a loading state while fetching suggestions.
-      setError(null);
+    let currentGameState = gameState;
+    
+    // Generate reputation tiers if they don't exist (for new games or old saves)
+    if (!currentGameState.reputationTiers || currentGameState.reputationTiers.length !== 5) {
+        try {
+            const tiers = await aiService.generateReputationTiers(currentGameState.worldConfig.storyContext.genre);
+            const initialTier = getReputationTier(0, tiers);
+            currentGameState = {
+                ...currentGameState,
+                reputationTiers: tiers,
+                reputation: { score: 0, tier: initialTier }
+            };
+            setGameState(currentGameState); // Update state immediately
+        } catch (e) {
+             setError(e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.');
+        }
+    }
       
-      const narrationTurns = gameState.history.filter(h => h.type === 'narration');
+    // If history has content, it's a loaded game.
+    if (currentGameState.history.length > 0) {
+      setIsLoading(false); // Game is loaded, no fetching needed.
+      
+      const narrationTurns = currentGameState.history.filter(h => h.type === 'narration');
       const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
       const lastPage = totalPages > 0 ? totalPages - 1 : 0;
       setCurrentPage(lastPage);
       
+      // Suggestions were loaded via useState, just show them.
+      setShowSuggestions(suggestions.length > 0);
+      
       // Ensure default values for new fields in old saves.
       setGameState(prev => ({
           ...prev,
+          ...currentGameState, // Apply updates from tier generation
           companions: prev.companions || [],
           quests: prev.quests || [],
       }));
 
-      try {
-        // Generate new suggestions based on the loaded state.
-        const newSuggestions = await aiService.generateSuggestionsForCurrentState(gameState);
-        setSuggestions(newSuggestions);
-        setShowSuggestions(true);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Lỗi không thể tạo gợi ý khi tải game.');
-      } finally {
-        setIsLoading(false);
-      }
       return;
     }
 
@@ -427,14 +484,30 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setIsLoading(true);
     setError(null);
     try {
-      const { narration, suggestions, initialPlayerStatus, initialInventory } = await aiService.startGame(gameState.worldConfig);
+      const { narration, suggestions, initialPlayerStatus, initialInventory, timePassed, reputationChange, initialWorldTime } = await aiService.startGame(currentGameState.worldConfig);
+      
+      const baseTime = initialWorldTime || currentGameState.worldTime;
+      const newWorldTime = advanceTime(baseTime, timePassed || {});
+      
+      let newReputation = currentGameState.reputation;
+      if (reputationChange && currentGameState.reputationTiers.length === 5) {
+          const newScore = Math.max(-100, Math.min(100, currentGameState.reputation.score + reputationChange.score));
+          newReputation = {
+              score: newScore,
+              tier: getReputationTier(newScore, currentGameState.reputationTiers),
+          };
+      }
+      
       const updatedGameState: GameState = {
-        ...gameState,
+        ...currentGameState,
         history: [{ type: 'narration', content: narration }],
         playerStatus: initialPlayerStatus || [],
         inventory: initialInventory || [],
         companions: [],
         quests: [],
+        suggestions: suggestions,
+        worldTime: newWorldTime,
+        reputation: newReputation,
       };
       setGameState(updatedGameState);
       setSuggestions(suggestions);
@@ -445,7 +518,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState]);
+  }, [gameState, getReputationTier]);
 
   useEffect(() => {
     // This logic will run on mount for a new game, and again whenever
@@ -473,7 +546,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
+        setIsSidePanelOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -538,6 +611,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         discoveredEntities: [],
         companions: [],
         quests: [],
+        suggestions: [],
+        worldTime: { year: 1, month: 1, day: 1, hour: 8 },
+        reputation: { score: 0, tier: 'Vô Danh' },
+        reputationTiers: [],
     }));
     // The loading state and new story generation will be handled by the useEffect watching history.length.
   };
@@ -554,12 +631,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   };
 
   const handleRestart = () => {
-    setIsMenuOpen(false); // Close menu if open
+    setIsSidePanelOpen(false); // Close menu if open
     setShowRestartConfirm(true);
   };
   
   const handleUndoTurn = () => {
-    setIsMenuOpen(false);
+    setIsSidePanelOpen(false);
     setShowUndoConfirm(true);
   };
 
@@ -577,13 +654,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     // The player's action will now be the last turn in the history and will be displayed.
     const newHistory = gameState.history.slice(0, -1);
     
-    const newState = { ...gameState, history: newHistory };
+    const newState = { ...gameState, history: newHistory, suggestions: [] };
     setGameState(newState);
     
     // Clear player input instead of restoring it.
     setPlayerInput('');
     
-    // Hide suggestions and don't refetch them to be faster.
     setSuggestions([]);
     setShowSuggestions(false); 
     
@@ -595,7 +671,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     fileService.saveGameStateToFile(gameState);
     gameService.saveGame(gameState);
     alert('Đã lưu game vào trình duyệt và tải tệp xuống thành công!');
-    setIsMenuOpen(false);
+    setIsSidePanelOpen(false);
   }, [gameState]);
 
   const handleSendAction = () => {
@@ -634,65 +710,43 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
   };
 
-  const handleDeleteStatus = useCallback((statusName: string) => {
+  const handleDeleteStatus = (statusName: string) => {
     if (confirm(`Bạn có chắc muốn xóa trạng thái "${statusName}" không?`)) {
         setGameState(prev => {
-            const newStatus = prev.playerStatus.filter(s => s.name !== statusName);
+            const newStatus = prev.playerStatus.filter(s => s.name.trim().toLowerCase() !== statusName.trim().toLowerCase());
             const newState = { ...prev, playerStatus: newStatus };
             gameService.saveGame(newState); // Save after modification
             return newState;
         });
     }
+  };
+
+  const handleDeleteEntity = useCallback((entityToDelete: { name: string }) => {
+    if (!confirm(`Bạn có chắc muốn xóa "${entityToDelete.name}" không? Thao tác này sẽ xóa mục này khỏi mọi nơi trong game.`)) return;
+
+    setGameState(prev => {
+        const nameToDelete = entityToDelete.name.toLowerCase();
+        
+        // Create a new state object to modify safely
+        const newState = JSON.parse(JSON.stringify(prev));
+
+        // Filter all relevant lists
+        newState.inventory = (newState.inventory || []).filter((item: GameItem) => item.name.toLowerCase() !== nameToDelete);
+        newState.character.skills = (newState.character.skills || []).filter((skill: {name: string}) => skill.name.toLowerCase() !== nameToDelete);
+        newState.encounteredNPCs = (newState.encounteredNPCs || []).filter((npc: EncounteredNPC) => npc.name.toLowerCase() !== nameToDelete);
+        newState.companions = (newState.companions || []).filter((c: Companion) => c.name.toLowerCase() !== nameToDelete);
+        newState.quests = (newState.quests || []).filter((q: Quest) => q.name.toLowerCase() !== nameToDelete);
+        newState.encounteredFactions = (newState.encounteredFactions || []).filter((f: EncounteredFaction) => f.name.toLowerCase() !== nameToDelete);
+        
+        // Filter polymorphic lists by name
+        newState.discoveredEntities = (newState.discoveredEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
+        newState.worldConfig.initialEntities = (newState.worldConfig.initialEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
+        
+        gameService.saveGame(newState);
+        return newState;
+    });
   }, []);
 
-  const handleDeleteItem = useCallback((itemName: string) => {
-    if (confirm(`Bạn có chắc muốn xóa vật phẩm "${itemName}" không?`)) {
-        setGameState(prev => {
-            const lowerCaseItemName = itemName.toLowerCase();
-            const newInventory = prev.inventory.filter(i => i.name.toLowerCase() !== lowerCaseItemName);
-            const newDiscovered = prev.discoveredEntities.filter(e => e.name.toLowerCase() !== lowerCaseItemName || e.type !== 'Vật phẩm');
-            const newInitial = prev.worldConfig.initialEntities.filter(e => e.name.toLowerCase() !== lowerCaseItemName || e.type !== 'Vật phẩm');
-
-            const newState = {
-                ...prev,
-                inventory: newInventory,
-                discoveredEntities: newDiscovered,
-                worldConfig: {
-                    ...prev.worldConfig,
-                    initialEntities: newInitial,
-                }
-            };
-            gameService.saveGame(newState);
-            return newState;
-        });
-    }
-  }, []);
-
-  const handleDeleteSkill = useCallback((skillName: string) => {
-    if (confirm(`Bạn có chắc muốn xóa kỹ năng "${skillName}" không?`)) {
-        setGameState(prev => {
-            const lowerCaseSkillName = skillName.toLowerCase();
-            const newSkills = prev.character.skills.filter(s => s.name.toLowerCase() !== lowerCaseSkillName);
-            const newDiscovered = prev.discoveredEntities.filter(e => e.name.toLowerCase() !== lowerCaseSkillName || e.type !== 'Công pháp / Kỹ năng');
-            const newInitial = prev.worldConfig.initialEntities.filter(e => e.name.toLowerCase() !== lowerCaseSkillName || e.type !== 'Công pháp / Kỹ năng');
-
-            const newState = {
-                ...prev,
-                character: {
-                    ...prev.character,
-                    skills: newSkills
-                },
-                discoveredEntities: newDiscovered,
-                worldConfig: {
-                    ...prev.worldConfig,
-                    initialEntities: newInitial
-                }
-            };
-            gameService.saveGame(newState);
-            return newState;
-        });
-    }
-  }, []);
 
   const handleCompanionClick = useCallback((companion: Companion) => {
     setEntityModalContent({
@@ -734,9 +788,18 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const characterPersonality = gameState.character.personality === 'Tuỳ chỉnh' 
     ? gameState.character.customPersonality 
     : gameState.character.personality;
+    
+  const timeOfDay = getTimeOfDay(gameState.worldTime.hour);
+  
+  const getReputationColor = (score: number) => {
+    if (score < -25) return 'text-red-400';
+    if (score > 25) return 'text-green-400';
+    return 'text-slate-300';
+  };
+  const reputationColor = getReputationColor(gameState.reputation.score);
   
   const MenuButton: React.FC<{onClick: () => void, icon: any, label: string, variant: string, disabled?: boolean}> = ({onClick, icon, label, variant, disabled = false}) => (
-      <button onClick={onClick} disabled={disabled} className={`w-full flex items-center px-4 py-2 text-sm text-left rounded-md hover:bg-slate-700 transition ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-slate-800' : ''}`}>
+      <button onClick={() => { onClick(); setIsSidePanelOpen(false); }} disabled={disabled} className={`w-full flex items-center px-4 py-3 text-sm text-left rounded-md hover:bg-slate-700 transition ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-slate-800' : ''}`}>
           <Icon name={icon} className={`w-5 h-5 mr-3 text-${variant}-400`}/>
           {label}
       </button>
@@ -766,14 +829,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         isOpen={isInformationModalOpen}
         onClose={() => setIsInformationModalOpen(false)}
         gameState={gameState}
-        onItemDelete={handleDeleteItem}
-        onSkillDelete={handleDeleteSkill}
+        onDeleteEntity={handleDeleteEntity}
       />
        <EncyclopediaModal 
         isOpen={isEncyclopediaModalOpen}
         onClose={() => setIsEncyclopediaModalOpen(false)}
         gameState={gameState}
         setGameState={setGameState}
+        onDeleteEntity={handleDeleteEntity}
       />
       <EntityInfoModal
         isOpen={!!entityModalContent}
@@ -832,10 +895,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             </button>
             
             <div className="text-center">
-              <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[150px] sm:max-w-[250px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
-              <div className="text-xs text-slate-400 flex items-center justify-center gap-x-3">
-                  <span className="text-fuchsia-400 hidden sm:inline">Tính cách: {characterPersonality}</span>
-                  <span>Lượt: {narrationTurns.length}</span>
+              <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[150px] sm:max-w-[350px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
+              <div className="text-xs text-slate-400 flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-3">
+                  <span className="hidden sm:inline">Lượt: {narrationTurns.length}</span>
               </div>
             </div>
              
@@ -850,53 +912,65 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                  <button onClick={handleRestart} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-pink-300 bg-pink-900/40 hover:bg-pink-800/60 rounded-lg transition"><Icon name="restart" className="w-4 h-4"/>Bắt Đầu Lại</button>
              </div>
 
-             {/* Mobile Menu */}
-             <div className="relative lg:hidden z-[60]" ref={menuRef}>
-                <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 text-slate-300 hover:bg-slate-700 rounded-full transition">
+             {/* Mobile Menu Button */}
+             <div className="lg:hidden z-[60]">
+                <button onClick={() => setIsSidePanelOpen(true)} className="p-2 text-slate-300 hover:bg-slate-700 rounded-full transition">
                     <Icon name="ellipsisVertical" className="w-5 h-5" />
                 </button>
-                {isMenuOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-lg p-2 animate-fade-in-up">
-                        <MenuButton onClick={() => setIsInformationModalOpen(true)} icon="info" label="Thông Tin" variant="pink" />
-                        <MenuButton onClick={handleManualSave} icon="save" label="Lưu Game" variant="green" />
-                        <MenuButton onClick={() => setIsTempRulesModalOpen(true)} icon="rules" label="Luật Tạm Thời" variant="blue" />
-                        <MenuButton onClick={() => setIsMemoryModalOpen(true)} icon="memory" label="Ký Ức" variant="purple" />
-                        <MenuButton onClick={() => setIsEncyclopediaModalOpen(true)} icon="encyclopedia" label="Bách Khoa" variant="orange" />
-                        <div className="my-1 border-t border-slate-700"></div>
-                        <MenuButton onClick={handleUndoTurn} icon="undo" label="Lùi 1 Lượt" variant="yellow" disabled={gameState.history.length < 2} />
-                        <MenuButton onClick={handleRestart} icon="restart" label="Bắt Đầu Lại" variant="pink" />
-                    </div>
-                )}
             </div>
           </div>
         </header>
 
-        {/* Info Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4 flex-shrink-0">
+        {/* Info Panels (Desktop) */}
+        <div className="hidden lg:grid grid-cols-5 gap-2 sm:gap-4 flex-shrink-0">
+             <InfoPanel 
+                iconName="sun" 
+                title="Thời Gian"
+                borderColorClass="border-yellow-500" 
+                textColorClass="text-yellow-400"
+                isInitiallyOpen={true}
+            >
+                <div className="text-xs space-y-1">
+                    <p><strong>Buổi:</strong> {timeOfDay}</p>
+                    <p><strong>Ngày:</strong> {gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year}</p>
+                </div>
+            </InfoPanel>
+            <InfoPanel 
+                iconName="reputation" 
+                title="Danh Vọng"
+                borderColorClass="border-orange-500" 
+                textColorClass="text-orange-400"
+                isInitiallyOpen={true}
+            >
+                 <div className="text-xs space-y-1">
+                    <p><strong>Cấp:</strong> <span className={`font-bold ${reputationColor}`}>{gameState.reputation.tier}</span></p>
+                    <p><strong>Điểm:</strong> <span className={`font-bold ${reputationColor}`}>{gameState.reputation.score}</span></p>
+                </div>
+            </InfoPanel>
             <InfoPanel 
                 iconName="status" 
-                title="Trạng Thái Hiện Tại"
+                title="Trạng Thái"
                 borderColorClass="border-cyan-500" 
                 textColorClass="text-cyan-400"
-                isInitiallyOpen={isDesktop}
+                isInitiallyOpen={true}
             >
-                <StatusList statuses={gameState.playerStatus} onDelete={handleDeleteStatus} />
+                <StatusList statuses={gameState.playerStatus} onDelete={handleDeleteStatus} onSelect={handleEntityClick} />
             </InfoPanel>
              <InfoPanel 
                 iconName="companions" 
                 title="Đồng Hành" 
                 borderColorClass="border-green-500" 
                 textColorClass="text-green-400"
-                isInitiallyOpen={isDesktop}
+                isInitiallyOpen={true}
             >
                 <CompanionList companions={gameState.companions} onSelect={handleCompanionClick} />
             </InfoPanel>
              <InfoPanel 
                 iconName="quest" 
-                title="Nhiệm Vụ Đang Làm" 
-                borderColorClass="border-cyan-500" 
-                textColorClass="text-cyan-400"
-                isInitiallyOpen={isDesktop}
+                title="Nhiệm Vụ" 
+                borderColorClass="border-blue-500" 
+                textColorClass="text-blue-400"
+                isInitiallyOpen={true}
             >
                 <QuestList quests={gameState.quests} onSelect={handleQuestClick} onDelete={handleDeleteQuest} />
             </InfoPanel>
@@ -1029,6 +1103,62 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           </div>
         </main>
       </div>
+      
+       {/* Mobile Side Panel */}
+      <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:hidden ${isSidePanelOpen ? 'bg-black/60 backdrop-blur-sm' : 'pointer-events-none bg-transparent'}`} onClick={() => setIsSidePanelOpen(false)}></div>
+      <div ref={menuRef} className={`fixed top-0 right-0 h-full w-4/5 max-w-xs bg-slate-800/95 backdrop-blur-lg border-l border-slate-700 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${isSidePanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="p-4 border-b border-slate-700 flex-shrink-0">
+                <h3 className="font-bold text-lg text-slate-100">Chức Năng</h3>
+          </div>
+          <div className="flex-grow overflow-y-auto p-4 space-y-6">
+              <div>
+                <h3 className="font-bold text-base text-slate-300 mb-3">Thông Tin Nhanh</h3>
+                <div className="space-y-4">
+                  <div className="bg-slate-900/50 p-3 rounded-lg">
+                    <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm mb-2"><Icon name="sun" className="w-5 h-5"/>Thời Gian</div>
+                    <div className="text-xs space-y-1 text-slate-300">
+                        <p><strong>Buổi:</strong> {timeOfDay}</p>
+                        <p><strong>Ngày:</strong> {gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year}</p>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/50 p-3 rounded-lg">
+                    <div className="flex items-center gap-2 text-orange-400 font-semibold text-sm mb-2"><Icon name="reputation" className="w-5 h-5"/>Danh Vọng</div>
+                    <div className="text-xs space-y-1">
+                        <p className={reputationColor}><strong>Cấp:</strong> <span className="font-bold">{gameState.reputation.tier}</span></p>
+                        <p className={reputationColor}><strong>Điểm:</strong> <span className="font-bold">{gameState.reputation.score}</span></p>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/50 p-3 rounded-lg">
+                    <div className="flex items-center gap-2 text-cyan-400 font-semibold text-sm mb-2"><Icon name="status" className="w-5 h-5"/>Trạng Thái</div>
+                    <StatusList statuses={gameState.playerStatus} onDelete={handleDeleteStatus} onSelect={handleEntityClick} />
+                  </div>
+                  <div className="bg-slate-900/50 p-3 rounded-lg">
+                    <div className="flex items-center gap-2 text-green-400 font-semibold text-sm mb-2"><Icon name="companions" className="w-5 h-5"/>Đồng Hành</div>
+                    <CompanionList companions={gameState.companions} onSelect={handleCompanionClick} />
+                  </div>
+                  <div className="bg-slate-900/50 p-3 rounded-lg">
+                    <div className="flex items-center gap-2 text-blue-400 font-semibold text-sm mb-2"><Icon name="quest" className="w-5 h-5"/>Nhiệm Vụ</div>
+                    <QuestList quests={gameState.quests} onSelect={handleQuestClick} onDelete={handleDeleteQuest} />
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-bold text-base text-slate-300 mb-3">Chức Năng Game</h3>
+                <div className="space-y-1">
+                    <MenuButton onClick={() => setIsInformationModalOpen(true)} icon="info" label="Thông Tin" variant="pink" />
+                    <MenuButton onClick={handleManualSave} icon="save" label="Lưu Game" variant="green" />
+                    <MenuButton onClick={() => setIsTempRulesModalOpen(true)} icon="rules" label="Luật Tạm Thời" variant="blue" />
+                    <MenuButton onClick={() => setIsMemoryModalOpen(true)} icon="memory" label="Ký Ức" variant="purple" />
+                    <MenuButton onClick={() => setIsEncyclopediaModalOpen(true)} icon="encyclopedia" label="Bách Khoa" variant="orange" />
+                    <div className="my-1 border-t border-slate-700"></div>
+                    <MenuButton onClick={handleUndoTurn} icon="undo" label="Lùi 1 Lượt" variant="yellow" disabled={gameState.history.length < 2} />
+                    <MenuButton onClick={handleRestart} icon="restart" label="Bắt Đầu Lại" variant="pink" />
+                </div>
+              </div>
+          </div>
+      </div>
+      
       <style>{`
           @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
           .animate-fade-in { animation: fadeIn 0.5s ease-in-out; }

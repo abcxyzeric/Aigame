@@ -1,5 +1,5 @@
-import { AppSettings, ApiKeyStorage, SafetySettingsConfig } from '../types';
-import { DEFAULT_SAFETY_SETTINGS } from '../constants';
+import { AppSettings, ApiKeyStorage, SafetySettingsConfig, RagSettings } from '../types';
+import { DEFAULT_SAFETY_SETTINGS, DEFAULT_RAG_SETTINGS } from '../constants';
 
 const SETTINGS_STORAGE_KEY = 'ai_rpg_settings';
 
@@ -7,20 +7,26 @@ const SETTINGS_STORAGE_KEY = 'ai_rpg_settings';
 const DEFAULT_SETTINGS: AppSettings = {
   apiKeyConfig: { keys: [] },
   safetySettings: DEFAULT_SAFETY_SETTINGS,
+  ragSettings: DEFAULT_RAG_SETTINGS,
 };
 
 export const getSettings = (): AppSettings => {
   try {
     const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (storedSettings) {
-      const parsed = JSON.parse(storedSettings) as AppSettings;
-      // Basic validation to ensure the structure is not completely broken from an old version
-      if (parsed.apiKeyConfig && parsed.safetySettings) {
-        return {
-            ...DEFAULT_SETTINGS, // Ensures new default fields are added
-            ...parsed,
-        };
-      }
+      const parsed = JSON.parse(storedSettings) as Partial<AppSettings>;
+      // Merge parsed settings with defaults to ensure all keys exist
+      const mergedSettings: AppSettings = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        apiKeyConfig: parsed.apiKeyConfig || DEFAULT_SETTINGS.apiKeyConfig,
+        safetySettings: parsed.safetySettings || DEFAULT_SETTINGS.safetySettings,
+        ragSettings: {
+          ...DEFAULT_SETTINGS.ragSettings,
+          ...(parsed.ragSettings || {}),
+        },
+      };
+      return mergedSettings;
     }
     return DEFAULT_SETTINGS;
   } catch (error) {

@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-type IconName = 'play' | 'save' | 'upload' | 'news' | 'settings' | 'world' | 'user' | 'rules' | 'entity' | 'difficulty' | 'goal' | 'back' | 'plus' | 'trash' | 'magic' | 'checkCircle' | 'xCircle' | 'key' | 'warning' | 'status' | 'companions' | 'quest' | 'memory' | 'info' | 'restart' | 'arrowUp' | 'arrowDown' | 'ellipsisVertical' | 'download' | 'expand' | 'encyclopedia' | 'pencil' | 'undo';
+type IconName = 'play' | 'save' | 'upload' | 'news' | 'settings' | 'world' | 'user' | 'rules' | 'entity' | 'difficulty' | 'goal' | 'back' | 'plus' | 'trash' | 'magic' | 'checkCircle' | 'xCircle' | 'key' | 'warning' | 'status' | 'companions' | 'quest' | 'memory' | 'info' | 'restart' | 'arrowUp' | 'arrowDown' | 'ellipsisVertical' | 'download' | 'expand' | 'encyclopedia' | 'pencil' | 'undo' | 'sun' | 'moon' | 'reputation';
 
 // Fix: Extend React.SVGProps to allow passing standard SVG attributes like 'title'.
 // The `title` prop is added explicitly to support tooltips via an SVG <title> element.
@@ -45,7 +45,10 @@ const Icon: React.FC<IconProps> = ({ name, className = 'w-6 h-6', title, ...prop
     expand: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75h4.5m0 0v4.5m0-4.5L12 12m6.75-6.75h-4.5m0 0v4.5m0-4.5L12 12m0 0-8.25 8.25M12 12l8.25 8.25" />,
     encyclopedia: <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 3.75V16.5L12 14.25 7.5 16.5V3.75m9 0H12m0 0H7.5m12 0h-4.5m-4.5 0H3.75M3.75 3.75v16.5c0 .621.504 1.125 1.125 1.125h14.25c.621 0 1.125-.504 1.125-1.125V3.75M3.75 3.75c0-.621.504-1.125 1.125-1.125h14.25c.621 0 1.125.504 1.125 1.125" />,
     pencil: <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />,
-    undo: <path strokeLinecap="round" strokeLinejoin="round" d="M15 15V9.75a3.75 3.75 0 0 0-3.75-3.75H3.75m0 0L7.5 9.75M3.75 6 7.5 2.25" />
+    undo: <path strokeLinecap="round" strokeLinejoin="round" d="M15 15V9.75a3.75 3.75 0 0 0-3.75-3.75H3.75m0 0L7.5 9.75M3.75 6 7.5 2.25" />,
+    sun: <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />,
+    moon: <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />,
+    reputation: <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9a2.25 2.25 0 01-2.25-2.25v-9A2.25 2.25 0 017.5 5.25h9A2.25 2.25 0 0118.75 7.5v9A2.25 2.25 0 0116.5 18.75zM8.25 12h7.5" />,
   };
 
   return (

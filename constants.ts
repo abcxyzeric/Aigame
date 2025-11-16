@@ -1,4 +1,4 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings } from './types';
 
 export const GENDER_OPTIONS = ['Không xác định (Để AI quyết định)', 'Nam', 'Nữ', 'Khác'];
 export const PERSONALITY_OPTIONS = [
@@ -96,4 +96,10 @@ export const DEFAULT_SAFETY_SETTINGS: SafetySettingsConfig = {
         { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
         { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
     ]
+};
+
+export const DEFAULT_RAG_SETTINGS: RagSettings = {
+  summaryFrequency: 10,
+  topK: 5,
+  summarizeBeforeRag: true,
 };

@@ -392,7 +392,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     if (files && files.length > 0) {
         try {
             const newKnowledgeFiles: { name: string; content: string }[] = [];
-            for (const file of Array.from(files)) {
+            // FIX: Iterate directly over the FileList to ensure correct typing.
+            for (const file of files) {
                 const content = await loadTextFromFile(file);
                 newKnowledgeFiles.push({ name: file.name, content });
             }
@@ -472,7 +473,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
     try {
         const newKnowledgeFiles: { name: string; content: string }[] = [];
-        for (const file of Array.from(files)) {
+        // FIX: Iterate directly over the FileList to ensure correct typing.
+        for (const file of files) {
             const content = await loadTextFromFile(file);
             newKnowledgeFiles.push({ name: file.name, content });
         }
@@ -533,7 +535,6 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         onConfirm={handleConfirmFanficSelection}
         mode="multiple"
         title="Chọn Nguyên Tác Đồng Nhân Từ Kho"
-        fileTypeFilter="txt"
       />
        <FandomFileLoadModal 
         isOpen={isKnowledgeSelectModalOpen}
@@ -541,7 +542,6 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         onConfirm={handleConfirmKnowledgeSelection}
         mode="multiple"
         title="Chọn Kho Kiến Thức Nền"
-        fileTypeFilter="txt"
       />
        <input
         type="file"
@@ -555,7 +555,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         ref={fanficFileInputRef}
         onChange={handleFanficFileChange}
         className="hidden"
-        accept=".txt"
+        accept=".txt,.json"
         multiple
       />
       <input
@@ -563,7 +563,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         ref={knowledgeFileInputRef}
         onChange={handleKnowledgeFileChange}
         className="hidden"
-        accept=".txt"
+        accept=".txt,.json"
         multiple
       />
       <div className="max-w-7xl mx-auto p-4 sm:p-6 md:p-8">

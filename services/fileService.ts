@@ -30,6 +30,17 @@ export const saveTextToFile = (content: string, fileName: string): void => {
   linkElement.click();
 };
 
+export const saveJsonToFile = (data: object, defaultFileName: string): void => {
+  const dataStr = JSON.stringify(data, null, 2);
+  const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+  const linkElement = document.createElement('a');
+  linkElement.setAttribute('href', dataUri);
+  linkElement.setAttribute('download', defaultFileName);
+  linkElement.click();
+};
+
+
 export const loadWorldConfigFromFile = (file: File): Promise<WorldConfig> => {
   return new Promise((resolve, reject) => {
     if (!file || file.type !== 'application/json') {
@@ -49,6 +60,34 @@ export const loadWorldConfigFromFile = (file: File): Promise<WorldConfig> => {
           } else {
             reject(new Error('Tệp JSON không có cấu trúc hợp lệ.'));
           }
+        } else {
+          reject(new Error('Không thể đọc nội dung tệp.'));
+        }
+      } catch (error) {
+        reject(new Error(`Lỗi khi phân tích tệp JSON: ${error}`));
+      }
+    };
+    reader.onerror = () => {
+      reject(new Error('Lỗi khi đọc tệp.'));
+    };
+    reader.readAsText(file);
+  });
+};
+
+export const loadJsonFromFile = <T>(file: File): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    if (!file || file.type !== 'application/json') {
+      reject(new Error('Vui lòng chọn một tệp .json hợp lệ.'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text === 'string') {
+          const data = JSON.parse(text) as T;
+          resolve(data);
         } else {
           reject(new Error('Không thể đọc nội dung tệp.'));
         }
