@@ -656,7 +656,7 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING, description: "Tên chính xác của thực thể được cung cấp." },
-            type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể (NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực)." },
+            type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
             personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết, hợp lý và sáng tạo về thực thể dựa trên bối cảnh." },
             tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể." },
@@ -680,9 +680,14 @@ export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: str
 - Diễn biến gần đây:
 ${recentHistory}
 
-Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy sáng tạo ra thông tin chi tiết cho thực thể này. Hãy suy đoán xem nó là NPC, vật phẩm, địa điểm hay một phe phái/thế lực.
+Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy thực hiện quy trình sau:
+1.  **Phân tích & Mô tả:** Đầu tiên, hãy suy nghĩ và viết một mô tả chi tiết, hợp lý và sáng tạo về thực thể này là gì và vai trò của nó trong thế giới.
+2.  **Phân loại chính xác:** Dựa trên mô tả bạn vừa tạo, hãy xác định chính xác **loại (type)** của thực thể. Hãy lựa chọn cẩn thận từ danh sách sau: NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực, Cảnh giới, Công pháp / Kỹ năng, hoặc **'Khái niệm / Lore'**.
+    - **LƯU Ý QUAN TRỌNG:** Loại **'Khái niệm / Lore'** được dùng cho các quy tắc, định luật vô hình của thế giới, sự kiện lịch sử, hoặc các khái niệm trừu tượng. Ví dụ, 'Hồng Nhan Thiên Kiếp' được mô tả là một 'quy tắc bất thành văn', một 'thế lực vô hình', một 'kiếp nạn định mệnh' - do đó, nó phải được phân loại là **'Khái niệm / Lore'**, TUYỆT ĐỐI KHÔNG phải là 'Phe phái/Thế lực'.
+
+Sau khi đã xác định rõ mô tả và loại, hãy tạo ra các thông tin chi tiết khác.
 - Nếu thực thể là 'Vật phẩm', hãy điền thêm các thông tin chi tiết vào trường 'details'.
-- QUAN TRỌNG: Hãy tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể này.
+- Hãy tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể này.
 Trả về một đối tượng JSON tuân thủ schema đã cho.`;
 
     return generateJson<InitialEntity>(prompt, schema);
@@ -927,8 +932,9 @@ QUY TẮC BẮT BUỘC:
 1.  **Ngôn ngữ:** TOÀN BỘ phản hồi của bạn BẮT BUỘC phải bằng TIẾNG VIỆT.
 2.  **Giữ vai trò:** Bạn là người dẫn truyện, không phải một AI trợ lý. Đừng bao giờ phá vỡ vai trò này. Không nhắc đến việc bạn là AI.
 3.  **Bám sát thiết lập:** TUÂN THỦ TUYỆT ĐỐI các thông tin về thế giới, nhân vật, và đặc biệt là "Luật Lệ Cốt Lõi" đã được cung cấp. Các luật lệ này là bất biến.
+3.5. **NHẤT QUÁN TÍNH CÁCH (TỐI QUAN TRỌNG):** Hành động, lời nói và suy nghĩ của MỌI NHÂN VẬT (NPC và nhân vật chính) PHẢI TUÂN THỦ TUYỆT ĐỐI TÍNH CÁCH và MÔ TẢ đã được cung cấp trong "BỐI CẢNH TOÀN DIỆN" (đặc biệt là mục \`encounteredNPCs\`). Ví dụ: một NPC được mô tả là 'kiêu ngạo, hống hách' thì KHÔNG THỂ hành động 'dè dặt, hờ hững'. Sự logic và nhất quán trong tính cách nhân vật là yếu tố then chốt để tạo ra một câu chuyện đáng tin cậy.
 4.  **Miêu tả sống động:** Hãy dùng ngôn từ phong phú để miêu tả bối cảnh, sự kiện, cảm xúc và hành động của các NPC. 
-4.5. **VĂN PHONG THEO THỂ LOẠI VÀ BỐI CẢNH:** Dựa vào "Thể loại" và "Bối cảnh" đã được cung cấp trong thiết lập thế giới, hãy điều chỉnh văn phong kể chuyện của bạn cho phù hợp.
+4.5. **VĂN PHONG THEO THỂ LOẠI VÀ BỐI CẢNH (CỰC KỲ QUAN TRỌNG):** Văn phong kể chuyện của bạn KHÔNG ĐƯỢC CỐ ĐỊNH, mà PHẢI thay đổi linh hoạt để phù hợp với từng thế giới. Dựa vào "Thể loại" và "Bối cảnh" đã được cung cấp trong thiết lập thế giới, hãy điều chỉnh văn phong kể chuyện của bạn cho phù hợp.
     - **Dựa trên Thể loại (Ưu tiên thấp hơn):**
         - **Tiên hiệp/Huyền huyễn:** Dùng từ ngữ Hán Việt, cổ trang (VD: tại hạ, đạo hữu, pháp bảo, linh khí, động phủ). Miêu tả hùng vĩ, kỳ ảo.
         - **Kiếm hiệp/Cổ trang Châu Á:** Dùng từ ngữ trang trọng, cổ kính (VD: tại hạ, công tử, cô nương, giang hồ, khinh công).
@@ -957,6 +963,7 @@ QUY TẮC BẮT BUỘC:
     a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
     b. **HỌC TỪ NGƯỜI CHƠI & TÍNH CÁCH:** Phân tích kỹ văn phong của người chơi; lời thoại của họ là kim chỉ nam cho bạn. QUAN TRỌNG: Tính cách của nhân vật chính và các NPC là yếu tố THEN CHỐT định hình hành động, lời nói và suy nghĩ nội tâm của họ. Hãy sử dụng thông tin tính cách từ "Thông tin nhân vật chính" và "Bách Khoa Toàn Thư" để đảm bảo các nhân vật hành xử một cách nhất quán và có chiều sâu.
     c. **Tham khảo Ký ức:** Trước mỗi lượt kể, hãy xem lại toàn bộ lịch sử trò chuyện để đảm bảo bạn không quên cách xưng hô đã được thiết lập. Sự thiếu nhất quán sẽ phá hỏng trải nghiệm.
+    d. **NHẤT QUÁN VỀ GIỚI TÍNH (TUYỆT ĐỐI):** Phân tích kỹ LỊCH SỬ CÂU CHUYỆN và DỮ LIỆU BỐI CẢNH được cung cấp để xác định chính xác giới tính của tất cả các nhân vật. TUYỆT ĐỐI KHÔNG được nhầm lẫn. Nếu một nhân vật được mô tả là "bà ta", "cô ấy", "nữ tu sĩ", thì phải luôn dùng đại từ nhân xưng dành cho nữ. Ngược lại, nếu là "ông ta", "hắn", "nam tu sĩ", thì phải dùng đại từ nhân xưng cho nam. Sự thiếu nhất quán về giới tính sẽ phá hỏng hoàn toàn trải nghiệm.
 10. **ĐỘ DÀI VÀ CHẤT LƯỢNG (QUAN TRỌNG):** Phần kể chuyện của bạn phải có độ dài đáng kể để người chơi đắm chìm vào thế giới. Khi có sự thay đổi về trạng thái nhân vật (sử dụng thẻ <status>), hãy **tích hợp nó một cách tự nhiên vào lời kể**, không biến nó thành nội dung chính duy nhất. Phần mô tả trạng thái chỉ là một phần của diễn biến, không thay thế cho toàn bộ câu chuyện.
 11. **QUAN TRỌNG - JSON OUTPUT:** Khi bạn trả lời dưới dạng JSON, TUYỆT ĐỐI không sử dụng bất kỳ thẻ định dạng nào (ví dụ: <entity>, <important>) bên trong các trường chuỗi (string) của JSON. Dữ liệu JSON phải là văn bản thuần túy.
 12. **QUẢN LÝ THỜI GIAN (TỐI QUAN TRỌNG):**
@@ -1049,6 +1056,12 @@ export const startGame = (config: WorldConfig): Promise<StartGameResponse> => {
         required: ['year', 'month', 'day', 'hour']
     };
 
+    const reputationTiersSchema = {
+        type: Type.ARRAY,
+        description: "Một danh sách gồm ĐÚNG 5 cấp bậc danh vọng bằng tiếng Việt, sắp xếp từ tai tiếng nhất đến danh giá nhất, phù hợp với bối cảnh và thể loại câu chuyện. Các cấp bậc phải ngắn gọn (3-5 từ).",
+        items: { type: Type.STRING }
+    };
+
     const schema = {
         type: Type.OBJECT,
         properties: {
@@ -1071,8 +1084,9 @@ export const startGame = (config: WorldConfig): Promise<StartGameResponse> => {
             initialWorldTime: worldTimeSchema,
             timePassed: timePassedSchema,
             reputationChange: reputationChangeSchema,
+            reputationTiers: reputationTiersSchema,
         },
-        required: ['narration', 'suggestions', 'initialWorldTime']
+        required: ['narration', 'suggestions', 'initialWorldTime', 'reputationTiers']
     };
 
     const prompt = `Bạn là một Quản trò (Game Master) tài ba, một người kể chuyện bậc thầy. Nhiệm vụ của bạn là viết chương mở đầu cho một cuộc phiêu lưu nhập vai hoành tráng và đưa ra các lựa chọn hành động đầu tiên.
@@ -1091,8 +1105,9 @@ ${adultContentDirectives}
     *   **Kết nối thế giới:** Nếu hợp lý, hãy khéo léo giới thiệu hoặc gợi ý về một trong những "Thực thể ban đầu" (NPC, địa điểm, vật phẩm) đã được cung cấp.
 3.  **SỬ DỤNG THẺ ĐỊNH DẠNG (BẮT BUỘC):** Khi bạn đề cập đến tên của các thực thể, vật phẩm, kỹ năng... hãy sử dụng hệ thống thẻ đã được quy định trong vai trò hệ thống của bạn.
 4.  **Tính toán thời gian:** Ước tính thời gian đã trôi qua trong đoạn mở đầu và trả về trong trường \`timePassed\`.
-5.  **Cập nhật Danh vọng:** Nếu hành động mở đầu có ảnh hưởng đến danh vọng, hãy trả về trong trường \`reputationChange\`.
-6.  **Tạo Thời Gian Bắt Đầu:** Dựa trên bối cảnh thế giới, hãy quyết định một thời điểm bắt đầu hợp lý (năm, tháng, ngày, giờ) và trả về trong trường \`initialWorldTime\`. Tránh sử dụng ngày 1/1/1 trừ khi bối cảnh là thời cổ đại sơ khai.
+5.  **TẠO CẤP BẬC DANH VỌNG (LOGIC):** Dựa trên "Thể loại" và "Bối cảnh" của thế giới, hãy tạo ra ĐÚNG 5 cấp bậc danh vọng bằng tiếng Việt, sắp xếp theo thứ tự từ tai tiếng nhất đến danh giá nhất. Các cấp bậc này phải cực kỳ phù hợp với văn phong câu chuyện và ngắn gọn (3-5 từ). Trả về trong trường \`reputationTiers\`.
+6.  **CẬP NHẬT DANH VỌNG BAN ĐẦU:** Dựa vào diễn biến mở đầu bạn vừa tạo, hãy quyết định điểm danh vọng ban đầu của người chơi. Ví dụ, nếu họ là một tông chủ uy tín, điểm có thể là +15. Nếu họ là ma đầu bị truy nã, điểm có thể là -20. Trả về thay đổi trong trường \`reputationChange\`.
+7.  **Tạo Thời Gian Bắt Đầu (LOGIC):** Dựa trên "Thể loại" và "Bối cảnh" của thế giới, hãy quyết định một **NĂM** bắt đầu **CỰC KỲ LOGIC**. Ví dụ: bối cảnh cổ trang/kiếm hiệp nên có năm trong khoảng 100-1800; bối cảnh tương lai/cyberpunk nên có năm sau 2077. Trả về thời gian đầy đủ (năm, tháng, ngày, giờ) trong trường \`initialWorldTime\`. Tránh sử dụng ngày 1/1/1 trừ khi bối cảnh là thời cổ đại sơ khai.
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.
 `;
@@ -1165,7 +1180,7 @@ ${allSummaries.map((s, i) => `[Ký ức ${i+1}]: ${s}`).join('\n\n')}
 }
 
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
-    const { worldConfig, history, playerStatus, inventory, summaries, companions, quests, worldTime, reputation } = gameState;
+    const { worldConfig, history, playerStatus, inventory, summaries, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers } = gameState;
     const { ragSettings } = getSettings();
     
     // 1. Auto-summarization
@@ -1204,6 +1219,16 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         ? lastPlayerAction.content
         : obfuscateText(lastPlayerAction.content);
 
+    const gameItemSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            description: { type: Type.STRING },
+            quantity: { type: Type.NUMBER }
+        },
+        required: ['name', 'description', 'quantity']
+    };
+
     const suggestionSchema = {
         type: Type.OBJECT, properties: {
             description: { type: Type.STRING }, successRate: { type: Type.NUMBER },
@@ -1235,6 +1260,7 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             suggestions: { type: Type.ARRAY, items: suggestionSchema },
             timePassed: timePassedSchema,
             reputationChange: reputationChangeSchema,
+            updatedInventory: { type: Type.ARRAY, items: gameItemSchema },
         }, required: ['narration', 'suggestions']
     };
 
@@ -1247,8 +1273,10 @@ ${JSON.stringify({
     worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
     character: worldConfig.character,
     worldTime: worldTime,
-    reputation: reputation,
+    reputation: { ...reputation, reputationTiers: reputationTiers },
     playerStatus, inventory, companions, quests: quests.filter(q => q.status === 'đang tiến hành'),
+    encounteredNPCs,
+    encounteredFactions,
 }, null, 2)}
 
 --- KÝ ỨC DÀI HẠN LIÊN QUAN (TỪ KHO RAG) ---
@@ -1271,7 +1299,12 @@ ${recentHistory}
 3.  **GỢI Ý:** Tạo ra 4 gợi ý hành động (\`suggestions\`).
 4.  **TÍNH TOÁN THỜI GIAN:** Ước tính thời gian đã trôi qua cho hành động của người chơi và trả về trong trường \`timePassed\`.
 5.  **Cập nhật Danh vọng:** Nếu hành động có ảnh hưởng đến danh vọng, hãy trả về trong trường \`reputationChange\`.
-6.  **TUÂN THỦ QUY TẮC:** TUYỆT ĐỐI tuân thủ tất cả các quy tắc hệ thống.`;
+6.  **QUẢN LÝ VẬT PHẨM (TỐI QUAN TRỌNG):**
+    a.  **Phân tích:** Dựa trên hành động của người chơi và diễn biến câu chuyện, bạn PHẢI cập nhật túi đồ (\`inventory\`).
+    b.  **Tiêu thụ/Mất:** Nếu một vật phẩm bị sử dụng, tiêu thụ ("lĩnh ngộ" một bí kíp), hoặc mất đi, hãy tính toán số lượng còn lại. Nếu số lượng về 0, hãy xóa vật phẩm đó khỏi danh sách.
+    c.  **Nhận được:** Nếu nhân vật nhận được vật phẩm mới, hãy thêm nó vào túi đồ.
+    d.  **OUTPUT:** Trả về TOÀN BỘ danh sách vật phẩm đã được cập nhật trong trường \`updatedInventory\`. Nếu túi đồ không có gì thay đổi, không cần trả về trường này.
+7.  **TUÂN THỦ QUY TẮC:** TUYỆT ĐỐI tuân thủ tất cả các quy tắc hệ thống.`;
     
     const turnResponse = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
     

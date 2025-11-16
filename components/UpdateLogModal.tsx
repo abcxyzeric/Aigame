@@ -14,6 +14,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.3.3 (Cập nhật nhỏ)",
+      notes: [
+        "**Đồng bộ hóa Pop-up tường thuật:** Pop-up 'Toàn bộ diễn biến' giờ đây sẽ mở ra ở đúng vị trí bạn đang đọc trên màn hình chính, giúp theo dõi liền mạch hơn.",
+        "**Quản lý Vật phẩm Tự động:** AI giờ đây sẽ tự động cộng/trừ số lượng vật phẩm trong túi đồ của bạn dựa trên diễn biến câu chuyện (sử dụng, nhận được).",
+        "**Cải thiện Giao diện Thông tin Nhân vật:** Thêm tính năng đóng/mở để xem chi tiết kỹ năng, giúp giao diện gọn gàng và dễ nhìn hơn.",
+      ]
+    },
+    {
       version: "1.3.0 (Cập nhật lớn)",
       notes: [
         "**Hệ thống Thời Gian & Danh Vọng:** Giới thiệu hệ thống Thời gian và Danh vọng, giúp thế giới trở nên sống động hơn. AI giờ đây sẽ tự quyết định thời điểm bắt đầu câu chuyện (ngày/tháng/năm) dựa trên bối cảnh. Danh vọng của bạn, thay đổi qua từng hành động, sẽ ảnh hưởng trực tiếp đến cách các NPC tương tác.",

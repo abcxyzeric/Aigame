@@ -40,7 +40,8 @@ export const ENTITY_TYPE_OPTIONS = [
     'Vật phẩm', 
     'Phe phái/Thế lực', 
     'Cảnh giới', 
-    'Công pháp / Kỹ năng'
+    'Công pháp / Kỹ năng',
+    'Khái niệm / Lore'
 ];
 
 

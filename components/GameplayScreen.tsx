@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 // FIX: Added EncounteredNPC and EncounteredFaction to the import list to resolve 'Cannot find name' errors.
 import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation } from '../types';
@@ -255,6 +253,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   
   const [currentPage, setCurrentPage] = useState(0);
   const [isPaginating, setIsPaginating] = useState(false);
+  const [storyLogInitialScrollTop, setStoryLogInitialScrollTop] = useState<number | null>(null);
+
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -294,12 +294,21 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const isTurnLoading = isLoading && gameState.history.length > 0;
 
   const getReputationTier = useCallback((score: number, tiers: string[]): string => {
-    if (tiers.length !== 5) return "Vô Danh"; // Fallback
+    if (!tiers || tiers.length !== 5) return "Vô Danh"; // Fallback
     if (score <= -75) return tiers[0];
     if (score <= -25) return tiers[1];
     if (score < 25) return tiers[2];
     if (score < 75) return tiers[3];
     return tiers[4];
+  }, []);
+
+  const handleOpenStoryLog = useCallback(() => {
+    if (logContainerRef.current) {
+        setStoryLogInitialScrollTop(logContainerRef.current.scrollTop);
+    } else {
+        setStoryLogInitialScrollTop(0);
+    }
+    setIsStoryLogModalOpen(true);
   }, []);
 
   const handleEntityClick = useCallback(async (name: string) => {
@@ -395,7 +404,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
       const tempGameState = { ...gameState, history: newHistory };
-      const { narration, suggestions, newSummary, timePassed, reputationChange } = await aiService.getNextTurn(tempGameState);
+      const { narration, suggestions, newSummary, timePassed, reputationChange, updatedInventory } = await aiService.getNextTurn(tempGameState);
       
       const newWorldTime = advanceTime(gameState.worldTime, timePassed || {});
       const finalHistory: GameTurn[] = [...newHistory, { type: 'narration', content: narration }];
@@ -416,6 +425,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries,
         worldTime: newWorldTime,
         reputation: newReputation,
+        inventory: updatedInventory || gameState.inventory,
       };
 
       const newNarrationTurns = updatedGameState.history.filter(h => h.type === 'narration');
@@ -438,68 +448,38 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   }, [gameState, isLoading, getReputationTier]);
   
   const startGame = useCallback(async () => {
-    let currentGameState = gameState;
-    
-    // Generate reputation tiers if they don't exist (for new games or old saves)
-    if (!currentGameState.reputationTiers || currentGameState.reputationTiers.length !== 5) {
-        try {
-            const tiers = await aiService.generateReputationTiers(currentGameState.worldConfig.storyContext.genre);
-            const initialTier = getReputationTier(0, tiers);
-            currentGameState = {
-                ...currentGameState,
-                reputationTiers: tiers,
-                reputation: { score: 0, tier: initialTier }
-            };
-            setGameState(currentGameState); // Update state immediately
-        } catch (e) {
-             setError(e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.');
-        }
-    }
-      
-    // If history has content, it's a loaded game.
-    if (currentGameState.history.length > 0) {
-      setIsLoading(false); // Game is loaded, no fetching needed.
-      
-      const narrationTurns = currentGameState.history.filter(h => h.type === 'narration');
+    if (gameState.history.length > 0) {
+      setIsLoading(false);
+      const narrationTurns = gameState.history.filter(h => h.type === 'narration');
       const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
       const lastPage = totalPages > 0 ? totalPages - 1 : 0;
       setCurrentPage(lastPage);
-      
-      // Suggestions were loaded via useState, just show them.
       setShowSuggestions(suggestions.length > 0);
-      
-      // Ensure default values for new fields in old saves.
-      setGameState(prev => ({
-          ...prev,
-          ...currentGameState, // Apply updates from tier generation
-          companions: prev.companions || [],
-          quests: prev.quests || [],
-      }));
-
       return;
     }
 
-    // This part is for starting a brand new game.
     setSuggestions([]);
     setIsLoading(true);
     setError(null);
     try {
-      const { narration, suggestions, initialPlayerStatus, initialInventory, timePassed, reputationChange, initialWorldTime } = await aiService.startGame(currentGameState.worldConfig);
+      const { narration, suggestions, initialPlayerStatus, initialInventory, timePassed, reputationChange, initialWorldTime, reputationTiers } = await aiService.startGame(gameState.worldConfig);
       
-      const baseTime = initialWorldTime || currentGameState.worldTime;
+      const baseTime = initialWorldTime || gameState.worldTime;
       const newWorldTime = advanceTime(baseTime, timePassed || {});
       
-      let newReputation = currentGameState.reputation;
-      if (reputationChange && currentGameState.reputationTiers.length === 5) {
-          const newScore = Math.max(-100, Math.min(100, currentGameState.reputation.score + reputationChange.score));
+      let newReputation = gameState.reputation;
+      const newTiers = reputationTiers || [];
+
+      if (newTiers.length === 5) {
+          const newScore = reputationChange?.score || 0;
           newReputation = {
               score: newScore,
-              tier: getReputationTier(newScore, currentGameState.reputationTiers),
+              tier: getReputationTier(newScore, newTiers),
           };
       }
       
       const updatedGameState: GameState = {
-        ...currentGameState,
+        ...gameState,
         history: [{ type: 'narration', content: narration }],
         playerStatus: initialPlayerStatus || [],
         inventory: initialInventory || [],
@@ -508,6 +488,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         suggestions: suggestions,
         worldTime: newWorldTime,
         reputation: newReputation,
+        reputationTiers: newTiers,
       };
       setGameState(updatedGameState);
       setSuggestions(suggestions);
@@ -521,12 +502,35 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   }, [gameState, getReputationTier]);
 
   useEffect(() => {
-    // This logic will run on mount for a new game, and again whenever
-    // the history is cleared by the restart function.
     if (gameState.history.length === 0) {
         startGame();
     }
   }, [gameState.history.length, startGame]);
+
+  useEffect(() => {
+    // For loaded old saves that are missing reputation tiers
+    if (gameState.history.length > 0 && (!gameState.reputationTiers || gameState.reputationTiers.length !== 5)) {
+        const fetchTiers = async () => {
+            try {
+                const tiers = await aiService.generateReputationTiers(gameState.worldConfig.storyContext.genre);
+                const updatedTierName = getReputationTier(gameState.reputation.score, tiers);
+                setGameState(prev => {
+                    const newState = {
+                        ...prev,
+                        reputationTiers: tiers,
+                        reputation: { ...prev.reputation, tier: updatedTierName }
+                    };
+                    gameService.saveGame(newState); // Save the updated tiers
+                    return newState;
+                });
+            } catch (e) {
+                setError(e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.');
+            }
+        };
+        fetchTiers();
+    }
+  }, [gameState.history.length, gameState.reputation.score, gameState.reputationTiers, gameState.worldConfig.storyContext.genre, getReputationTier]);
+
 
   useEffect(() => {
     const lastTurn = gameState.history[gameState.history.length - 1];
@@ -706,7 +710,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleNarrationContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.tagName.toLowerCase() !== 'button') {
-        setIsStoryLogModalOpen(true);
+        handleOpenStoryLog();
     }
   };
 
@@ -824,6 +828,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         onClose={() => setIsStoryLogModalOpen(false)}
         history={gameState.history}
         title="Toàn Bộ Diễn Biến"
+        initialScrollTop={storyLogInitialScrollTop}
       />
       <InformationModal
         isOpen={isInformationModalOpen}
@@ -897,7 +902,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             <div className="text-center">
               <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[150px] sm:max-w-[350px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
               <div className="text-xs text-slate-400 flex items-center justify-center flex-wrap gap-x-2 sm:gap-x-3">
-                  <span className="hidden sm:inline">Lượt: {narrationTurns.length}</span>
+                <span className="font-semibold text-pink-400 text-center" title={characterPersonality || ''}>{characterPersonality}</span>
+                <span className="inline-flex items-center gap-x-2 sm:gap-x-3 whitespace-nowrap">
+                  <span className="text-slate-500">|</span>
+                  <span>Lượt: {narrationTurns.length}</span>
+                </span>
               </div>
             </div>
              
@@ -991,7 +1000,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-green-400">Diễn biến câu chuyện:</h2>
-                    <button onClick={(e) => { e.stopPropagation(); setIsStoryLogModalOpen(true); }} className="text-slate-400 hover:text-white transition" title="Mở trong cửa sổ mới">
+                    <button onClick={(e) => { e.stopPropagation(); handleOpenStoryLog(); }} className="text-slate-400 hover:text-white transition" title="Mở trong cửa sổ mới">
                         <Icon name="expand" className="w-5 h-5" />
                     </button>
                 </div>
@@ -1083,7 +1092,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                   {isTurnLoading ? (
                     <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8
+ 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   ) : 'Gửi'}
                 </Button>
@@ -1091,13 +1101,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             </div>
             
             {/* Pagination Controls */}
-            <div className="flex items-center justify-center gap-4 mt-3 flex-shrink-0">
-                <button onClick={() => handlePageChange(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
-                    <Icon name="arrowUp" className="w-5 h-5 rotate-[-90deg]" />
+            <div className="flex items-center justify-center gap-2 mt-2 flex-shrink-0">
+                <button onClick={() => handlePageChange(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <Icon name="arrowUp" className="w-4 h-4 rotate-[-90deg]" />
                 </button>
-                <span className="text-sm text-slate-400 font-mono">Trang {currentPage + 1}/{totalPages}</span>
-                 <button onClick={() => handlePageChange(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="p-2 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
-                    <Icon name="arrowDown" className="w-5 h-5 rotate-[-90deg]" />
+                <span className="text-xs text-slate-500 font-mono px-2">Trang {currentPage + 1}/{totalPages}</span>
+                 <button onClick={() => handlePageChange(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                    <Icon name="arrowDown" className="w-4 h-4 rotate-[-90deg]" />
                 </button>
             </div>
           </div>

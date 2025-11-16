@@ -1,5 +1,3 @@
-
-
 import React, { useEffect, useRef } from 'react';
 import { GameTurn } from '../types';
 import Icon from './common/Icon';
@@ -46,21 +44,22 @@ interface StoryLogModalProps {
   onClose: () => void;
   history: GameTurn[];
   title: string;
+  initialScrollTop?: number | null;
 }
 
-const StoryLogModal: React.FC<StoryLogModalProps> = ({ isOpen, onClose, history, title }) => {
+const StoryLogModal: React.FC<StoryLogModalProps> = ({ isOpen, onClose, history, title, initialScrollTop = null }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-
+  
   useEffect(() => {
-    if (isOpen && scrollRef.current) {
+    if (isOpen && scrollRef.current && initialScrollTop !== null) {
         // Use timeout to ensure content is rendered before scrolling
         setTimeout(() => {
             if (scrollRef.current) {
-                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              scrollRef.current.scrollTop = initialScrollTop;
             }
         }, 50);
     }
-  }, [isOpen, history]);
+  }, [isOpen, initialScrollTop]);
 
   if (!isOpen) return null;
 

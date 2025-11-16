@@ -200,6 +200,7 @@ export interface AiTurnResponse {
     score: number;
     reason: string;
   };
+  updatedInventory?: GameItem[];
 }
 
 export interface StartGameResponse {
@@ -216,6 +217,7 @@ export interface StartGameResponse {
     score: number;
     reason: string;
   };
+  reputationTiers?: string[];
 }
 
 export interface EncyclopediaUpdateResponse {

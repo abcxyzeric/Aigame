@@ -304,7 +304,17 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         if (mainView !== 'analyze') return null;
 
         // FIX: Explicitly type allItems to resolve type inference issues.
-        const allItems: AllEntities[] = Object.values(encyclopediaData).flat();
+        // FIX: Replaced Object.values().flat() with a more explicit array spread to avoid type inference issues that can result in `unknown[]`.
+        const allItems: AllEntities[] = [
+            ...encyclopediaData.characters,
+            ...encyclopediaData.items,
+            ...encyclopediaData.skills,
+            ...encyclopediaData.factions,
+            ...encyclopediaData.locations,
+            ...encyclopediaData.quests,
+            ...encyclopediaData.concepts,
+            ...encyclopediaData.knowledge,
+        ];
         const totalItems = allItems.length;
 
         const totalDescLength = allItems.reduce((acc, item) => {

@@ -232,7 +232,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               {settings.apiKeyConfig.keys.map((key, index) => (
                   <div key={index} className="flex items-center space-x-2">
                       <input 
-                          type="password"
+                          type="text"
                           placeholder={`Dán API key ${index + 1} của bạn ở đây`}
                           value={key}
                           onChange={(e) => handleKeyChange(index, e.target.value)}
