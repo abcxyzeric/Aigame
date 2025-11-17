@@ -3,8 +3,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
-import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, EncyclopediaUpdateResponse, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime } from '../types';
-import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS, DEFAULT_AI_PERFORMANCE_SETTINGS } from '../constants';
+import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, EncyclopediaUpdateResponse, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime, CharacterStat, EncyclopediaData } from '../types';
+import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS, DEFAULT_AI_PERFORMANCE_SETTINGS, DEFAULT_STATS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
 
@@ -323,6 +323,34 @@ export const generateCharacterSkills = (config: WorldConfig): Promise<{ name: st
     return generateJson<{ name: string; description: string; }[]>(prompt, schema);
 };
 
+export const generateCharacterStats = (config: WorldConfig): Promise<CharacterStat[]> => {
+    const { storyContext, character } = config;
+
+    const statSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            value: { type: Type.NUMBER },
+            maxValue: { type: Type.NUMBER },
+            isPercentage: { type: Type.BOOLEAN },
+        },
+        required: ['name', 'value', 'maxValue', 'isPercentage']
+    };
+    
+    const schema = {
+        type: Type.ARRAY,
+        description: "Một danh sách từ 2-4 chỉ số nhân vật bổ sung (không bao gồm Sinh Lực và Thể Lực đã có sẵn) phù hợp với thể loại và tiểu sử.",
+        items: statSchema
+    };
+
+    const prompt = `Dựa trên nhân vật (Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra một danh sách từ 2 đến 4 chỉ số nhân vật BỔ SUNG.
+    - KHÔNG bao gồm 'Sinh Lực' hoặc 'Thể Lực' vì chúng đã có sẵn.
+    - Các chỉ số phải phù hợp với thể loại. Ví dụ: Tiên hiệp có thể có 'Linh Lực', 'Căn Cơ'. Cyberpunk có thể có 'Năng lượng Lõi', 'Tốc độ Hack'.
+    - Đặt giá trị (value, maxValue) hợp lý. isPercentage thường là false cho các chỉ số này.`;
+
+    return generateJson<CharacterStat[]>(prompt, schema);
+};
+
 export const generateSingleSkill = (config: WorldConfig, existingName?: string): Promise<{ name: string; description: string; }> => {
     const { storyContext, character } = config;
 
@@ -513,6 +541,17 @@ export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: 
     required: ['name', 'type', 'description', 'tags']
   };
 
+  const statSchema = {
+    type: Type.OBJECT,
+    properties: {
+        name: { type: Type.STRING },
+        value: { type: Type.NUMBER },
+        maxValue: { type: Type.NUMBER },
+        isPercentage: { type: Type.BOOLEAN },
+    },
+    required: ['name', 'value', 'maxValue', 'isPercentage']
+  };
+
   const schema = {
       type: Type.OBJECT,
       properties: {
@@ -532,7 +571,6 @@ export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: 
                   personality: { type: Type.STRING, enum: PERSONALITY_OPTIONS.slice(1), description: "Tính cách của nhân vật (không chọn 'Tuỳ chỉnh')." },
                   gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
                   bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật." },
-                  // FIX: Changed skills schema to be an array of objects to match the data type.
                   skills: { 
                       type: Type.ARRAY,
                       description: "Danh sách 1-3 kỹ năng khởi đầu của nhân vật.",
@@ -545,19 +583,25 @@ export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: 
                           required: ['name', 'description']
                       }
                   },
+                  stats: {
+                      type: Type.ARRAY,
+                      description: "Danh sách các chỉ số của nhân vật, luôn bao gồm Sinh Lực và Thể Lực, và có thể thêm các chỉ số khác phù hợp với thể loại.",
+                      items: statSchema
+                  },
                   motivation: { type: Type.STRING, description: "Mục tiêu hoặc động lực chính của nhân vật." },
               },
-              required: ['name', 'personality', 'gender', 'bio', 'skills', 'motivation']
+              required: ['name', 'personality', 'gender', 'bio', 'skills', 'stats', 'motivation']
           },
           difficulty: { type: Type.STRING, enum: DIFFICULTY_OPTIONS, description: "Độ khó của game." },
           allowAdultContent: { type: Type.BOOLEAN, description: "Cho phép nội dung người lớn hay không." },
+          enableStatsSystem: { type: Type.BOOLEAN, description: "Bật hay tắt hệ thống chỉ số. Luôn đặt là true." },
           initialEntities: {
               type: Type.ARRAY,
               description: "Danh sách từ 5 đến 8 thực thể ban đầu trong thế giới (NPC, địa điểm, vật phẩm, phe phái...).",
               items: entitySchema
           }
       },
-      required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
+      required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'enableStatsSystem', 'initialEntities']
   };
   
   const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
@@ -571,8 +615,9 @@ YÊU CẦU BẮT BUỘC:
 3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
 4.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
 5.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-6.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-7.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+6.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại (VD: 'Linh Lực' cho tiên hiệp, 'Năng Lượng' cho sci-fi).
+7.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+8.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
 
@@ -587,6 +632,17 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
         tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại thực thể." },
     },
     required: ['name', 'type', 'description', 'tags']
+  };
+
+  const statSchema = {
+    type: Type.OBJECT,
+    properties: {
+        name: { type: Type.STRING },
+        value: { type: Type.NUMBER },
+        maxValue: { type: Type.NUMBER },
+        isPercentage: { type: Type.BOOLEAN },
+    },
+    required: ['name', 'value', 'maxValue', 'isPercentage']
   };
 
   const schema = {
@@ -608,7 +664,6 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
                   personality: { type: Type.STRING, enum: PERSONALITY_OPTIONS.slice(1), description: "Tính cách của nhân vật (không chọn 'Tuỳ chỉnh')." },
                   gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
                   bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật, giải thích vai trò của họ trong thế giới đồng nhân này." },
-                  // FIX: Changed skills schema to be an array of objects and corrected typo.
                   skills: { 
                       type: Type.ARRAY,
                       description: "Danh sách 1-3 kỹ năng khởi đầu của nhân vật, phải phù hợp với hệ thống sức mạnh của tác phẩm gốc.",
@@ -621,19 +676,25 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
                         required: ['name', 'description']
                       }
                   },
+                  stats: {
+                      type: Type.ARRAY,
+                      description: "Danh sách các chỉ số của nhân vật, luôn bao gồm Sinh Lực và Thể Lực, và có thể thêm các chỉ số khác phù hợp với thể loại của tác phẩm gốc.",
+                      items: statSchema
+                  },
                   motivation: { type: Type.STRING, description: "Mục tiêu hoặc động lực chính của nhân vật trong kịch bản mới này." },
               },
-              required: ['name', 'personality', 'gender', 'bio', 'skills', 'motivation']
+              required: ['name', 'personality', 'gender', 'bio', 'skills', 'stats', 'motivation']
           },
           difficulty: { type: Type.STRING, enum: DIFFICULTY_OPTIONS, description: "Độ khó của game." },
           allowAdultContent: { type: Type.BOOLEAN, description: "Cho phép nội dung người lớn hay không." },
+          enableStatsSystem: { type: Type.BOOLEAN, description: "Bật hay tắt hệ thống chỉ số. Luôn đặt là true." },
           initialEntities: {
               type: Type.ARRAY,
               description: "Danh sách từ 5 đến 8 thực thể ban đầu trong thế giới (có thể là nhân vật, địa điểm, vật phẩm từ tác phẩm gốc hoặc được tạo mới).",
               items: entitySchema
           }
       },
-      required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'initialEntities']
+      required: ['storyContext', 'character', 'difficulty', 'allowAdultContent', 'enableStatsSystem', 'initialEntities']
   };
   
   const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
@@ -648,8 +709,9 @@ YÊU CẦU BẮT BUỘC:
 4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
 5.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
 6.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-7.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-8.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+7.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại của tác phẩm gốc.
+8.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+9.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
     
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
 }
@@ -796,6 +858,63 @@ export async function testSingleKey(key: string): Promise<KeyValidationResult> {
         return 'invalid';
     }
 }
+
+// FIX: Added missing optimizeEncyclopediaWithAI function.
+export const optimizeEncyclopediaWithAI = (gameState: GameState): Promise<EncyclopediaOptimizationResponse> => {
+    const { encounteredNPCs, encounteredFactions, discoveredEntities, inventory, companions, quests, character } = gameState;
+    const { skills } = character;
+
+    const dataToOptimize: EncyclopediaData = {
+        encounteredNPCs,
+        encounteredFactions,
+        discoveredEntities,
+        inventory,
+        companions,
+        quests,
+        skills,
+    };
+    
+    // Schemas for sub-types
+    const npcSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, thoughtsOnPlayer: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'personality', 'thoughtsOnPlayer'] };
+    const factionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description'] };
+    const entitySchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, type: { type: Type.STRING }, personality: { type: Type.STRING }, description: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'type', 'description'] };
+    const itemSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, quantity: { type: Type.NUMBER }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'quantity'] };
+    const companionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description'] };
+    const questSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'] }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'status'] };
+    const skillSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            optimizedNPCs: { type: Type.ARRAY, description: "Danh sách NPC đã được tối ưu hóa.", items: npcSchema },
+            optimizedFactions: { type: Type.ARRAY, description: "Danh sách phe phái đã được tối ưu hóa.", items: factionSchema },
+            optimizedDiscoveredEntities: { type: Type.ARRAY, description: "Danh sách các thực thể khác đã được tối ưu hóa.", items: entitySchema },
+            optimizedInventory: { type: Type.ARRAY, description: "Danh sách vật phẩm đã được tối ưu hóa.", items: itemSchema },
+            optimizedCompanions: { type: Type.ARRAY, description: "Danh sách đồng hành đã được tối ưu hóa.", items: companionSchema },
+            optimizedQuests: { type: Type.ARRAY, description: "Danh sách nhiệm vụ đã được tối ưu hóa.", items: questSchema },
+            optimizedSkills: { type: Type.ARRAY, description: "Danh sách kỹ năng đã được tối ưu hóa.", items: skillSchema },
+        },
+        required: ['optimizedNPCs', 'optimizedFactions', 'optimizedDiscoveredEntities', 'optimizedInventory', 'optimizedCompanions', 'optimizedQuests', 'optimizedSkills']
+    };
+
+    const prompt = `Bạn là một AI quản lý dữ liệu thông minh. Nhiệm vụ của bạn là phân tích, dọn dẹp và tối ưu hóa toàn bộ dữ liệu Bách Khoa Toàn Thư của một game nhập vai.
+
+Dữ liệu đầu vào:
+${JSON.stringify(dataToOptimize, null, 2)}
+
+YÊU CẦU TỐI ƯU HÓA (BẮT BUỘC):
+1.  **Hợp nhất trùng lặp:** Tìm kiếm các mục có tên giống nhau hoặc rất giống nhau trong mỗi danh sách (ví dụ: "Lão Già" và "lão già bí ẩn") và hợp nhất chúng thành một mục duy nhất. Mô tả của mục mới phải là sự kết hợp thông tin từ cả hai mục gốc.
+2.  **Chuẩn hóa tên:** Viết hoa chữ cái đầu của tất cả các tên một cách nhất quán.
+3.  **Làm giàu mô tả:** Dựa vào thông tin tổng thể, hãy viết lại các mô tả một cách súc tích hơn nhưng vẫn giữ đầy đủ ý, hoặc bổ sung thêm chi tiết nếu cần để làm rõ vai trò của thực thể.
+4.  **Phân loại Tags:** Xem xét lại và chuẩn hóa các 'tags' cho mỗi mục. Xóa các tags không liên quan và thêm các tags phù hợp nếu thiếu.
+5.  **Giữ nguyên số lượng:** Nếu một vật phẩm trong \`inventory\` có số lượng (quantity) lớn hơn 1, hãy giữ nguyên số lượng đó.
+6.  **GIỮ LẠI TẤT CẢ:** TUYỆT ĐỐI KHÔNG được xóa bất kỳ mục nào không bị trùng lặp. Toàn bộ các mục trong dữ liệu gốc phải có mặt trong dữ liệu đã tối ưu hóa, chỉ khác là chúng đã được hợp nhất và làm sạch.
+
+Trả về một đối tượng JSON duy nhất chứa toàn bộ dữ liệu đã được tối ưu hóa, tuân thủ nghiêm ngặt schema đã cho.`;
+
+    return generateJson<EncyclopediaOptimizationResponse>(prompt, schema, undefined, 'gemini-2.5-pro');
+};
+
 
 // --- Gameplay AI ---
 
@@ -983,7 +1102,14 @@ QUY TẮC BẮT BUỘC:
     c.  **Sử dụng Cấp bậc:** Bạn phải nhận thức và sử dụng các "Cấp bậc Danh vọng" (Reputation Tiers) được cung cấp trong lời kể của mình để mô tả cách thế giới nhìn nhận người chơi. Ví dụ: "Tiếng tăm của một 'Đại Thiện Nhân' như bạn đã lan rộng khắp vùng."
 15. **LINH HOẠT & SÁNG TẠO (QUAN TRỌNG):** Tránh lặp lại các mô tả hành động một cách nhàm chán. Nếu người chơi thực hiện một hành động tương tự lượt trước nhưng với cường độ mạnh hơn hoặc táo bạo hơn, diễn biến của bạn phải phản ánh sự leo thang đó. Hãy sáng tạo ra các kết quả đa dạng và hợp logic, không đi theo lối mòn.
 16. **KIỂM TRA CUỐI CÙNG (CỰC KỲ QUAN TRỌNG):** Trước khi hoàn thành phản hồi, hãy đọc lại phần tường thuật (\`narration\`) một lần cuối. ĐẢM BẢO RẰNG MỌI thực thể, vật phẩm, kỹ năng có tên riêng đã tồn tại trong "Bối Cảnh Toàn Diện" đều được bọc trong thẻ \`<entity>\` hoặc \`<important>\` một cách chính xác. Việc bỏ sót sẽ phá hỏng trò chơi.
-17. **TẠO KÝ ỨC CỐT LÕI (CÓ CHỌN LỌC):** Khi một sự kiện CỰC KỲ QUAN TRỌNG xảy ra (VD: một quyết định thay đổi cuộc đời, một plot twist lớn, khám phá ra một bí mật động trời), hãy tóm tắt nó thành MỘT câu ngắn gọn và trả về trong trường \`newCoreMemories\`. TUYỆT ĐỐI KHÔNG lưu lại các hành động thông thường hoặc các diễn biến nhỏ.`;
+17. **TẠO KÝ ỨC CỐT LÕI (CÓ CHỌN LỌC):** Khi một sự kiện CỰC KỲ QUAN TRỌNG xảy ra (VD: một quyết định thay đổi cuộc đời, một plot twist lớn, khám phá ra một bí mật động trời), hãy tóm tắt nó thành MỘT câu ngắn gọn và trả về trong trường \`newCoreMemories\`. TUYỆT ĐỐI KHÔNG lưu lại các hành động thông thường hoặc các diễn biến nhỏ.
+18. **HỆ THỐNG CHỈ SỐ (TỐI QUAN TRỌNG):**
+    a.  **Nhận thức:** Bạn PHẢI nhận thức được các chỉ số (\`stats\`) của nhân vật chính được cung cấp trong "BỐI CẢNH". Các chỉ số này ảnh hưởng đến mọi hành động.
+    b.  **Tiêu hao Thể Lực (\`Thể Lực\`):** Mọi hành động đòi hỏi thể chất (chiến đấu, chạy, leo trèo, bơi lội) BẮT BUỘC phải tiêu hao Thể Lực. Mức tiêu hao phải logic (VD: đi bộ -1, chạy nước rút -10, dùng kỹ năng tốn sức -20).
+    c.  **Giới hạn Thể Lực:** Nếu Thể Lực dưới 20%, BẮT BUỘC phải miêu tả nhân vật mệt mỏi, thở dốc. Nếu dưới 5%, nhân vật KHÔNG THỂ thực hiện các hành động nặng (chạy nhanh, chiến đấu mạnh). Nếu người chơi yêu cầu, hãy từ chối và giải thích lý do. Thể Lực sẽ hồi phục dần theo thời gian khi nghỉ ngơi.
+    d.  **Tổn thương Sinh Lực (\`Sinh Lực\`):** Khi nhân vật bị tấn công, trúng độc, ngã... BẮT BUỘC phải trừ Sinh Lực. Mức độ trừ phải tương xứng với mức độ nghiêm trọng. Nếu Sinh Lực về 0, nhân vật sẽ gục ngã hoặc chết (tùy độ khó).
+    e.  **Liên kết Trạng thái:** Các trạng thái tiêu cực (\`playerStatus\`) phải ảnh hưởng đến chỉ số. Ví dụ: 'Trúng Độc' sẽ trừ Sinh Lực mỗi lượt. 'Kiệt Sức' sẽ ngăn Thể Lực hồi phục.
+    f.  **OUTPUT:** Sau mỗi lượt, nếu có bất kỳ thay đổi nào, bạn BẮT BUỘC phải trả về TOÀN BỘ danh sách chỉ số đã được cập nhật trong trường \`updatedStats\`.`;
 
   if (genreConfig && !styleGuide) {
       // Replace the old generic tagging rule (rule #8) with the new genre-specific one
@@ -1189,7 +1315,7 @@ ${allSummaries.map((s, i) => `[Ký ức ${i+1}]: ${s}`).join('\n\n')}
 }
 
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
-    const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers } = gameState;
+    const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers, character } = gameState;
     const { ragSettings } = getSettings();
     
     // 1. Auto-summarization
@@ -1263,6 +1389,17 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             reason: { type: Type.STRING, description: "Lý do ngắn gọn cho sự thay đổi danh vọng." },
         }
     };
+    
+    const statSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            value: { type: Type.NUMBER },
+            maxValue: { type: Type.NUMBER },
+            isPercentage: { type: Type.BOOLEAN },
+        },
+        required: ['name', 'value', 'maxValue', 'isPercentage']
+    };
 
     const schema = {
         type: Type.OBJECT, properties: {
@@ -1274,6 +1411,7 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             updatedInventory: { type: Type.ARRAY, items: gameItemSchema, description: "Toàn bộ danh sách vật phẩm đã được cập nhật. Nếu túi đồ không thay đổi, hãy để trống trường này." },
             updatedCharacterAppearance: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu có sự thay đổi RÕ RỆT và LÂU DÀI về **ngoại hình** nhân vật (ví dụ: 'có một vết sẹo mới trên mặt'). KHÔNG cập nhật cho những thay đổi nhỏ, tạm thời hoặc thay đổi về tiểu sử. Ưu tiên các thay đổi do hành động người chơi gây ra. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
             updatedCharacterMotivation: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu hành động của người chơi thể hiện RÕ RÀNG một mục tiêu/động lực mới hoặc thay đổi mục tiêu cũ. KHÔNG tự ý suy diễn. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
+            updatedStats: { type: Type.ARRAY, items: statSchema, description: "Toàn bộ danh sách chỉ số nhân vật đã được cập nhật sau hành động. Nếu không có gì thay đổi, để trống trường này." },
         }, required: ['narration', 'suggestions']
     };
 
@@ -1283,140 +1421,45 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
 
 --- BỐI CẢNH TOÀN DIỆN (Trạng thái hiện tại) ---
 ${JSON.stringify({
-    worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
-    character: worldConfig.character,
+    worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength, enableStatsSystem: worldConfig.enableStatsSystem },
+    character: character,
     worldTime: worldTime,
-    reputation: { ...reputation, reputationTiers: reputationTiers },
-    playerStatus, inventory, companions, quests: quests.filter(q => q.status === 'đang tiến hành'),
-    encounteredNPCs,
-    encounteredFactions,
+    reputation: { ...reputation, reputationTiers },
+    playerStatus,
+    inventory,
+    companions,
+    quests,
+    encyclopedia: {
+        encounteredNPCs: encounteredNPCs.slice(-10), // Limit context size
+        encounteredFactions: encounteredFactions.slice(-5),
+    }
 }, null, 2)}
 
---- KÝ ỨC DÀI HẠN (RAG) & TÓM TẮT DIỄN BIẾN ---
-${relevantMemories || "Không có tóm tắt nào liên quan đến tình huống này."}
-${adultContentDirectives}
+--- Ký ức cốt lõi (Sự kiện quan trọng nhất đã xảy ra) ---
+${memories.join('\n- ')}
 
---- DIỄN BIẾN GẦN ĐÂY ---
+--- Tóm tắt các giai đoạn trước (Bối cảnh gần đây) ---
+${relevantMemories}
+
+--- Diễn biến gần đây nhất ---
 ${recentHistory}
+--- KẾT THÚC BỐI CẢNH ---
 
---- HÀNH ĐỘNG MỚI NHẤT CỦA NGƯỜI CHƠI ---
-"${playerActionContent}"
+Hành động mới nhất của người chơi: "${playerActionContent}"
+${adultContentDirectives}
 
 **YÊU CẦU CỦA BẠN:**
 
-1.  **PHÂN TÍCH:** Đọc kỹ "BỐI CẢNH", "KÝ ỨC DÀI HẠN" và "DIỄN BIẾN GẦN ĐÂY". Sau đó, phân tích "HÀNH ĐỘNG MỚI NHẤT".
-2.  **KỂ CHUYỆN:** Viết một đoạn tường thuật (\`narration\`) chi tiết và sống động.
-    *   **Logic & Hậu quả:** Kết quả phải hợp lý.
-    *   **Phát triển:** Đẩy câu chuyện đi tới.
-    *   **Độ dài:** Dựa vào thiết lập "Độ Dài Phản Hồi Ưu Tiên Của AI". TUÂN THỦ NGHIÊM NGẶT độ dài tối thiểu: 'Ngắn' - 500 từ; 'Trung bình' - 800 từ; 'Chi tiết, dài' - 1200 từ. Mặc định là 'Trung bình'.
-3.  **GỢI Ý:** Tạo ra 4 gợi ý hành động (\`suggestions\`).
-4.  **TÍNH TOÁN THỜI GIAN:** Ước tính thời gian đã trôi qua cho hành động của người chơi và trả về trong trường \`timePassed\`.
-5.  **Cập nhật Danh vọng:** Nếu hành động có ảnh hưởng đến danh vọng, hãy trả về trong trường \`reputationChange\`.
-6.  **QUẢN LÝ VẬT PHẨM (TỐI QUAN TRỌNG):**
-    a.  **Phân tích:** Dựa trên hành động của người chơi và diễn biến câu chuyện, bạn PHẢI cập nhật túi đồ (\`inventory\`).
-    b.  **Tiêu thụ/Mất:** Nếu một vật phẩm bị sử dụng, tiêu thụ ("lĩnh ngộ" một bí kíp), hoặc mất đi, hãy tính toán số lượng còn lại. Nếu số lượng về 0, hãy xóa vật phẩm đó khỏi danh sách.
-    c.  **Nhận được:** Nếu nhân vật nhận được vật phẩm mới, hãy thêm nó vào túi đồ.
-    d.  **OUTPUT:** Trả về TOÀN BỘ danh sách vật phẩm đã được cập nhật trong trường \`updatedInventory\`. Nếu túi đồ không có gì thay đổi, không cần trả về trường này.
-7.  **CẬP NHẬT NHÂN VẬT (NẾU CÓ):** TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC SAU:
-    a.  **Ngoại hình (\`updatedCharacterAppearance\`):** Chỉ cập nhật trường này nếu có sự thay đổi RÕ RỆT và LÂU DÀI về **ngoại hình** nhân vật (ví dụ: 'có một vết sẹo mới trên mặt'). KHÔNG cập nhật cho những thay đổi nhỏ, tạm thời hoặc thay đổi về tiểu sử. Ưu tiên các thay đổi do hành động người chơi gây ra. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống.
-    b.  **Động lực (\`updatedCharacterMotivation\`):** Chỉ cập nhật trường này nếu hành động của người chơi thể hiện RÕ RÀNG một mục tiêu/động lực mới hoặc thay đổi mục tiêu cũ. KHÔNG tự ý suy diễn. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống.
-8.  **TUÂN THỦ QUY TẮC:** TUYỆT ĐỐI tuân thủ tất cả các quy tắc hệ thống.`;
-    
-    const turnResponse = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
-    
-    return {
-        ...turnResponse,
-        newSummary: newSummary,
-    };
-};
+1.  **Phân tích & Dẫn truyện:** Đọc kỹ toàn bộ bối cảnh và hành động của người chơi. Viết một đoạn tường thuật (\`narration\`) chi tiết, sống động và logic để tiếp nối câu chuyện.
+2.  **Cập nhật Trạng thái Game:** Dựa vào kết quả của hành động, cập nhật các trạng thái của game một cách logic.
+    *   **Vật phẩm (\`updatedInventory\`):** Nếu người chơi nhặt được, sử dụng, hoặc mất vật phẩm, hãy trả về TOÀN BỘ danh sách vật phẩm mới trong túi đồ.
+    *   **Thời gian (\`timePassed\`):** Ước tính thời gian trôi qua.
+    *   **Danh vọng (\`reputationChange\`):** Tính toán sự thay đổi về danh vọng.
+    *   **Chỉ số (\`updatedStats\`):** Nếu có thay đổi về chỉ số (Sinh lực, Thể lực...), trả về TOÀN BỘ danh sách chỉ số đã cập nhật.
+3.  **Gợi ý hành động:** Tạo ra ĐÚNG 4 gợi ý hành động (\`suggestions\`) đa dạng và hợp lý cho lượt đi tiếp theo.
+4.  **Tuân thủ quy tắc:** Luôn tuân thủ các quy tắc GM đã được nêu trong vai trò hệ thống của bạn (định dạng thẻ, nhất quán, v.v.).
 
-export const optimizeEncyclopediaWithAI = (gameState: GameState): Promise<EncyclopediaOptimizationResponse> => {
-    const { character, inventory, encounteredNPCs, encounteredFactions, discoveredEntities, companions, quests } = gameState;
-    
-    // Schemas for sub-objects
-    const npcSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING },
-            thoughtsOnPlayer: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'description', 'personality', 'thoughtsOnPlayer']
-    };
-    const factionSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'description', 'tags']
-    };
-    const entitySchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS },
-            description: { type: Type.STRING }, personality: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'type', 'description', 'tags']
-    };
-    const itemSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING },
-            quantity: { type: Type.NUMBER }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'description', 'quantity', 'tags']
-    };
-    const questSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING },
-            status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'] }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'description', 'status', 'tags']
-    };
-    const companionSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING },
-            personality: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-        }, required: ['name', 'description', 'personality'] // Companions are a type of character, no tags needed.
-    };
-    const skillSchema = {
-        type: Type.OBJECT, properties: {
-            name: { type: Type.STRING }, description: { type: Type.STRING }
-        }, required: ['name', 'description']
-    };
+**OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.`;
 
-    const mainSchema = {
-        type: Type.OBJECT,
-        properties: {
-            optimizedNPCs: { type: Type.ARRAY, items: npcSchema },
-            optimizedFactions: { type: Type.ARRAY, items: factionSchema },
-            optimizedDiscoveredEntities: { type: Type.ARRAY, items: entitySchema },
-            optimizedInventory: { type: Type.ARRAY, items: itemSchema },
-            optimizedCompanions: { type: Type.ARRAY, items: companionSchema },
-            optimizedQuests: { type: Type.ARRAY, items: questSchema },
-            optimizedSkills: { type: Type.ARRAY, items: skillSchema },
-        },
-    };
-
-    const prompt = `Bạn là một người quản lý dữ liệu (Data Curator) tỉ mỉ cho một game nhập vai.
-Nhiệm vụ của bạn là đọc TOÀN BỘ dữ liệu Bách Khoa Toàn Thư được cung cấp, sau đó trả về một phiên bản đã được DỌN DẸP, TỐI ƯU HÓA và CHUẨN HÓA.
-
---- DỮ LIỆU BÁCH KHOA HIỆN TẠI ---
-${JSON.stringify({
-    encounteredNPCs, encounteredFactions, discoveredEntities, inventory, companions, quests, skills: character.skills
-}, null, 2)}
-
---- CÁC NHIỆM VỤ BẮT BUỘC ---
-1.  **HỢP NHẤT MỤC TRÙNG LẶP (De-duplication):**
-    - Tìm các mục có tên giống nhau hoặc gần giống nhau (VD: "Lão Ăn Mày", "lão ăn mày") trong cùng một danh mục.
-    - Hợp nhất chúng thành MỘT mục duy nhất với một cái tên được CHUẨN HÓA (VD: "Lão Ăn Mày").
-    - Kết hợp thông tin từ các mô tả của chúng thành một mô tả mới, đầy đủ và súc tích hơn.
-
-2.  **TÓM TẮT & TỐI ƯU HÓA TOKEN:**
-    - Rút ngắn các mô tả quá dài dòng nhưng PHẢI giữ lại những thông tin cốt lõi về vai trò, ngoại hình, tính cách và các chi tiết quan trọng.
-    - Mục tiêu là làm cho văn bản súc tích, dễ đọc và giảm số lượng token tổng thể.
-
-3.  **GẮN TAG BẮT BUỘC:**
-    - KIỂM TRA TẤT CẢ các mục.
-    - ĐẢM BẢO MỌI MỤC (TRỪ 'Nhân vật' và 'Đồng hành', tức là 'optimizedNPCs' và 'optimizedCompanions') PHẢI có một trường \`tags\` là một mảng chuỗi (array of strings).
-    - Nếu một mục thiếu \`tags\`, hãy TỰ ĐỘNG TẠO ra các tag phù hợp dựa trên mô tả và loại của mục đó (VD: 'Vũ khí', 'NPC quan trọng', 'Địa điểm thành thị', 'Nhiệm vụ chính').
-
-4.  **CHUẨN HÓA DỮ LIỆU:**
-    - Đảm bảo định dạng nhất quán trên tất cả các mục (ví dụ: viết hoa tên riêng).
-
---- OUTPUT ---
-Trả về TOÀN BỘ cấu trúc dữ liệu Bách Khoa Toàn Thư đã được tối ưu hóa, tuân thủ nghiêm ngặt schema JSON đã cho.
-`;
-
-    return generateJson<EncyclopediaOptimizationResponse>(prompt, mainSchema, undefined, 'gemini-2.5-pro');
+    return generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
 };

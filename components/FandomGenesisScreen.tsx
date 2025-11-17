@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import Button from './common/Button';
 import Icon from './common/Icon';
@@ -36,6 +37,10 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
 
   const [isSummarySelectModalOpen, setIsSummarySelectModalOpen] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState<FandomFile | null>(null);
+  
+  const [arcList, setArcList] = useState<string[]>([]);
+  const [selectedArcs, setSelectedArcs] = useState<Set<string>>(new Set());
+
   const [arcProcessingProgress, setArcProcessingProgress] = useState({ current: 0, total: 0, status: 'idle' as 'idle' | 'extracting_arcs' | 'summarizing' | 'done', currentArcName: '' });
 
 
@@ -99,52 +104,88 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
   const handleSelectSummary = (files: FandomFile[]) => {
     if (files.length > 0) {
         setSelectedSummary(files[0]);
+        setArcList([]); // Reset arc list when a new summary is selected
+        setSelectedArcs(new Set());
     }
     setIsSummarySelectModalOpen(false);
   };
   
-  const handleGenerateArcSummaries = async () => {
+  const handleExtractArcList = async () => {
     if (!selectedSummary) {
         setNotification({ isOpen: true, title: 'Chưa chọn tệp', messages: ['Vui lòng chọn một tệp tóm tắt (.txt) từ kho để bắt đầu.'] });
         return;
     }
-
     setLoadingStates(p => ({...p, arc: true}));
     setArcProcessingProgress({ current: 0, total: 0, status: 'extracting_arcs', currentArcName: '' });
+    setArcList([]);
     try {
-        const arcList = await aiService.extractArcListFromSummary(selectedSummary.content);
-        if (!arcList || arcList.length === 0) {
+        const arcs = await aiService.extractArcListFromSummary(selectedSummary.content);
+        if (!arcs || arcs.length === 0) {
             setNotification({ isOpen: true, title: 'Không tìm thấy Arc', messages: ['AI không thể xác định được các phần truyện (Arc) nào từ tệp tóm tắt này.'] });
-            setArcProcessingProgress({ current: 0, total: 0, status: 'idle', currentArcName: '' });
-            setLoadingStates(p => ({...p, arc: false}));
-            return;
+            setArcList([]);
+        } else {
+            setArcList(arcs);
+            setSelectedArcs(new Set()); // Reset selection
         }
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định.';
+        setNotification({ isOpen: true, title: 'Lỗi Phân Tích', messages: [errorMessage] });
+    } finally {
+        setLoadingStates(p => ({...p, arc: false}));
+        setArcProcessingProgress(prev => ({ ...prev, status: 'idle' }));
+    }
+  };
 
-        setArcProcessingProgress({ current: 0, total: arcList.length, status: 'summarizing', currentArcName: '' });
-        
+  const handleGenerateSelectedArcs = async () => {
+    if (!selectedSummary || selectedArcs.size === 0) {
+        setNotification({ isOpen: true, title: 'Chưa chọn Arc', messages: ['Vui lòng chọn ít nhất một Arc để tóm tắt.'] });
+        return;
+    }
+
+    setLoadingStates(p => ({...p, arc: true}));
+    const arcsToProcess = Array.from(selectedArcs);
+    setArcProcessingProgress({ current: 0, total: arcsToProcess.length, status: 'summarizing', currentArcName: '' });
+    try {
         const workNameFromSummary = selectedSummary.name.replace(/^tom_tat_|\.txt$/gi, '').replace(/_/g, ' ');
 
-
-        for (let i = 0; i < arcList.length; i++) {
-            const arcName = arcList[i];
+        for (let i = 0; i < arcsToProcess.length; i++) {
+            const arcName = arcsToProcess[i];
             setArcProcessingProgress(prev => ({ ...prev, current: i + 1, currentArcName: arcName }));
             
             const jsonContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
             const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.json`;
             fandomFileService.saveFandomFile(fileName, JSON.stringify(jsonContent, null, 2));
-            refreshSavedFiles(); // Refresh list to show the new file
+            refreshSavedFiles();
         }
 
-        setArcProcessingProgress({ current: arcList.length, total: arcList.length, status: 'done', currentArcName: '' });
-        setNotification({ isOpen: true, title: 'Hoàn tất!', messages: [`AI đã tóm tắt và lưu thành công ${arcList.length} tệp .json vào kho.`] });
+        setArcProcessingProgress({ current: arcsToProcess.length, total: arcsToProcess.length, status: 'done', currentArcName: '' });
+        setNotification({ isOpen: true, title: 'Hoàn tất!', messages: [`AI đã tóm tắt và lưu thành công ${arcsToProcess.length} tệp .json vào kho.`] });
+        setSelectedArcs(new Set()); // Clear selection after processing
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định.';
         setNotification({ isOpen: true, title: 'Lỗi', messages: [errorMessage] });
-        setArcProcessingProgress({ current: 0, total: 0, status: 'idle', currentArcName: '' });
+        setArcProcessingProgress(prev => ({...prev, status: 'idle'}));
     } finally {
         setLoadingStates(p => ({...p, arc: false}));
     }
   };
+  
+  const handleToggleArcSelection = (arcName: string) => {
+    setSelectedArcs(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(arcName)) {
+            newSet.delete(arcName);
+        } else {
+            newSet.add(arcName);
+        }
+        return newSet;
+    });
+  };
+
+  const handleSelectAllArcs = () => {
+      setSelectedArcs(new Set(arcList));
+  };
+
 
   const handleSaveToBrowser = () => {
     if (!generatedResult) return;
@@ -264,35 +305,58 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
             {/* --- Step 2: Arc Analysis --- */}
             <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg p-6 border border-slate-700/50">
                 <h2 className="text-xl font-bold text-special-400 mb-2">Bước 2: Tóm Tắt Chi Tiết Tự Động Theo Arc (.json)</h2>
-                <p className="text-slate-400 mb-4 text-sm">Chọn tệp tóm tắt tổng quan (có tên bắt đầu bằng `tom_tat_...`) từ kho. AI sẽ tự động phân tích và tóm tắt chi tiết về nhân vật, địa điểm, sự kiện... trong từng Arc/Saga, sau đó xuất ra các tệp .json riêng biệt và lưu vào kho, kèm theo Vector Hướng Dẫn Văn Phong.</p>
+                <p className="text-slate-400 mb-4 text-sm">Chọn tệp tóm tắt (`tom_tat_...`) từ kho, sau đó quét để lấy danh sách các Arc. Cuối cùng, chọn các Arc bạn muốn AI tóm tắt chi tiết.</p>
                 
-                <div className="flex flex-col sm:flex-row gap-4 items-center">
-                    <Button onClick={() => setIsSummarySelectModalOpen(true)} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
-                        <Icon name="save" className="w-4 h-4 mr-2" /> Chọn Tệp Tóm Tắt (.txt) Từ Kho
-                    </Button>
-                    {selectedSummary && (
-                        <p className="text-sm text-slate-300">Đã chọn: <span className="font-semibold">{selectedSummary.name}</span></p>
-                    )}
-                </div>
-
-                {arcProcessingProgress.status !== 'idle' && (
-                    <div className="mt-4 p-3 bg-slate-900/50 rounded-md text-sm text-slate-300 animate-fade-in">
-                        {arcProcessingProgress.status === 'extracting_arcs' && <p className="flex items-center gap-2"><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang xác định các Arc...</p>}
-                        {arcProcessingProgress.status === 'summarizing' && <p className="flex items-center gap-2"><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang tóm tắt Arc {arcProcessingProgress.current}/{arcProcessingProgress.total}: <span className="font-semibold text-purple-300">{arcProcessingProgress.currentArcName}</span>...</p>}
-                        {arcProcessingProgress.status === 'done' && <p className="font-semibold text-green-400">Hoàn tất! Đã tạo và lưu {arcProcessingProgress.total} tệp .json vào kho.</p>}
+                {/* Step 2A: Select summary and Scan */}
+                <div className="bg-slate-900/30 p-4 rounded-md border border-slate-700">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-3">Giai đoạn 2A: Quét danh sách Arc</h3>
+                    <div className="flex flex-col sm:flex-row gap-4 items-center mb-4">
+                        <Button onClick={() => setIsSummarySelectModalOpen(true)} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
+                            <Icon name="save" className="w-4 h-4 mr-2" /> Chọn Tệp Tóm Tắt (.txt) Từ Kho
+                        </Button>
+                        {selectedSummary && (
+                            <p className="text-sm text-slate-300">Đã chọn: <span className="font-semibold">{selectedSummary.name}</span></p>
+                        )}
                     </div>
-                )}
-
-                <div className="mt-6 flex justify-end">
-                    <Button 
-                        onClick={handleGenerateArcSummaries} 
-                        variant="special" 
-                        disabled={!selectedSummary || loadingStates.summary || loadingStates.arc} 
-                        className="!w-auto !text-base !py-2 !px-6"
-                    >
-                         {loadingStates.arc ? 'Đang xử lý...' : <><Icon name="magic" className="w-5 h-5 mr-2" />Bắt Đầu Tóm Tắt Chi Tiết</>}
-                    </Button>
+                    <div className="flex justify-end">
+                        <Button onClick={handleExtractArcList} variant="info" disabled={!selectedSummary || loadingStates.arc} className="!w-auto !text-base !py-2 !px-6">
+                            {loadingStates.arc && arcProcessingProgress.status === 'extracting_arcs' ? 'Đang phân tích...' : <><Icon name="news" className="w-5 h-5 mr-2" />Phân Tích Danh Sách Arc</>}
+                        </Button>
+                    </div>
                 </div>
+
+                {/* Step 2B: Select Arcs and Generate */}
+                {arcList.length > 0 && (
+                <div className="mt-6 bg-slate-900/30 p-4 rounded-md border border-slate-700 animate-fade-in">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-3">Giai đoạn 2B: Chọn lọc & Tạo tóm tắt</h3>
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2 border-y border-slate-700 py-2 mb-4">
+                        {arcList.map((arc, index) => (
+                            <label key={index} className="flex items-center gap-3 p-2 rounded-md hover:bg-slate-700/50 cursor-pointer">
+                                <input type="checkbox" checked={selectedArcs.has(arc)} onChange={() => handleToggleArcSelection(arc)} className="h-5 w-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 bg-slate-700"/>
+                                <span className="text-slate-300">{arc}</span>
+                            </label>
+                        ))}
+                    </div>
+                    
+                    <div className="flex gap-4 mb-4">
+                        <button onClick={handleSelectAllArcs} className="text-xs text-blue-400 hover:underline">Chọn tất cả</button>
+                        <button onClick={() => setSelectedArcs(new Set())} className="text-xs text-blue-400 hover:underline">Bỏ chọn tất cả</button>
+                    </div>
+
+                    {arcProcessingProgress.status !== 'idle' && arcProcessingProgress.status !== 'extracting_arcs' && (
+                        <div className="mt-4 p-3 bg-slate-900/50 rounded-md text-sm text-slate-300 animate-fade-in">
+                            {arcProcessingProgress.status === 'summarizing' && <p className="flex items-center gap-2"><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Đang tóm tắt Arc {arcProcessingProgress.current}/{arcProcessingProgress.total}: <span className="font-semibold text-purple-300">{arcProcessingProgress.currentArcName}</span>...</p>}
+                            {arcProcessingProgress.status === 'done' && <p className="font-semibold text-green-400">Hoàn tất! Đã tạo và lưu {arcProcessingProgress.total} tệp .json vào kho.</p>}
+                        </div>
+                    )}
+
+                    <div className="mt-6 flex justify-end">
+                        <Button onClick={handleGenerateSelectedArcs} variant="special" disabled={selectedArcs.size === 0 || loadingStates.arc} className="!w-auto !text-base !py-2 !px-6">
+                            {loadingStates.arc && arcProcessingProgress.status === 'summarizing' ? 'Đang xử lý...' : <><Icon name="magic" className="w-5 h-5 mr-2" />Bắt Đầu Tóm Tắt ({selectedArcs.size} mục đã chọn)</>}
+                        </Button>
+                    </div>
+                </div>
+                )}
             </div>
         </div>
 

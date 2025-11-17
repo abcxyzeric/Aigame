@@ -380,14 +380,16 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                         {/* Left Pane: Navigation */}
                         <div className="w-1/4 xl:w-1/5 bg-slate-800/50 p-3 flex-shrink-0 flex flex-col">
                             <h3 className="text-lg font-semibold text-slate-300 mb-3 px-1">Mục lục</h3>
-                            <div className="space-y-2">
-                                <TabButton active={activeTab === 'characters'} onClick={() => setActiveTab('characters')} iconName="user">Nhân Vật & Đồng hành</TabButton>
-                                <TabButton active={activeTab === 'items'} onClick={() => setActiveTab('items')} iconName="magic">Vật phẩm</TabButton>
-                                <TabButton active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} iconName="magic">Kỹ năng</TabButton>
-                                <TabButton active={activeTab === 'factions'} onClick={() => setActiveTab('factions')} iconName="world">Thế Lực</TabButton>
-                                <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
-                                <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
-                                <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Khái niệm khác</TabButton>
+                            <div className="flex-grow overflow-y-auto pr-2">
+                                <div className="space-y-2">
+                                    <TabButton active={activeTab === 'characters'} onClick={() => setActiveTab('characters')} iconName="user">Nhân Vật & Đồng hành</TabButton>
+                                    <TabButton active={activeTab === 'items'} onClick={() => setActiveTab('items')} iconName="magic">Vật phẩm</TabButton>
+                                    <TabButton active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} iconName="magic">Kỹ năng</TabButton>
+                                    <TabButton active={activeTab === 'factions'} onClick={() => setActiveTab('factions')} iconName="world">Thế Lực</TabButton>
+                                    <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
+                                    <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
+                                    <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Hệ thống sức mạnh / Lore</TabButton>
+                                </div>
                             </div>
                         </div>
                         {/* Middle Pane: List */}

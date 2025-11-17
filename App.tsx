@@ -6,6 +6,7 @@ import SettingsScreen from './components/SettingsScreen';
 import GameplayScreen from './components/GameplayScreen';
 import FandomGenesisScreen from './components/FandomGenesisScreen';
 import { WorldConfig, GameState } from './types';
+import { DEFAULT_STATS } from './constants';
 
 type Screen = 'home' | 'create' | 'settings' | 'gameplay' | 'fandomGenesis';
 
@@ -27,7 +28,10 @@ const App: React.FC = () => {
   const handleStartGame = useCallback((config: WorldConfig) => {
     setGameState({ 
       worldConfig: config, 
-      character: config.character, 
+      character: {
+        ...config.character,
+        stats: config.enableStatsSystem ? (config.character.stats && config.character.stats.length > 0 ? config.character.stats : DEFAULT_STATS) : [],
+      }, 
       history: [], 
       memories: [], 
       summaries: [], 
@@ -47,12 +51,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleLoadSavedGame = useCallback((state: GameState) => {
+    const statsEnabled = state.worldConfig.enableStatsSystem === true;
     const completeState: GameState = {
       memories: [],
       summaries: [],
       playerStatus: [],
       inventory: [],
-      character: state.worldConfig.character, // Fallback for old saves
       encounteredNPCs: [], // For old saves
       encounteredFactions: [], // For old saves
       discoveredEntities: [], // For old saves
@@ -62,7 +66,12 @@ const App: React.FC = () => {
       worldTime: { year: 1, month: 1, day: 1, hour: 8 }, // Fallback cho file lưu cũ
       reputation: { score: 0, tier: 'Vô Danh' }, // Fallback cho file lưu cũ
       reputationTiers: [], // Fallback cho file lưu cũ
-      ...state
+      ...state,
+      // FIX: Removed duplicate `character` property. The property below handles all logic correctly.
+      character: {
+        ...(state.character || state.worldConfig.character), // Handle very old saves
+        stats: statsEnabled ? (state.character.stats && state.character.stats.length > 0 ? state.character.stats : DEFAULT_STATS) : [],
+      },
     };
     setGameState(completeState);
     setCurrentScreen('gameplay');

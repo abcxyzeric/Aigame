@@ -1,5 +1,12 @@
 
 
+export interface CharacterStat {
+  name: string;
+  value: number;
+  maxValue: number;
+  isPercentage: boolean;
+}
+
 export interface InitialEntity {
   name: string;
   type: string;
@@ -24,6 +31,7 @@ export interface CharacterConfig {
     name:string;
     description: string;
   }[];
+  stats: CharacterStat[];
   motivation: string;
 }
 
@@ -46,6 +54,7 @@ export interface WorldConfig {
   sexualContentStyle?: string;
   violenceLevel?: string;
   storyTone?: string;
+  enableStatsSystem: boolean;
   coreRules: string[];
   initialEntities: InitialEntity[];
   temporaryRules: TemporaryRule[];
@@ -210,6 +219,7 @@ export interface AiTurnResponse {
   updatedInventory?: GameItem[];
   updatedCharacterAppearance?: string;
   updatedCharacterMotivation?: string;
+  updatedStats?: CharacterStat[];
 }
 
 export interface StartGameResponse {

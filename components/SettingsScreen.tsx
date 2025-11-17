@@ -336,15 +336,27 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
       
       <Accordion title="Cài đặt Hiệu suất AI" icon={<Icon name="difficulty"/>} borderColorClass='border-yellow-500' titleClassName='text-yellow-400'>
         <p className="text-sm text-slate-400 mb-4">Điều chỉnh các thông số kỹ thuật của AI để cân bằng giữa chất lượng, tốc độ và chi phí. Chỉ dành cho người dùng nâng cao.</p>
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
-            <label htmlFor="json-max-tokens" className="block text-sm font-medium text-slate-300 mb-1">Độ dài Bổ sung cho JSON (Max Output Tokens)</label>
+            <div className="flex justify-between items-center mb-2">
+              <label htmlFor="json-max-tokens" className="block text-sm font-medium text-slate-300">Độ dài Bổ sung cho JSON (Max Output Tokens)</label>
+              <input
+                type="number"
+                id="json-max-tokens-input"
+                value={settings.aiPerformanceSettings.jsonMaxOutputTokens}
+                onChange={(e) => handleAiPerformanceSettingChange('jsonMaxOutputTokens', e.target.value)}
+                className="w-24 bg-slate-900 border border-slate-600 rounded-md px-2 py-1 text-sm text-center"
+                min="1024"
+                max="8000"
+                step="256"
+              />
+            </div>
             <input
-              type="number"
-              id="json-max-tokens"
+              type="range"
+              id="json-max-tokens-slider"
               value={settings.aiPerformanceSettings.jsonMaxOutputTokens}
               onChange={(e) => handleAiPerformanceSettingChange('jsonMaxOutputTokens', e.target.value)}
-              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
               min="1024"
               max="8000"
               step="256"
@@ -352,13 +364,25 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             <p className="text-xs text-slate-500 mt-1">Tăng giới hạn cho các tác vụ tạo JSON phức tạp (như kiến tạo thế giới). Mặc định: 4000.</p>
           </div>
           <div>
-            <label htmlFor="thinking-budget" className="block text-sm font-medium text-slate-300 mb-1">Thinking Budget</label>
+            <div className="flex justify-between items-center mb-2">
+                <label htmlFor="thinking-budget" className="block text-sm font-medium text-slate-300">Thinking Budget</label>
+                 <input
+                  type="number"
+                  id="thinking-budget-input"
+                  value={settings.aiPerformanceSettings.thinkingBudget}
+                  onChange={(e) => handleAiPerformanceSettingChange('thinkingBudget', e.target.value)}
+                  className="w-24 bg-slate-900 border border-slate-600 rounded-md px-2 py-1 text-sm text-center"
+                  min="0"
+                  max="10000"
+                  step="100"
+                />
+            </div>
             <input
-              type="number"
-              id="thinking-budget"
+              type="range"
+              id="thinking-budget-slider"
               value={settings.aiPerformanceSettings.thinkingBudget}
               onChange={(e) => handleAiPerformanceSettingChange('thinkingBudget', e.target.value)}
-              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
               min="0"
               max="10000"
               step="100"

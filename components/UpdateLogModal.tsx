@@ -14,6 +14,17 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.4.0 (Đại Tu Giao Diện & Hệ Thống Chỉ Số)",
+      notes: [
+        "**Đại tu Giao diện Gameplay:** Thiết kế lại hoàn toàn giao diện gameplay với bố cục 2 cột trực quan (trên desktop), giúp người chơi dễ dàng theo dõi Bảng điều khiển nhân vật và diễn biến câu chuyện cùng lúc.",
+        "**Hệ Thống Chỉ Số Nhân Vật (Stats System):** Tích hợp sâu hệ thống chỉ số (Sinh Lực, Thể Lực, và các chỉ số tùy chỉnh) vào cả màn hình kiến tạo thế giới và gameplay.",
+        "**AI Nhận Thức về Chỉ Số:** AI dẫn truyện giờ đây có nhận thức đầy đủ về các chỉ số, tự động tính toán sát thương, sự mệt mỏi và các giới hạn hành động, tạo ra trải nghiệm nhập vai chân thực và có chiều sâu chiến thuật hơn.",
+        "**Hỗ Trợ AI Tạo Chỉ Số:** Nâng cấp tính năng 'AI Hỗ Trợ' trong màn hình kiến tạo, cho phép AI tự động đề xuất một bộ chỉ số phù hợp dựa trên thể loại và tiểu sử nhân vật.",
+        "**Cài đặt Hiệu suất AI:** Tinh chỉnh và làm rõ các cài đặt hiệu suất AI trong mục Cài đặt, giúp người dùng dễ dàng cân bằng giữa chất lượng và tốc độ phản hồi của AI.",
+        "**Sửa lỗi và Cải tiến:** Khắc phục nhiều lỗi nhỏ, tối ưu hóa hiệu suất và cải thiện độ ổn định chung của trình giả lập."
+      ]
+    },
+    {
       version: "1.3.5 (Nâng cấp Trí tuệ & Lưu trữ)",
       notes: [
         "**Nâng cấp Hệ thống Lưu trữ:** Chuyển đổi hoàn toàn sang IndexedDB, cho phép lưu game với dung lượng lớn không giới hạn và khắc phục triệt để lỗi 'Bộ nhớ đầy'. Dữ liệu cũ được tự động chuyển sang hệ thống mới.",

@@ -1,4 +1,4 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat } from './types';
 
 export const GENDER_OPTIONS = ['Không xác định (Để AI quyết định)', 'Nam', 'Nữ', 'Khác'];
 export const PERSONALITY_OPTIONS = [
@@ -41,9 +41,13 @@ export const ENTITY_TYPE_OPTIONS = [
     'Phe phái/Thế lực', 
     'Cảnh giới', 
     'Công pháp / Kỹ năng',
-    'Khái niệm / Lore'
+    'Hệ thống sức mạnh / Lore'
 ];
 
+export const DEFAULT_STATS: CharacterStat[] = [
+  { name: 'Sinh Lực', value: 100, maxValue: 100, isPercentage: true },
+  { name: 'Thể Lực', value: 100, maxValue: 100, isPercentage: true },
+];
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   storyContext: {
@@ -58,6 +62,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
     gender: GENDER_OPTIONS[0],
     bio: '',
     skills: [],
+    stats: DEFAULT_STATS,
     motivation: '',
   },
   difficulty: DIFFICULTY_OPTIONS[1],
@@ -67,6 +72,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   sexualContentStyle: SEXUAL_CONTENT_STYLE_OPTIONS[0],
   violenceLevel: VIOLENCE_LEVEL_OPTIONS[0],
   storyTone: STORY_TONE_OPTIONS[1],
+  enableStatsSystem: true,
   coreRules: [],
   initialEntities: [],
   temporaryRules: [],
