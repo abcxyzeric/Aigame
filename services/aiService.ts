@@ -1060,14 +1060,19 @@ const getAdultContentDirectives = (config: WorldConfig): string => {
 function getResponseLengthDirective(aiResponseLength?: string): string {
     switch (aiResponseLength) {
         case 'Ngắn':
-            return "Phần tường thuật của bạn nên ngắn gọn, khoảng 200-300 từ.";
+            return "Phần tường thuật của bạn nên ngắn gọn nhưng vẫn có chiều sâu, hướng đến độ dài mục tiêu từ 500 đến 1200 từ.";
         case 'Trung bình':
-            return "Phần tường thuật của bạn nên có độ dài trung bình, khoảng 400-600 từ.";
+            return "Phần tường thuật của bạn phải chi tiết và có chiều sâu, hướng đến độ dài mục tiêu từ 750 đến 1600 từ.";
         case 'Chi tiết, dài':
-            return "Phần tường thuật của bạn phải CỰC KỲ CHI TIẾT và dài, tối thiểu 1000 từ.";
+            return `Phần tường thuật của bạn phải CỰC KỲ CHI TIẾT, có chiều sâu và DÀI, hướng đến độ dài mục tiêu từ 1200 đến 2500 từ. Để đạt được độ dài và chất lượng yêu cầu, bạn PHẢI:
+- **Miêu tả đa giác quan:** Đi sâu vào mô tả môi trường, các chi tiết giác quan (âm thanh, mùi vị, hình ảnh, cảm giác).
+- **Khám phá nội tâm:** Dành thời gian mô tả chi tiết suy nghĩ, cảm xúc, và mâu thuẫn nội tâm của nhân vật chính và các NPC quan trọng.
+- **Hành động & Phản ứng của NPC:** Mô tả chi tiết hành động, cử chỉ, và phản ứng của các NPC, khiến họ trở nên sống động.
+- **Phát triển tình tiết:** Thay vì kết thúc cảnh sớm, hãy phát triển thêm các tình tiết phụ, các đoạn hội thoại, hoặc các mô tả chi tiết để làm giàu thêm cho diễn biến.
+- **CHỐNG LẶP LẠI (CỰC KỲ QUAN TRỌNG):** TUYỆT ĐỐI KHÔNG được lặp lại nội dung từ các lượt chơi trước chỉ để kéo dài độ dài. Mỗi câu chữ đều phải là nội dung mới, thúc đẩy câu chuyện tiến về phía trước hoặc làm sâu sắc thêm bối cảnh hiện tại.`;
         case 'Mặc định':
         default:
-            return "Phần tường thuật của bạn phải chi tiết và có chiều sâu, tối thiểu 750 từ.";
+            return "Phần tường thuật của bạn phải chi tiết và có chiều sâu, hướng đến độ dài mục tiêu từ 750 đến 1600 từ.";
     }
 }
 
@@ -1116,6 +1121,13 @@ QUY TẮC BẮT BUỘC:
         - **Nếu bối cảnh gợi nhắc đến Hàn Quốc (VD: 'hầm ngục', 'thợ săn', 'hệ thống', 'Murim'):** Sử dụng các yếu tố đặc trưng của manhwa và văn phong hiện đại, kịch tính.
         - **Nếu bối cảnh gợi nhắc đến Việt Nam (VD: 'Đại Việt', 'Lạc Long Quân', 'Sơn Tinh'):** Ưu tiên dùng từ ngữ và địa danh thuần Việt, văn phong gần gũi với văn học Việt Nam.
 5.  **Phản ứng logic:** Diễn biến tiếp theo phải là kết quả hợp lý từ hành động của người chơi, đặt trong bối cảnh câu chuyện và tính cách nhân vật.
+5.5. **LÀM GIÀU & KẾT NỐI HÀNH ĐỘNG (TỐI QUAN TRỌNG):**
+    a.  **Làm giàu hành động ngắn gọn:** Khi hành động của người chơi ngắn gọn hoặc thiếu chi tiết (VD: "Hỏi chuyện người lính gác"), vai trò của bạn là biến nó thành một cảnh tường thuật hoàn chỉnh. Bạn PHẢI tự mình sáng tạo ra lời thoại, cử chỉ, và bối cảnh để hành động đó trở nên sống động và logic.
+        *   **VÍ DỤ:**
+            *   **Hành động người chơi:** "Đề nghị A hợp tác."
+            *   **Phản hồi KÉM (Bị cấm):** "A đã đồng ý hợp tác với bạn."
+            *   **Phản hồi TỐT (Bắt buộc):** (Miêu tả nhân vật chính tiếp cận A, nói lời đề nghị một cách thuyết phục, phù hợp với tính cách của họ). Ví dụ: "Bạn tiến lại gần A, hạ giọng nói một cách nghiêm túc, 'Tình hình này một mình không ổn. Sức mạnh của ngươi, trí tuệ của ta. Hợp tác chứ?' A nhìn bạn một lúc lâu, ánh mắt đắn đo, rồi cuối cùng gật đầu một cách dứt khoát. 'Được. Ta đồng ý.'"
+    b.  **Kết nối diễn biến:** Trước khi tường thuật kết quả, hãy dành một hoặc hai câu để liên kết mượt mà với diễn biến của lượt chơi trước đó, đảm bảo câu chuyện liền mạch như một cuốn tiểu thuyết, tránh cảm giác rời rạc giữa các lượt.
 6.  **Tạo thử thách:** Đưa ra các tình huống khó khăn, các lựa chọn có ý nghĩa và hậu quả tương ứng. Độ khó của game đã được xác định, hãy dựa vào đó.
 7.  **Dẫn dắt tự nhiên:** Thay vì kết thúc bằng một câu hỏi trực tiếp như "(Bạn sẽ làm gì?)", hãy kết thúc phần kể chuyện bằng cách mô tả tình huống hiện tại một cách gợi mở, tạo ra một khoảnh khắc tạm dừng tự nhiên để người chơi đưa ra quyết định. Câu chuyện phải liền mạch như một cuốn tiểu thuyết.
 8.  **ĐỊNH DẠNG ĐẶC BIỆT (QUAN TRỌNG):** Để làm câu chuyện sống động và dễ đọc, hãy sử dụng các thẻ sau:
