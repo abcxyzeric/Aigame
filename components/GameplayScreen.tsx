@@ -235,6 +235,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [gameState, setGameState] = useState<GameState>({ ...initialGameState, companions: initialGameState.companions || [], quests: initialGameState.quests || [] });
   const [playerInput, setPlayerInput] = useState('');
   const [isLoading, setIsLoading] = useState(initialGameState.history.length === 0);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
@@ -251,7 +252,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
-  const [currentPage, setCurrentPage] = useState(0);
+  const turnsPerPage = 5;
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (initialGameState.history.length === 0) return 0;
+    const narrationTurns = initialGameState.history.filter(h => h.type === 'narration');
+    const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
+    return totalPages > 0 ? totalPages - 1 : 0;
+  });
   const [isPaginating, setIsPaginating] = useState(false);
   const [storyLogInitialScrollTop, setStoryLogInitialScrollTop] = useState<number | null>(null);
 
@@ -261,7 +269,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
   
-  const turnsPerPage = 5;
   const narrationTurns = gameState.history.filter(h => h.type === 'narration');
   const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
 
@@ -404,12 +411,27 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
       const tempGameState = { ...gameState, history: newHistory };
-      const { narration, suggestions, newSummary, timePassed, reputationChange, updatedInventory } = await aiService.getNextTurn(tempGameState);
+      const { narration, suggestions, newSummary, newCoreMemories, timePassed, reputationChange, updatedInventory, updatedCharacterAppearance, updatedCharacterMotivation } = await aiService.getNextTurn(tempGameState);
       
       const newWorldTime = advanceTime(gameState.worldTime, timePassed || {});
       const finalHistory: GameTurn[] = [...newHistory, { type: 'narration', content: narration }];
       
       let newReputation = gameState.reputation;
+      let newCharacterConfig = gameState.character;
+
+      if (updatedCharacterAppearance) {
+          newCharacterConfig = {
+              ...newCharacterConfig,
+              bio: `${newCharacterConfig.bio}\n\n(Cập nhật): ${updatedCharacterAppearance}`
+          };
+      }
+      if (updatedCharacterMotivation) {
+          newCharacterConfig = {
+              ...newCharacterConfig,
+              motivation: `${newCharacterConfig.motivation}\n\n(Cập nhật): ${updatedCharacterMotivation}`
+          };
+      }
+
       if (reputationChange && gameState.reputationTiers.length === 5) {
           const newScore = Math.max(-100, Math.min(100, gameState.reputation.score + reputationChange.score));
           newReputation = {
@@ -421,8 +443,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       const updatedGameState = { 
         ...gameState, 
         history: finalHistory,
+        character: newCharacterConfig,
         suggestions: suggestions,
         summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries,
+        memories: newCoreMemories ? [...gameState.memories, ...newCoreMemories] : gameState.memories,
         worldTime: newWorldTime,
         reputation: newReputation,
         inventory: updatedInventory || gameState.inventory,
@@ -436,7 +460,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setSuggestions(suggestions);
       setShowSuggestions(true);
       setCurrentPage(lastPage);
-      gameService.saveGame(updatedGameState); // Save the game state with the new history
+      await gameService.saveGame(updatedGameState); // Save the game state with the new history
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
       setError(errorMessage);
@@ -493,7 +517,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setGameState(updatedGameState);
       setSuggestions(suggestions);
       setShowSuggestions(true);
-      gameService.saveGame(updatedGameState);
+      await gameService.saveGame(updatedGameState);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Lỗi không xác định khi bắt đầu game.');
     } finally {
@@ -623,8 +647,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     // The loading state and new story generation will be handled by the useEffect watching history.length.
   };
 
-  const handleSaveAndRestart = () => {
-    gameService.saveGame(gameState); // Save current progress
+  const handleSaveAndRestart = async () => {
+    setIsSaving(true);
+    await gameService.saveGame(gameState); // Save current progress
+    setIsSaving(false);
     setShowRestartConfirm(false); // Close modal
     performRestart(); // Perform the restart action
   };
@@ -644,7 +670,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setShowUndoConfirm(true);
   };
 
-  const handleConfirmUndo = () => {
+  const handleConfirmUndo = async () => {
     // We can only undo a narration that follows an action.
     if (gameState.history.length < 2 || gameState.history[gameState.history.length - 1].type !== 'narration') {
       setShowUndoConfirm(false);
@@ -668,14 +694,22 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setShowSuggestions(false); 
     
     // Save the undone state
-    gameService.saveGame(newState);
+    await gameService.saveGame(newState);
   };
 
-  const handleManualSave = useCallback(() => {
-    fileService.saveGameStateToFile(gameState);
-    gameService.saveGame(gameState);
-    alert('Đã lưu game vào trình duyệt và tải tệp xuống thành công!');
-    setIsSidePanelOpen(false);
+  const handleManualSave = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      fileService.saveGameStateToFile(gameState);
+      await gameService.saveGame(gameState);
+      alert('Đã lưu game vào trình duyệt và tải tệp xuống thành công!');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Lỗi khi lưu game.");
+      console.error(error);
+    } finally {
+      setIsSaving(false);
+      setIsSidePanelOpen(false);
+    }
   }, [gameState]);
 
   const handleSendAction = () => {
@@ -689,12 +723,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
   };
 
-  const handleSaveAndExit = () => {
-    gameService.saveGame(gameState);
+  const handleSaveAndExit = async () => {
+    setIsSaving(true);
+    await gameService.saveGame(gameState);
+    setIsSaving(false);
     onBack();
   };
   
-  const handleSaveTemporaryRules = (newRules: TemporaryRule[]) => {
+  const handleSaveTemporaryRules = async (newRules: TemporaryRule[]) => {
     const updatedGameState = {
         ...gameState,
         worldConfig: {
@@ -703,7 +739,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         }
     };
     setGameState(updatedGameState);
-    gameService.saveGame(updatedGameState);
+    await gameService.saveGame(updatedGameState);
     setIsTempRulesModalOpen(false);
   };
 
@@ -803,7 +839,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const reputationColor = getReputationColor(gameState.reputation.score);
   
   const MenuButton: React.FC<{onClick: () => void, icon: any, label: string, variant: string, disabled?: boolean}> = ({onClick, icon, label, variant, disabled = false}) => (
-      <button onClick={() => { onClick(); setIsSidePanelOpen(false); }} disabled={disabled} className={`w-full flex items-center px-4 py-3 text-sm text-left rounded-md hover:bg-slate-700 transition ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-slate-800' : ''}`}>
+      <button onClick={() => { if(!disabled) { onClick(); setIsSidePanelOpen(false); } }} disabled={disabled} className={`w-full flex items-center px-4 py-3 text-sm text-left rounded-md hover:bg-slate-700 transition ${disabled ? 'opacity-50 cursor-not-allowed hover:bg-slate-800' : ''}`}>
           <Icon name={icon} className={`w-5 h-5 mr-3 text-${variant}-400`}/>
           {label}
       </button>
@@ -826,8 +862,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       <StoryLogModal
         isOpen={isStoryLogModalOpen}
         onClose={() => setIsStoryLogModalOpen(false)}
-        history={gameState.history}
-        title="Toàn Bộ Diễn Biến"
+        history={currentTurns}
+        title={`Diễn Biến Trang ${currentPage + 1}/${totalPages}`}
         initialScrollTop={storyLogInitialScrollTop}
       />
       <InformationModal
@@ -857,7 +893,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 <h2 className="text-xl font-bold mb-4 text-slate-100">Xác nhận thoát</h2>
                 <p className="text-slate-300 mb-6">Bạn có muốn lưu tiến trình trước khi thoát không?</p>
                 <div className="flex justify-end gap-4">
-                    <Button onClick={handleSaveAndExit} variant="primary" className="!w-auto !py-2 !px-4">Lưu & Thoát</Button>
+                    <Button onClick={handleSaveAndExit} variant="primary" className="!w-auto !py-2 !px-4" disabled={isSaving}>
+                      {isSaving ? 'Đang lưu...' : 'Lưu & Thoát'}
+                    </Button>
                     <Button onClick={onBack} variant="warning" className="!w-auto !py-2 !px-4">Thoát không lưu</Button>
                     <button onClick={() => setShowExitConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button>
                 </div>
@@ -872,7 +910,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
                     <button onClick={() => setShowRestartConfirm(false)} className="w-full sm:w-auto text-slate-300 hover:text-white transition px-4 py-2 rounded-md text-center bg-slate-700/50 hover:bg-slate-700">Hủy</button>
                     <Button onClick={handleRestartWithoutSaving} variant="warning" className="!w-full sm:!w-auto !py-2 !px-4">Không Lưu & Bắt Đầu Lại</Button>
-                    <Button onClick={handleSaveAndRestart} variant="primary" className="!w-full sm:!w-auto !py-2 !px-4">Lưu & Bắt Đầu Lại</Button>
+                    <Button onClick={handleSaveAndRestart} variant="primary" className="!w-full sm:!w-auto !py-2 !px-4" disabled={isSaving}>
+                       {isSaving ? 'Đang lưu...' : 'Lưu & Bắt Đầu Lại'}
+                    </Button>
                 </div>
             </div>
         </div>
@@ -913,7 +953,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
              {/* Desktop Buttons */}
              <div className="hidden lg:flex items-center gap-2">
                  <button onClick={() => setIsInformationModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-pink-300 bg-pink-900/40 hover:bg-pink-800/60 rounded-lg transition"><Icon name="info" className="w-4 h-4"/>Thông Tin</button>
-                 <button onClick={handleManualSave} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-900/40 hover:bg-green-800/60 rounded-lg transition"><Icon name="save" className="w-4 h-4"/>Lưu Vào Tệp</button>
+                 <button onClick={handleManualSave} disabled={isSaving} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-green-300 bg-green-900/40 hover:bg-green-800/60 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <Icon name="save" className="w-4 h-4"/>
+                    {isSaving ? 'Đang lưu...' : 'Lưu Vào Tệp'}
+                 </button>
                  <button onClick={() => setIsTempRulesModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-300 bg-blue-900/40 hover:bg-blue-800/60 rounded-lg transition"><Icon name="rules" className="w-4 h-4"/>Luật Tạm Thời</button>
                  <button onClick={() => setIsMemoryModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition"><Icon name="memory" className="w-4 h-4"/>Ký Ức</button>
                  <button onClick={() => setIsEncyclopediaModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-orange-300 bg-orange-900/40 hover:bg-orange-800/60 rounded-lg transition"><Icon name="encyclopedia" className="w-4 h-4"/>Bách Khoa</button>
@@ -1157,7 +1200,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 <h3 className="font-bold text-base text-slate-300 mb-3">Chức Năng Game</h3>
                 <div className="space-y-1">
                     <MenuButton onClick={() => setIsInformationModalOpen(true)} icon="info" label="Thông Tin" variant="pink" />
-                    <MenuButton onClick={handleManualSave} icon="save" label="Lưu Game" variant="green" />
+                    <MenuButton onClick={handleManualSave} icon="save" label={isSaving ? 'Đang lưu...' : 'Lưu Game'} variant="green" disabled={isSaving} />
                     <MenuButton onClick={() => setIsTempRulesModalOpen(true)} icon="rules" label="Luật Tạm Thời" variant="blue" />
                     <MenuButton onClick={() => setIsMemoryModalOpen(true)} icon="memory" label="Ký Ức" variant="purple" />
                     <MenuButton onClick={() => setIsEncyclopediaModalOpen(true)} icon="encyclopedia" label="Bách Khoa" variant="orange" />

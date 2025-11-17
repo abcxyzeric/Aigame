@@ -14,6 +14,16 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.3.5 (Nâng cấp Trí tuệ & Lưu trữ)",
+      notes: [
+        "**Nâng cấp Hệ thống Lưu trữ:** Chuyển đổi hoàn toàn sang IndexedDB, cho phép lưu game với dung lượng lớn không giới hạn và khắc phục triệt để lỗi 'Bộ nhớ đầy'. Dữ liệu cũ được tự động chuyển sang hệ thống mới.",
+        "**Hiển thị Dung lượng:** Màn hình chính giờ đây sẽ hiển thị dung lượng bộ nhớ đã sử dụng cho các file save game.",
+        "**Hệ thống Ký ức Cốt lõi Thông minh:** AI giờ đây sẽ tự động đánh giá và chỉ lưu lại những ký ức thực sự quan trọng, có ảnh hưởng lớn đến cốt truyện, giúp bộ nhớ của AI luôn tập trung vào những gì cốt lõi nhất.",
+        "**Cài đặt Hiệu suất AI:** Thêm các tùy chọn nâng cao 'Thinking Budget' và 'Độ dài Bổ sung cho JSON' trong Cài đặt, cho phép người dùng tinh chỉnh hiệu suất và độ phức tạp của AI.",
+        "**Cải thiện Giao diện:** Cập nhật hoạt ảnh 'AI đang suy nghĩ' mới, trực quan hơn."
+      ]
+    },
+    {
       version: "1.3.3 (Cập nhật nhỏ)",
       notes: [
         "**Đồng bộ hóa Pop-up tường thuật:** Pop-up 'Toàn bộ diễn biến' giờ đây sẽ mở ra ở đúng vị trí bạn đang đọc trên màn hình chính, giúp theo dõi liền mạch hơn.",

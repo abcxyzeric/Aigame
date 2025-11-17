@@ -85,10 +85,16 @@ export interface RagSettings {
   summarizeBeforeRag: boolean;
 }
 
+export interface AiPerformanceSettings {
+  jsonMaxOutputTokens: number;
+  thinkingBudget: number;
+}
+
 export interface AppSettings {
   apiKeyConfig: ApiKeyStorage;
   safetySettings: SafetySettingsConfig;
   ragSettings: RagSettings;
+  aiPerformanceSettings: AiPerformanceSettings;
 }
 
 export interface GameTurn {
@@ -192,6 +198,7 @@ export interface AiTurnResponse {
   narration: string;
   suggestions: ActionSuggestion[];
   newSummary?: string;
+  newCoreMemories?: string[];
   timePassed?: {
     hours?: number;
     minutes?: number;
@@ -201,6 +208,8 @@ export interface AiTurnResponse {
     reason: string;
   };
   updatedInventory?: GameItem[];
+  updatedCharacterAppearance?: string;
+  updatedCharacterMotivation?: string;
 }
 
 export interface StartGameResponse {

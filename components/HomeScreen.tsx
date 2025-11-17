@@ -23,9 +23,39 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
   const [isLoadModalOpen, setIsLoadModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isUpdateLogOpen, setIsUpdateLogOpen] = useState(false);
+  const [isCheckingSaves, setIsCheckingSaves] = useState(true);
+  const [storageUsage, setStorageUsage] = useState<string | null>(null);
 
   useEffect(() => {
-    setHasSaveFile(gameService.hasSavedGames());
+    const initializeApp = async () => {
+      setIsCheckingSaves(true);
+      try {
+        await gameService.migrateSaves();
+        const hasSaves = await gameService.hasSavedGames();
+        setHasSaveFile(hasSaves);
+      } catch (error) {
+        console.error("Error initializing saves:", error);
+        alert("Đã xảy ra lỗi khi cố gắng di chuyển các file lưu cũ. Dữ liệu của bạn vẫn an toàn trong bộ nhớ cũ.");
+      } finally {
+        setIsCheckingSaves(false);
+      }
+
+      // Get storage info
+      if (navigator.storage && navigator.storage.estimate) {
+          try {
+              const estimation = await navigator.storage.estimate();
+              if (estimation.usage !== undefined && estimation.quota !== undefined) {
+                  const usageMB = (estimation.usage / 1024 / 1024).toFixed(2);
+                  const quotaMB = (estimation.quota / 1024 / 1024).toFixed(2);
+                  setStorageUsage(`${usageMB} MB / ${quotaMB} MB`);
+              }
+          } catch (error) {
+              console.error("Could not estimate storage:", error);
+              setStorageUsage("Không thể ước tính dung lượng.");
+          }
+      }
+    };
+    initializeApp();
   }, []);
 
   const handleLoadFromJson = () => {
@@ -58,9 +88,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
     }
   };
   
-  const handleCloseLoadModal = () => {
+  const handleCloseLoadModal = async () => {
     setIsLoadModalOpen(false);
-    setHasSaveFile(gameService.hasSavedGames()); // Re-check state on close
+    setHasSaveFile(await gameService.hasSavedGames()); // Re-check state on close
   };
 
   const openLoadGameModal = () => {
@@ -102,10 +132,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
             onClick={openLoadGameModal} 
             icon={<Icon name="save" />} 
             variant={hasSaveFile ? 'success' : 'secondary'}
-            disabled={!hasSaveFile}
-            className={!hasSaveFile ? 'opacity-50 cursor-not-allowed hover:scale-100' : ''}
+            disabled={!hasSaveFile || isCheckingSaves}
+            className={(!hasSaveFile || isCheckingSaves) ? 'opacity-50 cursor-not-allowed hover:scale-100' : ''}
           >
-            Tải Game Đã Lưu
+            {isCheckingSaves ? 'Đang kiểm tra...' : 'Tải Game Đã Lưu'}
           </Button>
           <Button onClick={handleLoadFromJson} icon={<Icon name="upload" />} variant="secondary">
             Tải Thiết Lập/Game Từ Tệp (.json)
@@ -130,7 +160,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
 
         <div className="mt-10 text-center text-slate-500 text-sm">
           <p>Đang dùng Gemini AI Mặc Định. Không cần API Key.</p>
-          <p className="text-xs mt-1">UserID: 1016331345484971486</p>
+          {storageUsage && (
+            <div className="flex items-center justify-center gap-2 mt-2 text-slate-400">
+                <Icon name="save" className="w-4 h-4" />
+                <span>Dung lượng lưu trữ: {storageUsage}</span>
+            </div>
+          )}
         </div>
       </div>
     </>

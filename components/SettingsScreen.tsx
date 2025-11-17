@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppSettings, HarmCategory, HarmBlockThreshold, RagSettings } from '../types';
+import { AppSettings, HarmCategory, HarmBlockThreshold, RagSettings, AiPerformanceSettings } from '../types';
 import { getSettings, saveSettings } from '../services/settingsService';
 import { testApiKeys, testSingleKey } from '../services/aiService';
 import { loadKeysFromTxtFile } from '../services/fileService';
-import { HARM_CATEGORIES, HARM_BLOCK_THRESHOLDS, DEFAULT_SAFETY_SETTINGS } from '../constants';
+import { HARM_CATEGORIES, HARM_BLOCK_THRESHOLDS, DEFAULT_SAFETY_SETTINGS, DEFAULT_AI_PERFORMANCE_SETTINGS } from '../constants';
 import Icon from './common/Icon';
 import Button from './common/Button';
 import ToggleSwitch from './common/ToggleSwitch';
@@ -31,11 +31,7 @@ const StatusIcon: React.FC<{ status: ValidationStatus }> = ({ status }) => {
 };
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
-  const [settings, setSettings] = useState<AppSettings>({
-    apiKeyConfig: { keys: [''] }, // Start with one empty key input
-    safetySettings: DEFAULT_SAFETY_SETTINGS,
-    ragSettings: { summaryFrequency: 10, topK: 5, summarizeBeforeRag: true },
-  });
+  const [settings, setSettings] = useState<AppSettings>(() => getSettings());
   const [isTestingKeys, setIsTestingKeys] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const debounceTimers = useRef<{ [index: number]: number }>({});
@@ -200,6 +196,19 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
       }
     }));
   };
+  
+  const handleAiPerformanceSettingChange = (field: keyof AiPerformanceSettings, value: string) => {
+    const numValue = parseInt(value, 10);
+    if (isNaN(numValue)) return;
+
+    setSettings(prev => ({
+      ...prev,
+      aiPerformanceSettings: {
+        ...prev.aiPerformanceSettings,
+        [field]: numValue,
+      }
+    }));
+  };
 
   const getInputClass = (status: ValidationStatus = 'idle') => {
     const base = "flex-grow bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2 text-slate-200 transition";
@@ -321,6 +330,40 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           <div className="flex items-center justify-between bg-slate-900/70 p-3 rounded-md">
             <h3 className="font-semibold text-slate-200">Tóm tắt Lịch sử Truyện trước khi lia RAG</h3>
             <ToggleSwitch enabled={settings.ragSettings.summarizeBeforeRag} setEnabled={(val) => handleRagSettingChange('summarizeBeforeRag', val)} />
+          </div>
+        </div>
+      </Accordion>
+      
+      <Accordion title="Cài đặt Hiệu suất AI" icon={<Icon name="difficulty"/>} borderColorClass='border-yellow-500' titleClassName='text-yellow-400'>
+        <p className="text-sm text-slate-400 mb-4">Điều chỉnh các thông số kỹ thuật của AI để cân bằng giữa chất lượng, tốc độ và chi phí. Chỉ dành cho người dùng nâng cao.</p>
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="json-max-tokens" className="block text-sm font-medium text-slate-300 mb-1">Độ dài Bổ sung cho JSON (Max Output Tokens)</label>
+            <input
+              type="number"
+              id="json-max-tokens"
+              value={settings.aiPerformanceSettings.jsonMaxOutputTokens}
+              onChange={(e) => handleAiPerformanceSettingChange('jsonMaxOutputTokens', e.target.value)}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              min="1024"
+              max="8000"
+              step="256"
+            />
+            <p className="text-xs text-slate-500 mt-1">Tăng giới hạn cho các tác vụ tạo JSON phức tạp (như kiến tạo thế giới). Mặc định: 4000.</p>
+          </div>
+          <div>
+            <label htmlFor="thinking-budget" className="block text-sm font-medium text-slate-300 mb-1">Thinking Budget</label>
+            <input
+              type="number"
+              id="thinking-budget"
+              value={settings.aiPerformanceSettings.thinkingBudget}
+              onChange={(e) => handleAiPerformanceSettingChange('thinkingBudget', e.target.value)}
+              className="w-full bg-slate-900/70 border border-slate-700 rounded-md px-3 py-2"
+              min="0"
+              max="10000"
+              step="100"
+            />
+            <p className="text-xs text-slate-500 mt-1">Cung cấp cho AI "ngân sách suy nghĩ" lớn hơn để xử lý các yêu-cầu-phức-tạp, giúp diễn biến linh-hoạt hơn. Mặc định: 1200.</p>
           </div>
         </div>
       </Accordion>

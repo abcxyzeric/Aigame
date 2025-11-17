@@ -1,5 +1,5 @@
 import { AppSettings, ApiKeyStorage, SafetySettingsConfig, RagSettings } from '../types';
-import { DEFAULT_SAFETY_SETTINGS, DEFAULT_RAG_SETTINGS } from '../constants';
+import { DEFAULT_SAFETY_SETTINGS, DEFAULT_RAG_SETTINGS, DEFAULT_AI_PERFORMANCE_SETTINGS } from '../constants';
 
 const SETTINGS_STORAGE_KEY = 'ai_rpg_settings';
 
@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   apiKeyConfig: { keys: [] },
   safetySettings: DEFAULT_SAFETY_SETTINGS,
   ragSettings: DEFAULT_RAG_SETTINGS,
+  aiPerformanceSettings: DEFAULT_AI_PERFORMANCE_SETTINGS,
 };
 
 export const getSettings = (): AppSettings => {
@@ -24,6 +25,10 @@ export const getSettings = (): AppSettings => {
         ragSettings: {
           ...DEFAULT_SETTINGS.ragSettings,
           ...(parsed.ragSettings || {}),
+        },
+        aiPerformanceSettings: {
+          ...DEFAULT_SETTINGS.aiPerformanceSettings,
+          ...(parsed.aiPerformanceSettings || {}),
         },
       };
       return mergedSettings;

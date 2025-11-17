@@ -1,4 +1,4 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings } from './types';
 
 export const GENDER_OPTIONS = ['Không xác định (Để AI quyết định)', 'Nam', 'Nữ', 'Khác'];
 export const PERSONALITY_OPTIONS = [
@@ -103,4 +103,9 @@ export const DEFAULT_RAG_SETTINGS: RagSettings = {
   summaryFrequency: 10,
   topK: 5,
   summarizeBeforeRag: true,
+};
+
+export const DEFAULT_AI_PERFORMANCE_SETTINGS: AiPerformanceSettings = {
+  jsonMaxOutputTokens: 4000,
+  thinkingBudget: 1200,
 };

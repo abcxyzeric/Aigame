@@ -13,17 +13,29 @@ interface LoadGameModalProps {
 
 const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }) => {
   const [saves, setSaves] = useState<SaveSlot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
-      setSaves(gameService.loadAllSaves());
+      const fetchSaves = async () => {
+        setIsLoading(true);
+        try {
+          setSaves(await gameService.loadAllSaves());
+        } catch (error) {
+          console.error('Failed to load saves:', error);
+          alert('Không thể tải danh sách game đã lưu.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchSaves();
     }
   }, [isOpen]);
 
-  const handleDelete = (saveId: number) => {
+  const handleDelete = async (saveId: number) => {
     if (confirm('Bạn có chắc muốn xóa bản lưu này không?')) {
-      gameService.deleteSave(saveId);
-      setSaves(gameService.loadAllSaves()); // Refresh list
+      await gameService.deleteSave(saveId);
+      setSaves(await gameService.loadAllSaves()); // Refresh list
     }
   };
   
@@ -49,7 +61,11 @@ const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }
         </div>
 
         <div className="flex-grow overflow-y-auto pr-2">
-          {saves.length > 0 ? (
+          {isLoading ? (
+             <div className="text-center py-10">
+              <p className="text-slate-400">Đang tải danh sách...</p>
+            </div>
+          ) : saves.length > 0 ? (
             <div className="space-y-3">
               {saves.map((save) => (
                 <div key={save.saveId} className="bg-slate-900/50 p-3 rounded-lg flex items-center justify-between gap-4">

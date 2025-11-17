@@ -4,7 +4,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
 import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, EncyclopediaUpdateResponse, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime } from '../types';
-import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS } from '../constants';
+import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS, DEFAULT_AI_PERFORMANCE_SETTINGS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
 
@@ -88,8 +88,9 @@ function processNarration(text: string): string {
 
 
 async function generate(prompt: string, systemInstruction?: string): Promise<string> {
-    const { safetySettings } = getSettings();
+    const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
     const MAX_RETRIES = 3;
     let lastError: Error | null = null;
@@ -103,7 +104,9 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
             contents: prompt,
             config: {
                 systemInstruction,
-                safetySettings: activeSafetySettings as unknown as SafetySetting[]
+                safetySettings: activeSafetySettings as unknown as SafetySetting[],
+                maxOutputTokens: 8192, // Keep text generation high by default
+                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
             }
         });
         
@@ -154,8 +157,9 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
 }
 
 async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash'): Promise<T> {
-    const { safetySettings } = getSettings();
+    const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   
     const MAX_RETRIES = 3;
     let lastError: Error | null = null;
@@ -171,7 +175,9 @@ async function generateJson<T>(prompt: string, schema: any, systemInstruction?: 
                 systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema: schema,
-                safetySettings: activeSafetySettings as unknown as SafetySetting[]
+                safetySettings: activeSafetySettings as unknown as SafetySetting[],
+                maxOutputTokens: perfSettings.jsonMaxOutputTokens,
+                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
             }
          });
   
@@ -958,7 +964,7 @@ QUY TẮC BẮT BUỘC:
     - **Trạng thái:** Khi một trạng thái được áp dụng hoặc đề cập, hãy bọc TÊN CHÍNH XÁC của trạng thái đó (giống với tên trong 'updatedPlayerStatus') trong thẻ <status>. Ví dụ: 'Hắn cảm thấy cơ thể lạnh buốt, một dấu hiệu của việc <status>Trúng Độc</status>.' Thẻ này sẽ được hiển thị màu xanh lam (cyan) và có thể tương tác.
 8.5. **TÊN NHÂN VẬT CHÍNH:** TUYỆT ĐỐI KHÔNG bọc tên của nhân vật chính trong bất kỳ thẻ nào (<entity>, <important>, etc.). Tên của họ phải luôn là văn bản thuần túy.
 8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng các thẻ <entity> hoặc <important> bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
-8.7. **NHẬN DIỆN THỰC THỂ NHẤT QUÁN:** Khi bạn đề cập đến một thực thể đã tồn tại trong "Bách Khoa Toàn Thư", bạn BẮT BUỘC phải sử dụng lại TÊN CHÍNH XÁC của thực thể đó (bao gồm cả cách viết hoa) và bọc nó trong thẻ. Ví dụ: Nếu Bách Khoa có một nhân vật tên là "Monkey D. Luffy", khi bạn kể chuyện về anh ta, hãy luôn viết là "<entity>Monkey D. Luffy</entity>", TUYỆT ĐỐI KHÔNG viết là "<entity>luffy</entity>" hay "<entity>Luffy</entity>". Sự nhất quán này là tối quan trọng để hệ thống có thể nhận diện và hiển thị thông tin chính xác.
+8.7. **NHẬN DIỆN THỰC THỂ NHẤT QUÁN (TỐI QUAN TRỌNG):** Khi bạn đề cập đến một thực thể đã tồn tại trong "Bách Khoa Toàn Thư", bạn BẮT BUỘC phải sử dụng lại TÊN CHÍNH XÁC của thực thể đó (bao gồm cả cách viết hoa) và bọc nó trong thẻ. Ví dụ: Nếu Bách Khoa có một nhân vật tên là "Monkey D. Luffy", khi bạn kể chuyện về anh ta, hãy luôn viết là "<entity>Monkey D. Luffy</entity>", TUYỆT ĐỐI KHÔNG viết là "<entity>luffy</entity>" hay "<entity>Luffy</entity>". Sự nhất quán này là tối quan trọng để hệ thống có thể nhận diện và hiển thị thông tin chính xác.
 9.  **XƯNG HÔ NHẤT QUÁN (TỐI QUAN TRỌNG):**
     a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
     b. **HỌC TỪ NGƯỜI CHƠI & TÍNH CÁCH:** Phân tích kỹ văn phong của người chơi; lời thoại của họ là kim chỉ nam cho bạn. QUAN TRỌNG: Tính cách của nhân vật chính và các NPC là yếu tố THEN CHỐT định hình hành động, lời nói và suy nghĩ nội tâm của họ. Hãy sử dụng thông tin tính cách từ "Thông tin nhân vật chính" và "Bách Khoa Toàn Thư" để đảm bảo các nhân vật hành xử một cách nhất quán và có chiều sâu.
@@ -970,11 +976,14 @@ QUY TẮC BẮT BUỘC:
     a.  **Tính toán thời gian trôi qua:** Dựa trên hành động của người chơi, bạn phải tính toán một cách logic xem hành động đó mất bao nhiêu thời gian (tính bằng phút hoặc giờ). Trả về kết quả trong trường \`timePassed\`. Ví dụ: nói chuyện mất 15 phút, đi bộ qua thành phố mất 1 giờ, khám phá khu rừng mất 3 giờ.
     b.  **Nhận thức về thời gian:** Bối cảnh và gợi ý của bạn PHẢI phù hợp với thời gian hiện tại trong ngày (Sáng, Trưa, Chiều, Tối, Đêm) được cung cấp. Ví dụ: ban đêm gợi ý "tìm chỗ ngủ", ban ngày gợi ý "đến chợ". NPC sẽ ở các vị trí khác nhau tùy theo thời gian.
     c.  **Xử lý hành động phi logic:** Nếu người chơi thực hiện một hành động phi logic với thời gian (VD: 'tắm nắng' vào ban đêm), bạn KHÔNG ĐƯỢC thực hiện hành động đó. Thay vào đó, hãy viết một đoạn tường thuật giải thích sự vô lý đó. Ví dụ: "Bạn bước ra ngoài, nhưng bầu trời tối đen như mực. Rõ ràng là không có ánh nắng nào để tắm lúc này cả." Sau đó, tạo ra các gợi ý mới phù hợp.
-13. **TRÍ NHỚ DÀI HẠN:** Để duy trì sự nhất quán cho câu chuyện dài (hàng trăm lượt chơi), bạn PHẢI dựa vào "Ký ức cốt lõi", "Tóm tắt các giai đoạn trước" và "Bách Khoa Toàn Thư" được cung cấp trong mỗi lượt. Đây là bộ nhớ dài hạn của bạn. Hãy sử dụng chúng để nhớ lại các sự kiện, nhân vật, và chi tiết quan trọng đã xảy ra, đảm bảo câu chuyện luôn liền mạch và logic.
+13. **TRÍ NHỚ DÀI HẠN:** Để duy trì sự nhất quán cho câu chuyện dài (hàng trăm lượt chơi), bạn PHẢI dựa vào "Ký ức cốt lõi", "Tóm tắt các giai đoạn trước" và "Bách Khoa Toàn Thư" được cung cấp trong mỗi lượt. Đây là bộ nhớ dài hạn của bạn. Hãy sử dụng chúng để nhớ lại các sự kiện, nhân vật, và chi tiết quan trọng đã xảy ra, đảm bảo câu chuyện luôn liền mạch và không nhầm lẫn các thực thể.
 14. **HỆ THỐNG DANH VỌNG (TỐI QUAN TRỌNG):**
     a.  **Cập nhật Danh vọng:** Dựa trên hành động của người chơi, bạn phải quyết định xem hành động đó ảnh hưởng đến danh vọng của họ như thế nào (từ -100 đến +100). Trả về thay đổi trong trường \`reputationChange\`. Ví dụ: cứu một dân làng (+5), ăn trộm (-10), giết một kẻ vô tội (-25).
     b.  **Tác động đến Thế giới:** Phản ứng của NPC và các thế lực PHẢI bị ảnh hưởng trực tiếp bởi danh vọng của người chơi. Danh vọng cao có thể nhận được sự giúp đỡ, giá ưu đãi. Danh vọng thấp (tai tiếng) có thể bị từ chối phục vụ, bị truy nã, hoặc bị tấn công.
-    c.  **Sử dụng Cấp bậc:** Bạn phải nhận thức và sử dụng các "Cấp bậc Danh vọng" (Reputation Tiers) được cung cấp trong lời kể của mình để mô tả cách thế giới nhìn nhận người chơi. Ví dụ: "Tiếng tăm của một 'Đại Thiện Nhân' như bạn đã lan rộng khắp vùng."`;
+    c.  **Sử dụng Cấp bậc:** Bạn phải nhận thức và sử dụng các "Cấp bậc Danh vọng" (Reputation Tiers) được cung cấp trong lời kể của mình để mô tả cách thế giới nhìn nhận người chơi. Ví dụ: "Tiếng tăm của một 'Đại Thiện Nhân' như bạn đã lan rộng khắp vùng."
+15. **LINH HOẠT & SÁNG TẠO (QUAN TRỌNG):** Tránh lặp lại các mô tả hành động một cách nhàm chán. Nếu người chơi thực hiện một hành động tương tự lượt trước nhưng với cường độ mạnh hơn hoặc táo bạo hơn, diễn biến của bạn phải phản ánh sự leo thang đó. Hãy sáng tạo ra các kết quả đa dạng và hợp logic, không đi theo lối mòn.
+16. **KIỂM TRA CUỐI CÙNG (CỰC KỲ QUAN TRỌNG):** Trước khi hoàn thành phản hồi, hãy đọc lại phần tường thuật (\`narration\`) một lần cuối. ĐẢM BẢO RẰNG MỌI thực thể, vật phẩm, kỹ năng có tên riêng đã tồn tại trong "Bối Cảnh Toàn Diện" đều được bọc trong thẻ \`<entity>\` hoặc \`<important>\` một cách chính xác. Việc bỏ sót sẽ phá hỏng trò chơi.
+17. **TẠO KÝ ỨC CỐT LÕI (CÓ CHỌN LỌC):** Khi một sự kiện CỰC KỲ QUAN TRỌNG xảy ra (VD: một quyết định thay đổi cuộc đời, một plot twist lớn, khám phá ra một bí mật động trời), hãy tóm tắt nó thành MỘT câu ngắn gọn và trả về trong trường \`newCoreMemories\`. TUYỆT ĐỐI KHÔNG lưu lại các hành động thông thường hoặc các diễn biến nhỏ.`;
 
   if (genreConfig && !styleGuide) {
       // Replace the old generic tagging rule (rule #8) with the new genre-specific one
@@ -1180,7 +1189,7 @@ ${allSummaries.map((s, i) => `[Ký ức ${i+1}]: ${s}`).join('\n\n')}
 }
 
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
-    const { worldConfig, history, playerStatus, inventory, summaries, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers } = gameState;
+    const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers } = gameState;
     const { ragSettings } = getSettings();
     
     // 1. Auto-summarization
@@ -1197,7 +1206,8 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
     
     // 2. RAG step
     let relevantMemories = '';
-    if (summaries.length > 0) {
+    const combinedMemories = [...memories, ...summaries];
+    if (combinedMemories.length > 0) {
         const lastPlayerAction = history[history.length - 1];
         let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
         
@@ -1205,7 +1215,7 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             ragQuery = await generateSummary(history.slice(-4));
         }
         
-        relevantMemories = await retrieveRelevantSummaries(ragQuery, summaries, ragSettings.topK);
+        relevantMemories = await retrieveRelevantSummaries(ragQuery, combinedMemories, ragSettings.topK);
     }
     
     const systemInstruction = getGameMasterSystemInstruction(worldConfig);
@@ -1244,13 +1254,13 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             minutes: { type: Type.NUMBER }
         }
     };
-    
+
     const reputationChangeSchema = {
         type: Type.OBJECT,
         description: "Sự thay đổi về điểm danh vọng của người chơi sau hành động (nếu có).",
         properties: {
             score: { type: Type.NUMBER, description: "Số điểm thay đổi (có thể là số dương hoặc âm)." },
-            reason: { type: Type.STRING, description: "Lý do ngắn gọn cho sự thay đổi danh vọng." }
+            reason: { type: Type.STRING, description: "Lý do ngắn gọn cho sự thay đổi danh vọng." },
         }
     };
 
@@ -1258,9 +1268,12 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         type: Type.OBJECT, properties: {
             narration: { type: Type.STRING },
             suggestions: { type: Type.ARRAY, items: suggestionSchema },
+            newCoreMemories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các ký ức cốt lõi mới. Chỉ thêm vào nếu có sự kiện CỰC KỲ quan trọng xảy ra, theo quy tắc hệ thống số 17." },
             timePassed: timePassedSchema,
             reputationChange: reputationChangeSchema,
-            updatedInventory: { type: Type.ARRAY, items: gameItemSchema },
+            updatedInventory: { type: Type.ARRAY, items: gameItemSchema, description: "Toàn bộ danh sách vật phẩm đã được cập nhật. Nếu túi đồ không thay đổi, hãy để trống trường này." },
+            updatedCharacterAppearance: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu có sự thay đổi RÕ RỆT và LÂU DÀI về **ngoại hình** nhân vật (ví dụ: 'có một vết sẹo mới trên mặt'). KHÔNG cập nhật cho những thay đổi nhỏ, tạm thời hoặc thay đổi về tiểu sử. Ưu tiên các thay đổi do hành động người chơi gây ra. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
+            updatedCharacterMotivation: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu hành động của người chơi thể hiện RÕ RÀNG một mục tiêu/động lực mới hoặc thay đổi mục tiêu cũ. KHÔNG tự ý suy diễn. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
         }, required: ['narration', 'suggestions']
     };
 
@@ -1279,8 +1292,8 @@ ${JSON.stringify({
     encounteredFactions,
 }, null, 2)}
 
---- KÝ ỨC DÀI HẠN LIÊN QUAN (TỪ KHO RAG) ---
-${relevantMemories || "Không có ký ức dài hạn nào liên quan đến tình huống này."}
+--- KÝ ỨC DÀI HẠN (RAG) & TÓM TẮT DIỄN BIẾN ---
+${relevantMemories || "Không có tóm tắt nào liên quan đến tình huống này."}
 ${adultContentDirectives}
 
 --- DIỄN BIẾN GẦN ĐÂY ---
@@ -1304,7 +1317,10 @@ ${recentHistory}
     b.  **Tiêu thụ/Mất:** Nếu một vật phẩm bị sử dụng, tiêu thụ ("lĩnh ngộ" một bí kíp), hoặc mất đi, hãy tính toán số lượng còn lại. Nếu số lượng về 0, hãy xóa vật phẩm đó khỏi danh sách.
     c.  **Nhận được:** Nếu nhân vật nhận được vật phẩm mới, hãy thêm nó vào túi đồ.
     d.  **OUTPUT:** Trả về TOÀN BỘ danh sách vật phẩm đã được cập nhật trong trường \`updatedInventory\`. Nếu túi đồ không có gì thay đổi, không cần trả về trường này.
-7.  **TUÂN THỦ QUY TẮC:** TUYỆT ĐỐI tuân thủ tất cả các quy tắc hệ thống.`;
+7.  **CẬP NHẬT NHÂN VẬT (NẾU CÓ):** TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC SAU:
+    a.  **Ngoại hình (\`updatedCharacterAppearance\`):** Chỉ cập nhật trường này nếu có sự thay đổi RÕ RỆT và LÂU DÀI về **ngoại hình** nhân vật (ví dụ: 'có một vết sẹo mới trên mặt'). KHÔNG cập nhật cho những thay đổi nhỏ, tạm thời hoặc thay đổi về tiểu sử. Ưu tiên các thay đổi do hành động người chơi gây ra. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống.
+    b.  **Động lực (\`updatedCharacterMotivation\`):** Chỉ cập nhật trường này nếu hành động của người chơi thể hiện RÕ RÀNG một mục tiêu/động lực mới hoặc thay đổi mục tiêu cũ. KHÔNG tự ý suy diễn. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống.
+8.  **TUÂN THỦ QUY TẮC:** TUYỆT ĐỐI tuân thủ tất cả các quy tắc hệ thống.`;
     
     const turnResponse = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
     
