@@ -5,6 +5,8 @@ export interface CharacterStat {
   value: number;
   maxValue: number;
   isPercentage: boolean;
+  description?: string;
+  hasLimit?: boolean;
 }
 
 export interface InitialEntity {
@@ -95,7 +97,7 @@ export interface RagSettings {
 }
 
 export interface AiPerformanceSettings {
-  jsonMaxOutputTokens: number;
+  maxOutputTokens: number;
   thinkingBudget: number;
 }
 
@@ -216,10 +218,11 @@ export interface AiTurnResponse {
     score: number;
     reason: string;
   };
-  updatedInventory?: GameItem[];
-  updatedCharacterAppearance?: string;
-  updatedCharacterMotivation?: string;
   updatedStats?: CharacterStat[];
+  // Encyclopedia updates are moved to a separate phase
+  // updatedInventory?: GameItem[];
+  // updatedCharacterAppearance?: string;
+  // updatedCharacterMotivation?: string;
 }
 
 export interface StartGameResponse {
@@ -239,15 +242,25 @@ export interface StartGameResponse {
   reputationTiers?: string[];
 }
 
-export interface EncyclopediaUpdateResponse {
-    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
-    updatedEncounteredNPCs?: EncounteredNPC[];
-    updatedEncounteredFactions?: EncounteredFaction[];
-    updatedDiscoveredEntities?: InitialEntity[];
+// For dynamic, turn-by-turn state changes
+export interface DynamicStateUpdateResponse {
     updatedInventory?: GameItem[];
     updatedPlayerStatus?: StatusEffect[];
     updatedCompanions?: Companion[];
     updatedQuests?: Quest[];
+}
+
+// For static/encyclopedic knowledge
+export interface EncyclopediaEntriesUpdateResponse {
+    updatedEncounteredNPCs?: EncounteredNPC[];
+    updatedEncounteredFactions?: EncounteredFaction[];
+    updatedDiscoveredEntities?: InitialEntity[];
+}
+
+// For player character's long-term state
+export interface CharacterStateUpdateResponse {
+    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
+    updatedSkills?: { name: string; description: string; }[];
     newMemories?: string[];
 }
 

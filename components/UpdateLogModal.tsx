@@ -14,6 +14,15 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.4.2 (Tinh Chỉnh & Sửa Lỗi)",
+      notes: [
+        "**Tinh chỉnh Hệ Thống Chỉ Số:** Cải thiện logic xử lý chỉ số trong màn hình kiến tạo, ngăn chặn việc nhập giá trị hiện tại lớn hơn giá trị tối đa và tự động điều chỉnh khi cần, đảm bảo dữ liệu luôn hợp lệ.",
+        "**Cải thiện Hiển thị:** Sửa lỗi hiển thị các thẻ định dạng HTML (như `<important>`) trong modal 'Bộ Nhớ Của AI', đảm bảo Ký Ức Cốt Lõi và Tóm Tắt Diễn Biến luôn là văn bản thuần túy.",
+        "**Nâng cao Trải nghiệm Người dùng:** Thêm tooltip mô tả công dụng cho từng chỉ số trong màn hình gameplay, giúp người chơi dễ dàng nắm bắt vai trò của chúng.",
+        "**Tối ưu hóa AI:** Cải thiện các chỉ dẫn hệ thống để AI hiểu và áp dụng logic chỉ số (Tài Nguyên vs. Thuộc Tính) một cách nhất quán và thông minh hơn trong quá trình dẫn truyện."
+      ]
+    },
+    {
       version: "1.4.0 (Đại Tu Giao Diện & Hệ Thống Chỉ Số)",
       notes: [
         "**Đại tu Giao diện Gameplay:** Thiết kế lại hoàn toàn giao diện gameplay với bố cục 2 cột trực quan (trên desktop), giúp người chơi dễ dàng theo dõi Bảng điều khiển nhân vật và diễn biến câu chuyện cùng lúc.",

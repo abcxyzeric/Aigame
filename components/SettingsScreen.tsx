@@ -339,29 +339,29 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         <div className="space-y-6">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label htmlFor="json-max-tokens" className="block text-sm font-medium text-slate-300">Độ dài Bổ sung cho JSON (Max Output Tokens)</label>
+              <label htmlFor="max-tokens-input" className="block text-sm font-medium text-slate-300">Độ dài Phản hồi Tối đa (Max Output Tokens)</label>
               <input
                 type="number"
-                id="json-max-tokens-input"
-                value={settings.aiPerformanceSettings.jsonMaxOutputTokens}
-                onChange={(e) => handleAiPerformanceSettingChange('jsonMaxOutputTokens', e.target.value)}
+                id="max-tokens-input"
+                value={settings.aiPerformanceSettings.maxOutputTokens}
+                onChange={(e) => handleAiPerformanceSettingChange('maxOutputTokens', e.target.value)}
                 className="w-24 bg-slate-900 border border-slate-600 rounded-md px-2 py-1 text-sm text-center"
                 min="1024"
-                max="8000"
+                max="8192"
                 step="256"
               />
             </div>
             <input
               type="range"
-              id="json-max-tokens-slider"
-              value={settings.aiPerformanceSettings.jsonMaxOutputTokens}
-              onChange={(e) => handleAiPerformanceSettingChange('jsonMaxOutputTokens', e.target.value)}
+              id="max-tokens-slider"
+              value={settings.aiPerformanceSettings.maxOutputTokens}
+              onChange={(e) => handleAiPerformanceSettingChange('maxOutputTokens', e.target.value)}
               className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
               min="1024"
-              max="8000"
+              max="8192"
               step="256"
             />
-            <p className="text-xs text-slate-500 mt-1">Tăng giới hạn cho các tác vụ tạo JSON phức tạp (như kiến tạo thế giới). Mặc định: 4000.</p>
+            <p className="text-xs text-slate-500 mt-1">Giới hạn số token tối đa AI có thể tạo ra. Hữu ích cho cả việc tạo JSON và tường thuật. Mặc định: 8000.</p>
           </div>
           <div>
             <div className="flex justify-between items-center mb-2">

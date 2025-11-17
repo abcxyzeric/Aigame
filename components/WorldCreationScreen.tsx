@@ -148,22 +148,42 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       const newStats = [...config.character.stats];
       const statToUpdate = { ...newStats[index] };
   
-      if (field === 'isPercentage') {
-          statToUpdate[field] = value as boolean;
-      } else if (field === 'name') {
-          statToUpdate[field] = value as string;
-      } else {
-          const numValue = Number(value);
+      if (field === 'value' || field === 'maxValue') {
+          let numValue = Number(value);
           if (!isNaN(numValue)) {
-              statToUpdate[field] = numValue;
+              // Ensure values are non-negative
+              if (numValue < 0) numValue = 0;
+              
+              if (field === 'value') {
+                  // If it's a limited stat, cap the value at maxValue.
+                  if (statToUpdate.hasLimit !== false && numValue > statToUpdate.maxValue) {
+                      statToUpdate.value = statToUpdate.maxValue;
+                  } else {
+                      statToUpdate.value = numValue;
+                  }
+              } else { // field === 'maxValue'
+                  statToUpdate.maxValue = numValue;
+                  // If the new max value is less than the current value, adjust the current value.
+                  if (statToUpdate.value > numValue) {
+                      statToUpdate.value = numValue;
+                  }
+              }
           }
+      } else if (field === 'isPercentage' || field === 'hasLimit') {
+          statToUpdate[field] = value as boolean;
+          if (field === 'hasLimit' && value === false) {
+              statToUpdate.isPercentage = false;
+          }
+      } else { // name, description
+          statToUpdate[field] = value as string;
       }
+
       newStats[index] = statToUpdate;
       handleNestedChange('character', 'stats', newStats);
   }, [config.character.stats, handleNestedChange]);
 
   const addStat = useCallback(() => {
-      const newStats = [...config.character.stats, { name: '', value: 10, maxValue: 10, isPercentage: false }];
+      const newStats = [...config.character.stats, { name: '', value: 10, maxValue: 10, isPercentage: false, description: '', hasLimit: true }];
       handleNestedChange('character', 'stats', newStats);
   }, [config.character.stats, handleNestedChange]);
 
@@ -330,6 +350,25 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
           }
           handleNestedChange('character', 'stats', newStats);
       });
+  };
+
+  const handleGenerateSingleStat = (index: number) => {
+    const currentStat = config.character.stats[index];
+    if (!currentStat.name.trim()) {
+        setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng nhập "Tên Chỉ Số" trước khi AI có thể hỗ trợ.'] });
+        setIsNotificationOpen(true);
+        return;
+    }
+    runAiAssist(`stat_${index}`, () => aiService.generateSingleStat(config, currentStat.name), (res: CharacterStat) => {
+        const newStats = [...config.character.stats];
+        // Merge result with existing stat, but don't overwrite the name
+        newStats[index] = { 
+            ...newStats[index],
+            ...res,
+            name: currentStat.name,
+        };
+        handleNestedChange('character', 'stats', newStats);
+    });
   };
 
   const handleGenerateMotivation = () => {
@@ -975,24 +1014,64 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                 </div>
                                 {(config.character.stats || []).map((stat, index) => (
                                     <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            <FormRow label="Tên Chỉ Số" labelClassName="text-sm">
-                                                <StyledInput value={stat.name} onChange={e => handleStatChange(index, 'name', e.target.value)} disabled={index < 2} />
-                                            </FormRow>
-                                             <div className="flex items-center gap-2">
-                                                <FormRow label="Giá trị" labelClassName="text-sm">
-                                                    <StyledInput type="number" value={stat.value} onChange={e => handleStatChange(index, 'value', e.target.value)} />
-                                                </FormRow>
-                                                <span className="pt-6">/</span>
-                                                <FormRow label="Tối đa" labelClassName="text-sm">
-                                                    <StyledInput type="number" value={stat.maxValue} onChange={e => handleStatChange(index, 'maxValue', e.target.value)} />
-                                                </FormRow>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                                            <div className="mb-0">
+                                                <label className="block text-sm font-medium text-slate-300 mb-1">Tên Chỉ Số</label>
+                                                <div className="flex items-center gap-2">
+                                                    <StyledInput value={stat.name} onChange={e => handleStatChange(index, 'name', e.target.value)} disabled={index < 2} />
+                                                    {index >= 2 && <AiAssistButton isLoading={loadingStates[`stat_${index}`]} onClick={() => handleGenerateSingleStat(index)} />}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="mb-0 flex-grow">
+                                                     <label className="block text-sm font-medium text-slate-300 mb-1">Giá trị</label>
+                                                    <StyledInput 
+                                                        type="number" 
+                                                        value={stat.value} 
+                                                        onChange={e => handleStatChange(index, 'value', e.target.value)} 
+                                                        max={stat.hasLimit === false ? 9999 : undefined}
+                                                    />
+                                                </div>
+                                                {stat.hasLimit !== false && (
+                                                    <>
+                                                        <span className="pt-6">/</span>
+                                                        <div className="mb-0 flex-grow">
+                                                            <label className="block text-sm font-medium text-slate-300 mb-1">Tối đa</label>
+                                                            <StyledInput type="number" value={stat.maxValue} onChange={e => handleStatChange(index, 'maxValue', e.target.value)} />
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
+                                        <div className="mt-3">
+                                            <label className="block text-sm font-medium text-slate-300 mb-1">Mô tả (cho AI)</label>
+                                            <StyledTextArea 
+                                                value={stat.description || ''} 
+                                                onChange={e => handleStatChange(index, 'description', e.target.value)} 
+                                                rows={2}
+                                                placeholder="VD: Tăng khả năng né tránh, thể hiện sức mạnh phép thuật..."
+                                            />
+                                        </div>
                                         <div className="mt-3 flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <input type="checkbox" id={`is-percentage-${index}`} checked={stat.isPercentage} onChange={e => handleStatChange(index, 'isPercentage', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
-                                                <label htmlFor={`is-percentage-${index}`} className="text-xs text-slate-400">Hiển thị dạng %</label>
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        id={`has-limit-${index}`} 
+                                                        checked={stat.hasLimit !== false}
+                                                        onChange={e => handleStatChange(index, 'hasLimit', e.target.checked)} 
+                                                        className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                                        disabled={index < 2}
+                                                    />
+                                                    <label htmlFor={`has-limit-${index}`} className={`text-xs ${index < 2 ? 'text-slate-500' : 'text-slate-400'}`}>Có giới hạn tối đa?</label>
+                                                </div>
+                                                
+                                                {stat.hasLimit !== false && (
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="checkbox" id={`is-percentage-${index}`} checked={stat.isPercentage} onChange={e => handleStatChange(index, 'isPercentage', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
+                                                        <label htmlFor={`is-percentage-${index}`} className="text-xs text-slate-400">Hiển thị dạng %</label>
+                                                    </div>
+                                                )}
                                             </div>
                                             {index >= 2 && (
                                                 <button onClick={() => removeStat(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>

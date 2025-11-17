@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
@@ -143,6 +143,16 @@ const getTimeOfDay = (hour: number): string => {
     return 'Đêm';
 };
 
+const mergeAndDeduplicateByName = <T extends { name: string }>(original: T[] = [], updates: T[] = []): T[] => {
+    const itemMap = new Map<string, T>();
+    [...original, ...updates].forEach(item => {
+        if (item && item.name) {
+            itemMap.set(item.name.toLowerCase(), { ...(itemMap.get(item.name.toLowerCase()) || {}), ...item });
+        }
+    });
+    return Array.from(itemMap.values());
+};
+
 const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBack }) => {
   const [gameState, setGameState] = useState<GameState>({ ...initialGameState, companions: initialGameState.companions || [], quests: initialGameState.quests || [] });
   const [playerInput, setPlayerInput] = useState('');
@@ -260,7 +270,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setError(null);
     try {
       const tempGameState = { ...gameState, history: newHistory };
-      const { narration, suggestions, newSummary, newCoreMemories, timePassed, reputationChange, updatedInventory, updatedCharacterAppearance, updatedCharacterMotivation, updatedStats } = await aiService.getNextTurn(tempGameState);
+      
+      // --- PHASE 1: Get narration and immediate updates ---
+      const { narration, suggestions, newSummary, newCoreMemories, timePassed, reputationChange, updatedStats } = await aiService.getNextTurn(tempGameState);
       const newWorldTime = advanceTime(gameState.worldTime, timePassed || {});
       const finalHistory: GameTurn[] = [...newHistory, { type: 'narration', content: narration }];
       
@@ -270,22 +282,83 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           newReputation = { score: newScore, tier: getReputationTier(newScore, gameState.reputationTiers) };
       }
 
-      const updatedCharacter = {
-          ...gameState.character,
-          bio: updatedCharacterAppearance ? `${gameState.character.bio}\n\n(Cập nhật): ${updatedCharacterAppearance}` : gameState.character.bio,
-          motivation: updatedCharacterMotivation ? `${gameState.character.motivation}\n\n(Cập nhật): ${updatedCharacterMotivation}` : gameState.character.motivation,
-          stats: updatedStats || gameState.character.stats,
+      const phase1GameState: GameState = { 
+          ...gameState, 
+          history: finalHistory, 
+          suggestions: suggestions, 
+          summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries, 
+          memories: newCoreMemories ? [...gameState.memories, ...newCoreMemories] : gameState.memories, 
+          worldTime: newWorldTime, 
+          reputation: newReputation,
+          character: {
+              ...gameState.character,
+              stats: updatedStats || gameState.character.stats,
+          }
       };
-
-      const updatedGameState = { ...gameState, history: finalHistory, character: updatedCharacter, suggestions: suggestions, summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries, memories: newCoreMemories ? [...gameState.memories, ...newCoreMemories] : gameState.memories, worldTime: newWorldTime, reputation: newReputation, inventory: updatedInventory || gameState.inventory };
-      const newNarrationTurns = updatedGameState.history.filter(h => h.type === 'narration');
+      
+      const newNarrationTurns = phase1GameState.history.filter(h => h.type === 'narration');
       const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
       const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
-      setGameState(updatedGameState);
+
+      setGameState(phase1GameState);
       setSuggestions(suggestions);
       setShowSuggestions(true);
       setCurrentPage(lastPage);
-      await gameService.saveGame(updatedGameState);
+      await gameService.saveGame(phase1GameState);
+
+      // --- PHASE 2: Background updates (multi-threaded) ---
+      // Call 1: Update dynamic state (inventory, status, companions, quests)
+      aiService.updateDynamicStateFromNarration(phase1GameState, narration).then(updates => {
+          if (!updates) return;
+          setGameState(prevGameState => {
+              const newState = {
+                  ...prevGameState,
+                  inventory: updates.updatedInventory || prevGameState.inventory,
+                  playerStatus: mergeAndDeduplicateByName(prevGameState.playerStatus, updates.updatedPlayerStatus),
+                  companions: mergeAndDeduplicateByName(prevGameState.companions, updates.updatedCompanions),
+                  quests: mergeAndDeduplicateByName(prevGameState.quests, updates.updatedQuests),
+              };
+              gameService.saveGame(newState); // Save incrementally
+              return newState;
+          });
+      }).catch(err => console.error("Lỗi cập nhật trạng thái động (Pha 2):", err));
+
+      // Call 2: Update encyclopedia entries (NPCs, factions, entities)
+      aiService.updateEncyclopediaEntriesFromNarration(phase1GameState, narration).then(updates => {
+          if (!updates) return;
+          setGameState(prevGameState => {
+              const newState = {
+                  ...prevGameState,
+                  encounteredNPCs: mergeAndDeduplicateByName(prevGameState.encounteredNPCs, updates.updatedEncounteredNPCs),
+                  encounteredFactions: mergeAndDeduplicateByName(prevGameState.encounteredFactions, updates.updatedEncounteredFactions),
+                  discoveredEntities: mergeAndDeduplicateByName(prevGameState.discoveredEntities, updates.updatedDiscoveredEntities),
+              };
+              gameService.saveGame(newState); // Save incrementally
+              return newState;
+          });
+      }).catch(err => console.error("Lỗi cập nhật bách khoa (Pha 2):", err));
+
+      // Call 3: Update character state (bio, skills, memories)
+      aiService.updateCharacterStateFromNarration(phase1GameState, narration).then(updates => {
+          if (!updates) return;
+          setGameState(prevGameState => {
+              const newState = {
+                  ...prevGameState,
+                  character: {
+                      ...prevGameState.character,
+                      bio: updates.updatedCharacter?.bio || prevGameState.character.bio,
+                      motivation: updates.updatedCharacter?.motivation || prevGameState.character.motivation,
+                      skills: mergeAndDeduplicateByName(prevGameState.character.skills, updates.updatedSkills),
+                  },
+                  memories: updates.newMemories 
+                      ? [...prevGameState.memories, ...updates.newMemories] 
+                      : prevGameState.memories,
+              };
+              gameService.saveGame(newState); // Save incrementally
+              return newState;
+          });
+      }).catch(err => console.error("Lỗi cập nhật nhân vật (Pha 2):", err));
+
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
       setError(errorMessage);
@@ -444,7 +517,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     });
   }, []);
   const handleCompanionClick = useCallback((companion: Companion) => setEntityModalContent({ title: companion.name, description: companion.description + (companion.personality ? `\n\nTính cách: ${companion.personality}` : ''), type: 'Đồng hành' }), []);
-  const handleQuestClick = useCallback((quest: Quest) => setEntityModalContent({ title: quest.name, description: quest.description, type: 'Nhiệm vụ' }), []);
+  const handleQuestClick = useCallback((quest: Quest) => setEntityModalContent({ title: quest.name, description: quest.description, type: 'Nhiệm Vụ' }), []);
   const handleDeleteQuest = useCallback((questName: string) => { if (confirm(`Bạn có chắc muốn từ bỏ nhiệm vụ "${questName}" không?`)) setGameState(prev => { const newQuests = prev.quests.filter(q => q.name !== questName); const newState = { ...prev, quests: newQuests }; gameService.saveGame(newState); return newState; }); }, []);
   const handlePageChange = (updater: (p: number) => number) => { setCurrentPage(prev => { const newPage = updater(prev); if (newPage !== prev) setIsPaginating(true); return newPage; }); };
   
@@ -480,13 +553,27 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             <div className="space-y-2 text-xs">
                 {gameState.character.stats?.map((stat, index) => (
                     <div key={index}>
-                        <div className="flex justify-between items-center mb-0.5">
-                            <span className="font-semibold text-slate-300">{stat.name}</span>
-                            <span className="font-mono text-slate-400">{stat.value}/{stat.maxValue}{stat.isPercentage ? '%' : ''}</span>
-                        </div>
-                        {stat.isPercentage && (
-                            <div className="w-full bg-slate-700 rounded-full h-1.5">
-                                <div className={`h-1.5 rounded-full transition-all duration-500 ${stat.value > 50 ? 'bg-green-500' : stat.value > 20 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${stat.value}%` }}></div>
+                        {stat.hasLimit !== false ? (
+                            // --- Resource Stat (e.g., HP, MP) ---
+                            <>
+                                <div className="flex justify-between items-center mb-0.5">
+                                    <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
+                                    <span className="font-mono text-slate-400">{stat.value}/{stat.maxValue}{stat.isPercentage ? '%' : ''}</span>
+                                </div>
+                                <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                                    <div 
+                                        className={`h-1.5 rounded-full transition-all duration-500 ${
+                                            (stat.value / stat.maxValue * 100) > 50 ? 'bg-green-500' : (stat.value / stat.maxValue * 100) > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                                        }`} 
+                                        style={{ width: `${(stat.value / Math.max(1, stat.maxValue)) * 100}%` }}>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            // --- Attribute Stat (e.g., Strength, Int) ---
+                            <div className="flex justify-between items-center py-1">
+                                <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
+                                <span className="font-mono text-slate-200 font-bold text-sm">{stat.value}</span>
                             </div>
                         )}
                     </div>

@@ -1,9 +1,7 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
-import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, EncyclopediaUpdateResponse, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime, CharacterStat, EncyclopediaData } from '../types';
+import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime, CharacterStat, EncyclopediaData, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../types';
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS, DEFAULT_AI_PERFORMANCE_SETTINGS, DEFAULT_STATS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
@@ -105,7 +103,7 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
             config: {
                 systemInstruction,
                 safetySettings: activeSafetySettings as unknown as SafetySetting[],
-                maxOutputTokens: 8192, // Keep text generation high by default
+                maxOutputTokens: perfSettings.maxOutputTokens,
                 thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
             }
         });
@@ -176,7 +174,7 @@ async function generateJson<T>(prompt: string, schema: any, systemInstruction?: 
                 responseMimeType: "application/json",
                 responseSchema: schema,
                 safetySettings: activeSafetySettings as unknown as SafetySetting[],
-                maxOutputTokens: perfSettings.jsonMaxOutputTokens,
+                maxOutputTokens: perfSettings.maxOutputTokens,
                 thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
             }
          });
@@ -333,8 +331,10 @@ export const generateCharacterStats = (config: WorldConfig): Promise<CharacterSt
             value: { type: Type.NUMBER },
             maxValue: { type: Type.NUMBER },
             isPercentage: { type: Type.BOOLEAN },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về công dụng của chỉ số này trong game." },
+            hasLimit: { type: Type.BOOLEAN, description: "Đặt là 'true' cho các chỉ số có giới hạn (như Máu, Năng lượng). Đặt là 'false' cho các chỉ số thuộc tính có thể tăng vô hạn (như Sức mạnh, Trí tuệ)." },
         },
-        required: ['name', 'value', 'maxValue', 'isPercentage']
+        required: ['name', 'value', 'maxValue', 'isPercentage', 'description', 'hasLimit']
     };
     
     const schema = {
@@ -346,9 +346,39 @@ export const generateCharacterStats = (config: WorldConfig): Promise<CharacterSt
     const prompt = `Dựa trên nhân vật (Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra một danh sách từ 2 đến 4 chỉ số nhân vật BỔ SUNG.
     - KHÔNG bao gồm 'Sinh Lực' hoặc 'Thể Lực' vì chúng đã có sẵn.
     - Các chỉ số phải phù hợp với thể loại. Ví dụ: Tiên hiệp có thể có 'Linh Lực', 'Căn Cơ'. Cyberpunk có thể có 'Năng lượng Lõi', 'Tốc độ Hack'.
-    - Đặt giá trị (value, maxValue) hợp lý. isPercentage thường là false cho các chỉ số này.`;
+    - Với mỗi chỉ số, hãy cung cấp một 'description' (mô tả) ngắn gọn về công dụng của nó.
+    - Quyết định xem chỉ số có giới hạn tối đa không ('hasLimit'). 'hasLimit: true' cho các chỉ số dạng thanh tài nguyên (Máu, Năng lượng). 'hasLimit: false' cho các chỉ số thuộc tính có thể tăng tiến (Sức mạnh, Trí tuệ). Nếu 'hasLimit: false', hãy đặt 'maxValue' bằng 'value' và 'isPercentage' là false.
+    - Đặt giá trị (value, maxValue) hợp lý.`;
 
     return generateJson<CharacterStat[]>(prompt, schema);
+};
+
+export const generateSingleStat = (config: WorldConfig, statName: string): Promise<CharacterStat> => {
+    const { storyContext, character } = config;
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của chỉ số, phải là giá trị được cung cấp trong prompt." },
+            value: { type: Type.NUMBER },
+            maxValue: { type: Type.NUMBER },
+            isPercentage: { type: Type.BOOLEAN },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về công dụng của chỉ số này trong game." },
+            hasLimit: { type: Type.BOOLEAN, description: "Đặt là 'true' nếu là chỉ số có giới hạn (Máu, Năng lượng). Đặt là 'false' nếu là chỉ số thuộc tính (Sức mạnh, Trí tuệ)." },
+        },
+        required: ['name', 'value', 'maxValue', 'isPercentage', 'description', 'hasLimit']
+    };
+
+    const prompt = `Một nhân vật có tiểu sử: "${character.bio}" trong thế giới thể loại "${storyContext.genre}".
+    Hãy đề xuất các giá trị cho một chỉ số có tên là "${statName}".
+    - Trả về tên chỉ số trong trường 'name'.
+    - Cung cấp giá trị khởi đầu ('value').
+    - Quyết định xem nó có giới hạn không ('hasLimit'). Nếu có ('true'), cung cấp 'maxValue'. Nếu không ('false'), đặt 'maxValue' bằng 'value'.
+    - Quyết định 'isPercentage'.
+    - Cung cấp một 'description' (mô tả) ngắn gọn về công dụng của chỉ số này.
+    Trả về một đối tượng JSON.`;
+    
+    return generateJson<CharacterStat>(prompt, schema);
 };
 
 export const generateSingleSkill = (config: WorldConfig, existingName?: string): Promise<{ name: string; description: string; }> => {
@@ -750,8 +780,8 @@ ${recentHistory}
 
 Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy thực hiện quy trình sau:
 1.  **Phân tích & Mô tả:** Đầu tiên, hãy suy nghĩ và viết một mô tả chi tiết, hợp lý và sáng tạo về thực thể này là gì và vai trò của nó trong thế giới.
-2.  **Phân loại chính xác:** Dựa trên mô tả bạn vừa tạo, hãy xác định chính xác **loại (type)** của thực thể. Hãy lựa chọn cẩn thận từ danh sách sau: NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực, Cảnh giới, Công pháp / Kỹ năng, hoặc **'Khái niệm / Lore'**.
-    - **LƯU Ý QUAN TRỌNG:** Loại **'Khái niệm / Lore'** được dùng cho các quy tắc, định luật vô hình của thế giới, sự kiện lịch sử, hoặc các khái niệm trừu tượng. Ví dụ, 'Hồng Nhan Thiên Kiếp' được mô tả là một 'quy tắc bất thành văn', một 'thế lực vô hình', một 'kiếp nạn định mệnh' - do đó, nó phải được phân loại là **'Khái niệm / Lore'**, TUYỆT ĐỐI KHÔNG phải là 'Phe phái/Thế lực'.
+2.  **Phân loại chính xác:** Dựa trên mô tả bạn vừa tạo, hãy xác định chính xác **loại (type)** của thực thể. Hãy lựa chọn cẩn thận từ danh sách sau: NPC, Địa điểm, Vật phẩm, Phe phái/Thế lực, Cảnh giới, Công pháp / Kỹ năng, hoặc **'Hệ thống sức mạnh / Lore'**.
+    - **LƯU Ý QUAN TRỌNG:** Loại **'Hệ thống sức mạnh / Lore'** được dùng cho các quy tắc, định luật vô hình của thế giới, sự kiện lịch sử, hoặc các khái niệm trừu tượng. Ví dụ, 'Hồng Nhan Thiên Kiếp' được mô tả là một 'quy tắc bất thành văn', một 'thế lực vô hình', một 'kiếp nạn định mệnh' - do đó, nó phải được phân loại là **'Hệ thống sức mạnh / Lore'**, TUYỆT ĐỐI KHÔNG phải là 'Phe phái/Thế lực'.
 
 Sau khi đã xác định rõ mô tả và loại, hãy tạo ra các thông tin chi tiết khác.
 - Nếu thực thể là 'Vật phẩm', hãy điền thêm các thông tin chi tiết vào trường 'details'.
@@ -1027,6 +1057,19 @@ const getAdultContentDirectives = (config: WorldConfig): string => {
   return directives.join('\n');
 }
 
+function getResponseLengthDirective(aiResponseLength?: string): string {
+    switch (aiResponseLength) {
+        case 'Ngắn':
+            return "Phần tường thuật của bạn nên ngắn gọn, khoảng 200-300 từ.";
+        case 'Trung bình':
+            return "Phần tường thuật của bạn nên có độ dài trung bình, khoảng 400-600 từ.";
+        case 'Chi tiết, dài':
+            return "Phần tường thuật của bạn phải CỰC KỲ CHI TIẾT và dài, tối thiểu 1000 từ.";
+        case 'Mặc định':
+        default:
+            return "Phần tường thuật của bạn phải chi tiết và có chiều sâu, tối thiểu 750 từ.";
+    }
+}
 
 const getGameMasterSystemInstruction = (config: WorldConfig, styleGuide?: StyleGuideVector): string => {
   const genre = config.storyContext.genre;
@@ -1103,13 +1146,27 @@ QUY TẮC BẮT BUỘC:
 15. **LINH HOẠT & SÁNG TẠO (QUAN TRỌNG):** Tránh lặp lại các mô tả hành động một cách nhàm chán. Nếu người chơi thực hiện một hành động tương tự lượt trước nhưng với cường độ mạnh hơn hoặc táo bạo hơn, diễn biến của bạn phải phản ánh sự leo thang đó. Hãy sáng tạo ra các kết quả đa dạng và hợp logic, không đi theo lối mòn.
 16. **KIỂM TRA CUỐI CÙNG (CỰC KỲ QUAN TRỌNG):** Trước khi hoàn thành phản hồi, hãy đọc lại phần tường thuật (\`narration\`) một lần cuối. ĐẢM BẢO RẰNG MỌI thực thể, vật phẩm, kỹ năng có tên riêng đã tồn tại trong "Bối Cảnh Toàn Diện" đều được bọc trong thẻ \`<entity>\` hoặc \`<important>\` một cách chính xác. Việc bỏ sót sẽ phá hỏng trò chơi.
 17. **TẠO KÝ ỨC CỐT LÕI (CÓ CHỌN LỌC):** Khi một sự kiện CỰC KỲ QUAN TRỌNG xảy ra (VD: một quyết định thay đổi cuộc đời, một plot twist lớn, khám phá ra một bí mật động trời), hãy tóm tắt nó thành MỘT câu ngắn gọn và trả về trong trường \`newCoreMemories\`. TUYỆT ĐỐI KHÔNG lưu lại các hành động thông thường hoặc các diễn biến nhỏ.
-18. **HỆ THỐNG CHỈ SỐ (TỐI QUAN TRỌNG):**
-    a.  **Nhận thức:** Bạn PHẢI nhận thức được các chỉ số (\`stats\`) của nhân vật chính được cung cấp trong "BỐI CẢNH". Các chỉ số này ảnh hưởng đến mọi hành động.
-    b.  **Tiêu hao Thể Lực (\`Thể Lực\`):** Mọi hành động đòi hỏi thể chất (chiến đấu, chạy, leo trèo, bơi lội) BẮT BUỘC phải tiêu hao Thể Lực. Mức tiêu hao phải logic (VD: đi bộ -1, chạy nước rút -10, dùng kỹ năng tốn sức -20).
-    c.  **Giới hạn Thể Lực:** Nếu Thể Lực dưới 20%, BẮT BUỘC phải miêu tả nhân vật mệt mỏi, thở dốc. Nếu dưới 5%, nhân vật KHÔNG THỂ thực hiện các hành động nặng (chạy nhanh, chiến đấu mạnh). Nếu người chơi yêu cầu, hãy từ chối và giải thích lý do. Thể Lực sẽ hồi phục dần theo thời gian khi nghỉ ngơi.
-    d.  **Tổn thương Sinh Lực (\`Sinh Lực\`):** Khi nhân vật bị tấn công, trúng độc, ngã... BẮT BUỘC phải trừ Sinh Lực. Mức độ trừ phải tương xứng với mức độ nghiêm trọng. Nếu Sinh Lực về 0, nhân vật sẽ gục ngã hoặc chết (tùy độ khó).
+18. **HỆ THỐNG LOGIC CHỈ SỐ (TỐI QUAN TRỌNG):** Bạn PHẢI nhận thức và áp dụng các logic sau cho hệ thống chỉ số (\`stats\`) của nhân vật:
+
+    a.  **Phân loại & Nhận thức:** Dựa vào trường \`hasLimit\`, bạn phải phân biệt 2 loại chỉ số:
+        *   **Tài Nguyên (hasLimit=true):** Đây là các chỉ số có giới hạn tối đa, bị tiêu hao khi sử dụng và có thể hồi phục. Ví dụ: 'Sinh Lực', 'Thể Lực', 'Năng Lượng', 'Linh Lực'.
+        *   **Thuộc Tính (hasLimit=false):** Đây là các giá trị tĩnh, đại diện cho năng lực cốt lõi của nhân vật. Chúng không bị tiêu hao, mà được dùng để so sánh với độ khó của hành động. Ví dụ: 'Sức Mạnh', 'Trí Tuệ', 'Tốc Độ'.
+
+    b.  **Đọc Mô tả (QUAN TRỌNG NHẤT):** Với mỗi chỉ số, bạn BẮT BUỘC phải đọc kỹ trường \`description\` của nó để hiểu rõ công dụng và khi nào nên sử dụng. Mô tả này là kim chỉ nam cho mọi logic liên quan đến chỉ số đó.
+        *   **Ví dụ:** Nếu một chỉ số tên là 'Linh Lực' có mô tả là 'Dùng để thi triển pháp thuật và bùa chú', thì mỗi khi người chơi sử dụng phép thuật, bạn BẮT BUỘC phải trừ đi một lượng 'Linh Lực' tương ứng.
+
+    c.  **Cơ chế Kiểm tra Thuộc tính (Stat Checks):** Khi người chơi thực hiện một hành động có thể thành công hoặc thất bại, bạn phải âm thầm so sánh **Thuộc Tính** liên quan của họ với một độ khó (ngưỡng) mà bạn tự xác định.
+        *   **Ví dụ:** Nâng một tảng đá nặng -> Kiểm tra 'Sức Mạnh'. Né một đòn tấn công -> Kiểm tra 'Tốc Độ'. Thuyết phục một lính gác -> Kiểm tra 'Mị Lực'.
+        *   **Kết quả:** Nếu chỉ số của nhân vật thấp hơn yêu cầu, hành động sẽ thất bại hoặc hiệu quả kém. Nếu chỉ số cao, hành động sẽ thành công hoặc đạt hiệu quả cao hơn. Hãy mô tả kết quả một cách tự nhiên trong lời kể.
+
+    d.  **Tiêu hao Tài nguyên:**
+        *   **Thể Lực:** Mọi hành động đòi hỏi thể chất (chiến đấu, chạy, leo trèo) BẮT BUỘC phải tiêu hao Thể Lực. Mức tiêu hao phải logic. Nếu Thể Lực thấp, phải miêu tả nhân vật mệt mỏi, thở dốc và hạn chế các hành động nặng.
+        *   **Sinh Lực:** Khi nhân vật bị tấn công, trúng độc, ngã... BẮT BUỘC phải trừ Sinh Lực. Mức độ trừ phải tương xứng. Nếu Sinh Lực về 0, nhân vật sẽ gục ngã/chết.
+        *   **Tài nguyên khác:** Đối với các tài nguyên khác (VD: 'Linh Lực', 'Năng Lượng'), hãy dựa vào \`description\` và hành động của người chơi để quyết định mức tiêu hao.
+
     e.  **Liên kết Trạng thái:** Các trạng thái tiêu cực (\`playerStatus\`) phải ảnh hưởng đến chỉ số. Ví dụ: 'Trúng Độc' sẽ trừ Sinh Lực mỗi lượt. 'Kiệt Sức' sẽ ngăn Thể Lực hồi phục.
-    f.  **OUTPUT:** Sau mỗi lượt, nếu có bất kỳ thay đổi nào, bạn BẮT BUỘC phải trả về TOÀN BỘ danh sách chỉ số đã được cập nhật trong trường \`updatedStats\`.`;
+
+    f.  **OUTPUT:** Sau mỗi lượt, nếu có bất kỳ thay đổi nào về chỉ số, bạn BẮT BUỘC phải trả về **TOÀN BỘ** danh sách chỉ số đã được cập nhật trong trường \`updatedStats\`.`;
 
   if (genreConfig && !styleGuide) {
       // Replace the old generic tagging rule (rule #8) with the new genre-specific one
@@ -1224,6 +1281,8 @@ export const startGame = (config: WorldConfig): Promise<StartGameResponse> => {
         required: ['narration', 'suggestions', 'initialWorldTime', 'reputationTiers']
     };
 
+    const lengthDirective = getResponseLengthDirective(config.aiResponseLength);
+
     const prompt = `Bạn là một Quản trò (Game Master) tài ba, một người kể chuyện bậc thầy. Nhiệm vụ của bạn là viết chương mở đầu cho một cuộc phiêu lưu nhập vai hoành tráng và đưa ra các lựa chọn hành động đầu tiên.
 
 Đây là toàn bộ thông tin về thế giới và nhân vật chính mà bạn sẽ quản lý:
@@ -1233,7 +1292,7 @@ ${adultContentDirectives}
 **YÊU CẦU CỦA BẠN:**
 
 1.  **Đánh giá & Chọn lọc:** Hãy phân tích kỹ lưỡng toàn bộ thông tin trên. Tự mình đánh giá và xác định những chi tiết **quan trọng và hấp dẫn nhất** về bối cảnh, tiểu sử, mục tiêu và kỹ năng của nhân vật để đưa vào lời dẫn truyện. Đừng liệt kê thông tin, hãy **biến chúng thành một câu chuyện sống động**.
-2.  **Tạo Bối Cảnh Hấp Dẫn:** Viết một đoạn văn mở đầu thật chi tiết, sâu sắc và lôi cuốn, với độ dài TỐI THIỂU 1500 TỪ.
+2.  **Tạo Bối Cảnh Hấp Dẫn:** Viết một đoạn văn mở đầu thật chi tiết, sâu sắc và lôi cuốn. ${lengthDirective}
     *   **Thiết lập không khí:** Dựa vào "Thể loại" và "Tông màu câu chuyện" để tạo ra không khí phù hợp (ví dụ: u ám, anh hùng, bí ẩn, v.v.).
     *   **Giới thiệu nhân vật:** Đưa nhân vật chính vào một tình huống cụ thể, một cảnh đang diễn ra. Hãy thể hiện tính cách và một phần tiểu sử của họ qua hành động, suy nghĩ hoặc môi trường xung quanh thay vì chỉ kể lại.
     *   **Gợi mở cốt truyện:** Tích hợp một cách tự nhiên "Mục tiêu/Động lực" của nhân vật vào tình huống mở đầu, tạo ra một cái móc câu chuyện (plot hook) ngay lập tức.
@@ -1283,7 +1342,9 @@ async function generateSummary(turns: GameTurn[]): Promise<string> {
     if (turns.length === 0) return "";
     const historyText = turns.map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
     const prompt = `Bạn là một AI trợ lý ghi chép. Dựa vào đoạn hội thoại và diễn biến sau, hãy viết một đoạn tóm tắt ngắn gọn (3-4 câu) về các sự kiện chính, các nhân vật mới xuất hiện, và các thông tin quan trọng đã được tiết lộ. Tóm tắt này sẽ được dùng làm ký ức dài hạn.\n\n--- LỊCH SỬ CẦN TÓM TẮT ---\n${historyText}`;
-    return generate(prompt);
+    const summary = await generate(prompt);
+    // Remove any HTML-like tags from the summary to ensure clean storage.
+    return summary.replace(/<[^>]*>/g, '');
 }
 
 async function retrieveRelevantSummaries(context: string, allSummaries: string[], topK: number): Promise<string> {
@@ -1355,16 +1416,6 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         ? lastPlayerAction.content
         : obfuscateText(lastPlayerAction.content);
 
-    const gameItemSchema = {
-        type: Type.OBJECT,
-        properties: {
-            name: { type: Type.STRING },
-            description: { type: Type.STRING },
-            quantity: { type: Type.NUMBER }
-        },
-        required: ['name', 'description', 'quantity']
-    };
-
     const suggestionSchema = {
         type: Type.OBJECT, properties: {
             description: { type: Type.STRING }, successRate: { type: Type.NUMBER },
@@ -1397,8 +1448,10 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             value: { type: Type.NUMBER },
             maxValue: { type: Type.NUMBER },
             isPercentage: { type: Type.BOOLEAN },
+            description: { type: Type.STRING },
+            hasLimit: { type: Type.BOOLEAN },
         },
-        required: ['name', 'value', 'maxValue', 'isPercentage']
+        required: ['name', 'value', 'maxValue', 'isPercentage', 'description', 'hasLimit']
     };
 
     const schema = {
@@ -1408,14 +1461,12 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             newCoreMemories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các ký ức cốt lõi mới. Chỉ thêm vào nếu có sự kiện CỰC KỲ quan trọng xảy ra, theo quy tắc hệ thống số 17." },
             timePassed: timePassedSchema,
             reputationChange: reputationChangeSchema,
-            updatedInventory: { type: Type.ARRAY, items: gameItemSchema, description: "Toàn bộ danh sách vật phẩm đã được cập nhật. Nếu túi đồ không thay đổi, hãy để trống trường này." },
-            updatedCharacterAppearance: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu có sự thay đổi RÕ RỆT và LÂU DÀI về **ngoại hình** nhân vật (ví dụ: 'có một vết sẹo mới trên mặt'). KHÔNG cập nhật cho những thay đổi nhỏ, tạm thời hoặc thay đổi về tiểu sử. Ưu tiên các thay đổi do hành động người chơi gây ra. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
-            updatedCharacterMotivation: { type: Type.STRING, description: "Chỉ cập nhật trường này nếu hành động của người chơi thể hiện RÕ RÀNG một mục tiêu/động lực mới hoặc thay đổi mục tiêu cũ. KHÔNG tự ý suy diễn. Giữ mô tả CỰC KỲ NGẮN GỌN. Nếu không có thay đổi, để trống." },
             updatedStats: { type: Type.ARRAY, items: statSchema, description: "Toàn bộ danh sách chỉ số nhân vật đã được cập nhật sau hành động. Nếu không có gì thay đổi, để trống trường này." },
         }, required: ['narration', 'suggestions']
     };
 
     const recentHistory = history.slice(-4).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
+    const lengthDirective = getResponseLengthDirective(worldConfig.aiResponseLength);
     
     const prompt = `Bạn là một Quản trò (Game Master) tài ba, một người kể chuyện bậc thầy. Nhiệm vụ của bạn là tiếp tục câu chuyện dựa trên hành động mới nhất của người chơi.
 
@@ -1450,9 +1501,8 @@ ${adultContentDirectives}
 
 **YÊU CẦU CỦA BẠN:**
 
-1.  **Phân tích & Dẫn truyện:** Đọc kỹ toàn bộ bối cảnh và hành động của người chơi. Viết một đoạn tường thuật (\`narration\`) chi tiết, sống động và logic để tiếp nối câu chuyện.
+1.  **Phân tích & Dẫn truyện:** Đọc kỹ toàn bộ bối cảnh và hành động của người chơi. Viết một đoạn tường thuật (\`narration\`) chi tiết, sống động và logic để tiếp nối câu chuyện. ${lengthDirective}
 2.  **Cập nhật Trạng thái Game:** Dựa vào kết quả của hành động, cập nhật các trạng thái của game một cách logic.
-    *   **Vật phẩm (\`updatedInventory\`):** Nếu người chơi nhặt được, sử dụng, hoặc mất vật phẩm, hãy trả về TOÀN BỘ danh sách vật phẩm mới trong túi đồ.
     *   **Thời gian (\`timePassed\`):** Ước tính thời gian trôi qua.
     *   **Danh vọng (\`reputationChange\`):** Tính toán sự thay đổi về danh vọng.
     *   **Chỉ số (\`updatedStats\`):** Nếu có thay đổi về chỉ số (Sinh lực, Thể lực...), trả về TOÀN BỘ danh sách chỉ số đã cập nhật.
@@ -1461,5 +1511,127 @@ ${adultContentDirectives}
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.`;
 
-    return generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
+    const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
+
+    // Strip tags from new core memories to ensure clean storage and display.
+    if (response.newCoreMemories) {
+        response.newCoreMemories = response.newCoreMemories.map(mem => mem.replace(/<[^>]*>/g, ''));
+    }
+    
+    return { ...response, newSummary };
+};
+
+const createUpdatePrompt = (narration: string, context: object, instructions: string) => {
+    return `Bạn là một AI quản lý dữ liệu. Nhiệm vụ của bạn là đọc một đoạn tường thuật từ game nhập vai và cập nhật lại dữ liệu của trò chơi một cách chính xác.
+
+--- BỐI CẢNH DỮ LIỆU HIỆN TẠI ---
+${JSON.stringify(context, null, 2)}
+
+--- ĐOẠN TƯỜNG THUẬT CẦN PHÂN TÍCH ---
+${narration.replace(/<[^>]*>/g, '')}
+--- KẾT THÚC TƯỜNG THUẬT ---
+
+**YÊU CẦU BẮT BUỘC:**
+
+1.  **ĐỌC & SO SÁNH:** Đọc kỹ đoạn tường thuật và so sánh với "DỮ LIỆU HIỆN TẠI".
+2.  **XÁC ĐỊNH THAY ĐỔI:** ${instructions}
+3.  **TRẢ VỀ DANH SÁCH ĐẦY ĐỦ:** Đối với các trường là danh sách, bạn phải trả về **TOÀN BỘ** danh sách mới sau khi đã cập nhật, chứ không chỉ những mục thay đổi.
+4.  **KHÔNG THAY ĐỔI:** Nếu một danh mục không có gì thay đổi, hãy để trống (không trả về) trường đó trong JSON.
+5.  **CHÍNH XÁC & KHÔNG SUY DIỄN:** Chỉ cập nhật những gì được đề cập hoặc ngụ ý rõ ràng trong đoạn tường thuật.
+
+**OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ schema đã cho. Nếu không có bất kỳ thay đổi nào, bạn có thể trả về một đối tượng JSON trống \`{}\`.`;
+};
+
+export const updateDynamicStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<DynamicStateUpdateResponse | null> => {
+    const { inventory, playerStatus, companions, quests } = gameState;
+
+    const gameItemSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ['name', 'description', 'quantity'] };
+    const statusEffectSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, type: { type: Type.STRING, enum: ['buff', 'debuff'] } }, required: ['name', 'description', 'type'] };
+    const companionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING } }, required: ['name', 'description'] };
+    const questSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'] } }, required: ['name', 'description', 'status'] };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            updatedInventory: { type: Type.ARRAY, description: "Toàn bộ danh sách vật phẩm trong túi đồ sau khi đã được cập nhật.", items: gameItemSchema },
+            updatedPlayerStatus: { type: Type.ARRAY, description: "Toàn bộ danh sách trạng thái của người chơi sau khi đã được cập nhật.", items: statusEffectSchema },
+            updatedCompanions: { type: Type.ARRAY, description: "Danh sách đồng hành đã được cập nhật hoặc mới xuất hiện.", items: companionSchema },
+            updatedQuests: { type: Type.ARRAY, description: "Danh sách nhiệm vụ đã được cập nhật hoặc mới xuất hiện.", items: questSchema },
+        },
+    };
+    
+    const instructions = `Tìm ra tất cả những thay đổi liên quan đến trạng thái động của game:
+- **Vật phẩm (\`updatedInventory\`):** Có vật phẩm nào được thêm, bớt, hay thay đổi số lượng không?
+- **Trạng thái (\`updatedPlayerStatus\`):** Có trạng thái nào được thêm mới hoặc gỡ bỏ không?
+- **Đồng hành (\`updatedCompanions\`):** Có đồng hành mới, hoặc thông tin về đồng hành cũ có thay đổi không?
+- **Nhiệm vụ (\`updatedQuests\`):** Có nhiệm vụ mới, hoặc trạng thái nhiệm vụ cũ có thay đổi không?`;
+
+    const prompt = createUpdatePrompt(lastNarration, { inventory, playerStatus, companions, quests }, instructions);
+
+    try {
+        return await generateJson<DynamicStateUpdateResponse>(prompt, schema);
+    } catch (error) {
+        console.error("Lỗi khi cập nhật Trạng thái động (Pha 2):", error);
+        return null;
+    }
+};
+
+export const updateEncyclopediaEntriesFromNarration = async (gameState: GameState, lastNarration: string): Promise<EncyclopediaEntriesUpdateResponse | null> => {
+    const { encounteredNPCs, encounteredFactions, discoveredEntities } = gameState;
+
+    const npcSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, thoughtsOnPlayer: { type: Type.STRING } }, required: ['name', 'description'] };
+    const factionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
+    const entitySchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, type: { type: Type.STRING }, personality: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'type', 'description'] };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            updatedEncounteredNPCs: { type: Type.ARRAY, description: "Danh sách NPC đã được cập nhật hoặc mới xuất hiện.", items: npcSchema },
+            updatedEncounteredFactions: { type: Type.ARRAY, description: "Danh sách phe phái đã được cập nhật hoặc mới xuất hiện.", items: factionSchema },
+            updatedDiscoveredEntities: { type: Type.ARRAY, description: "Danh sách thực thể khác (địa điểm, lore...) đã được cập nhật hoặc mới xuất hiện.", items: entitySchema },
+        },
+    };
+
+    const instructions = `Tìm ra tất cả những thay đổi liên quan đến các thực thể trong Bách khoa toàn thư:
+- **NPC (\`updatedEncounteredNPCs\`):** Có NPC mới nào xuất hiện không? Hoặc thông tin về NPC cũ (mô tả, tính cách, suy nghĩ về người chơi) có được cập nhật không?
+- **Phe phái (\`updatedEncounteredFactions\`):** Có phe phái, tổ chức mới nào xuất hiện hoặc được mô tả chi tiết hơn không?
+- **Thực thể khác (\`updatedDiscoveredEntities\`):** Có địa điểm, khái niệm lore, hoặc các thực thể khác được giới thiệu hoặc mô tả thêm không?`;
+
+    const prompt = createUpdatePrompt(lastNarration, { encounteredNPCs, encounteredFactions, discoveredEntities }, instructions);
+    
+    try {
+        return await generateJson<EncyclopediaEntriesUpdateResponse>(prompt, schema);
+    } catch (error) {
+        console.error("Lỗi khi cập nhật Bách khoa (Pha 2):", error);
+        return null;
+    }
+};
+
+export const updateCharacterStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<CharacterStateUpdateResponse | null> => {
+    const { character } = gameState;
+
+    const skillSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            updatedCharacter: { type: Type.OBJECT, description: "Cập nhật nếu có sự thay đổi LÂU DÀI về tiểu sử hoặc động lực của nhân vật.", properties: { bio: { type: Type.STRING }, motivation: { type: Type.STRING } } },
+            updatedSkills: { type: Type.ARRAY, description: "Danh sách kỹ năng đã được cập nhật hoặc mới học được.", items: skillSchema },
+            newMemories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Chỉ thêm ký ức nếu có sự kiện CỰC KỲ quan trọng, thay đổi cốt truyện xảy ra." },
+        },
+    };
+
+    const instructions = `Tìm ra tất cả những thay đổi liên quan đến sự phát triển của nhân vật chính:
+- **Nhân vật (\`updatedCharacter\`):** Có sự thay đổi LÂU DÀI, quan trọng nào về tiểu sử hoặc động lực của nhân vật không?
+- **Kỹ năng (\`updatedSkills\`):** Nhân vật có học được kỹ năng mới, hoặc kỹ năng cũ có được nâng cấp/thay đổi không?
+- **Ký ức (\`newMemories\`):** Có sự kiện nào CỰC KỲ quan trọng (plot twist, thay đổi cuộc đời...) xảy ra đáng để ghi lại làm ký ức cốt lõi không?`;
+
+    const prompt = createUpdatePrompt(lastNarration, { character: { bio: character.bio, motivation: character.motivation, skills: character.skills } }, instructions);
+    
+    try {
+        return await generateJson<CharacterStateUpdateResponse>(prompt, schema);
+    } catch (error) {
+        console.error("Lỗi khi cập nhật Nhân vật (Pha 2):", error);
+        return null;
+    }
 };

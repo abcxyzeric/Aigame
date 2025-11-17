@@ -5,7 +5,7 @@ import WorldCreationScreen from './components/WorldCreationScreen';
 import SettingsScreen from './components/SettingsScreen';
 import GameplayScreen from './components/GameplayScreen';
 import FandomGenesisScreen from './components/FandomGenesisScreen';
-import { WorldConfig, GameState } from './types';
+import { WorldConfig, GameState, InitialEntity } from './types';
 import { DEFAULT_STATS } from './constants';
 
 type Screen = 'home' | 'create' | 'settings' | 'gameplay' | 'fandomGenesis';
@@ -26,8 +26,22 @@ const App: React.FC = () => {
   }, []);
   
   const handleStartGame = useCallback((config: WorldConfig) => {
+    const worldConfigWithLore = { ...config };
+    if (worldConfigWithLore.storyContext.setting) {
+        const powerSystemEntity: InitialEntity = {
+            name: 'Tổng quan Hệ thống Sức mạnh',
+            type: 'Hệ thống sức mạnh / Lore',
+            description: worldConfigWithLore.storyContext.setting,
+            personality: ''
+        };
+        const existing = (worldConfigWithLore.initialEntities || []).find(e => e.name === powerSystemEntity.name && e.type === powerSystemEntity.type);
+        if (!existing) {
+            worldConfigWithLore.initialEntities = [...(worldConfigWithLore.initialEntities || []), powerSystemEntity];
+        }
+    }
+    
     setGameState({ 
-      worldConfig: config, 
+      worldConfig: worldConfigWithLore, 
       character: {
         ...config.character,
         stats: config.enableStatsSystem ? (config.character.stats && config.character.stats.length > 0 ? config.character.stats : DEFAULT_STATS) : [],
@@ -52,6 +66,22 @@ const App: React.FC = () => {
 
   const handleLoadSavedGame = useCallback((state: GameState) => {
     const statsEnabled = state.worldConfig.enableStatsSystem === true;
+    
+    const worldConfigWithLore = { ...state.worldConfig };
+    if (worldConfigWithLore.storyContext.setting) {
+        const powerSystemEntity: InitialEntity = {
+            name: 'Tổng quan Hệ thống Sức mạnh',
+            type: 'Hệ thống sức mạnh / Lore',
+            description: worldConfigWithLore.storyContext.setting,
+            personality: ''
+        };
+        const allEntities = [...(worldConfigWithLore.initialEntities || []), ...(state.discoveredEntities || [])];
+        const existing = allEntities.find(e => e.name === powerSystemEntity.name && e.type === powerSystemEntity.type);
+        if (!existing) {
+            worldConfigWithLore.initialEntities = [...(worldConfigWithLore.initialEntities || []), powerSystemEntity];
+        }
+    }
+
     const completeState: GameState = {
       memories: [],
       summaries: [],
@@ -67,7 +97,7 @@ const App: React.FC = () => {
       reputation: { score: 0, tier: 'Vô Danh' }, // Fallback cho file lưu cũ
       reputationTiers: [], // Fallback cho file lưu cũ
       ...state,
-      // FIX: Removed duplicate `character` property. The property below handles all logic correctly.
+      worldConfig: worldConfigWithLore,
       character: {
         ...(state.character || state.worldConfig.character), // Handle very old saves
         stats: statsEnabled ? (state.character.stats && state.character.stats.length > 0 ? state.character.stats : DEFAULT_STATS) : [],

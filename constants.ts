@@ -45,8 +45,8 @@ export const ENTITY_TYPE_OPTIONS = [
 ];
 
 export const DEFAULT_STATS: CharacterStat[] = [
-  { name: 'Sinh Lực', value: 100, maxValue: 100, isPercentage: true },
-  { name: 'Thể Lực', value: 100, maxValue: 100, isPercentage: true },
+  { name: 'Sinh Lực', value: 100, maxValue: 100, isPercentage: true, description: 'Đại diện cho sức sống. Bị trừ khi bị thương. Về 0 sẽ chết/gục.', hasLimit: true },
+  { name: 'Thể Lực', value: 100, maxValue: 100, isPercentage: true, description: 'Đại diện cho sức bền. Bị trừ khi vận động mạnh. Hồi phục khi nghỉ.', hasLimit: true },
 ];
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
@@ -112,6 +112,6 @@ export const DEFAULT_RAG_SETTINGS: RagSettings = {
 };
 
 export const DEFAULT_AI_PERFORMANCE_SETTINGS: AiPerformanceSettings = {
-  jsonMaxOutputTokens: 4000,
+  maxOutputTokens: 8000,
   thinkingBudget: 1200,
 };
