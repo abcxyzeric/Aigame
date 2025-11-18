@@ -209,20 +209,6 @@ export interface AiTurnResponse {
   narration: string;
   suggestions: ActionSuggestion[];
   newSummary?: string;
-  newCoreMemories?: string[];
-  timePassed?: {
-    hours?: number;
-    minutes?: number;
-  };
-  reputationChange?: {
-    score: number;
-    reason: string;
-  };
-  updatedStats?: CharacterStat[];
-  // Encyclopedia updates are moved to a separate phase
-  // updatedInventory?: GameItem[];
-  // updatedCharacterAppearance?: string;
-  // updatedCharacterMotivation?: string;
 }
 
 export interface StartGameResponse {
@@ -248,6 +234,7 @@ export interface DynamicStateUpdateResponse {
     updatedPlayerStatus?: StatusEffect[];
     updatedCompanions?: Companion[];
     updatedQuests?: Quest[];
+    updatedStats?: CharacterStat[];
 }
 
 // For static/encyclopedic knowledge
@@ -262,6 +249,14 @@ export interface CharacterStateUpdateResponse {
     updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
     updatedSkills?: { name: string; description: string; }[];
     newMemories?: string[];
+    timePassed?: {
+        hours?: number;
+        minutes?: number;
+    };
+    reputationChange?: {
+        score: number;
+        reason: string;
+    };
 }
 
 export interface EncyclopediaData {

@@ -1435,45 +1435,10 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         }, required: ['description', 'successRate', 'risk', 'reward']
     };
 
-    const timePassedSchema = {
-        type: Type.OBJECT,
-        description: "Thời gian đã trôi qua sau hành động, tính bằng giờ hoặc phút.",
-        properties: {
-            hours: { type: Type.NUMBER },
-            minutes: { type: Type.NUMBER }
-        }
-    };
-
-    const reputationChangeSchema = {
-        type: Type.OBJECT,
-        description: "Sự thay đổi về điểm danh vọng của người chơi sau hành động (nếu có).",
-        properties: {
-            score: { type: Type.NUMBER, description: "Số điểm thay đổi (có thể là số dương hoặc âm)." },
-            reason: { type: Type.STRING, description: "Lý do ngắn gọn cho sự thay đổi danh vọng." },
-        }
-    };
-    
-    const statSchema = {
-        type: Type.OBJECT,
-        properties: {
-            name: { type: Type.STRING },
-            value: { type: Type.NUMBER },
-            maxValue: { type: Type.NUMBER },
-            isPercentage: { type: Type.BOOLEAN },
-            description: { type: Type.STRING },
-            hasLimit: { type: Type.BOOLEAN },
-        },
-        required: ['name', 'value', 'maxValue', 'isPercentage', 'description', 'hasLimit']
-    };
-
     const schema = {
         type: Type.OBJECT, properties: {
             narration: { type: Type.STRING },
             suggestions: { type: Type.ARRAY, items: suggestionSchema },
-            newCoreMemories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các ký ức cốt lõi mới. Chỉ thêm vào nếu có sự kiện CỰC KỲ quan trọng xảy ra, theo quy tắc hệ thống số 17." },
-            timePassed: timePassedSchema,
-            reputationChange: reputationChangeSchema,
-            updatedStats: { type: Type.ARRAY, items: statSchema, description: "Toàn bộ danh sách chỉ số nhân vật đã được cập nhật sau hành động. Nếu không có gì thay đổi, để trống trường này." },
         }, required: ['narration', 'suggestions']
     };
 
@@ -1514,21 +1479,12 @@ ${adultContentDirectives}
 **YÊU CẦU CỦA BẠN:**
 
 1.  **Phân tích & Dẫn truyện:** Đọc kỹ toàn bộ bối cảnh và hành động của người chơi. Viết một đoạn tường thuật (\`narration\`) chi tiết, sống động và logic để tiếp nối câu chuyện. ${lengthDirective}
-2.  **Cập nhật Trạng thái Game:** Dựa vào kết quả của hành động, cập nhật các trạng thái của game một cách logic.
-    *   **Thời gian (\`timePassed\`):** Ước tính thời gian trôi qua.
-    *   **Danh vọng (\`reputationChange\`):** Tính toán sự thay đổi về danh vọng.
-    *   **Chỉ số (\`updatedStats\`):** Nếu có thay đổi về chỉ số (Sinh lực, Thể lực...), trả về TOÀN BỘ danh sách chỉ số đã cập nhật.
-3.  **Gợi ý hành động:** Tạo ra ĐÚNG 4 gợi ý hành động (\`suggestions\`) đa dạng và hợp lý cho lượt đi tiếp theo.
-4.  **Tuân thủ quy tắc:** Luôn tuân thủ các quy tắc GM đã được nêu trong vai trò hệ thống của bạn (định dạng thẻ, nhất quán, v.v.).
+2.  **Gợi ý hành động:** Tạo ra ĐÚNG 4 gợi ý hành động (\`suggestions\`) đa dạng và hợp lý cho lượt đi tiếp theo.
+3.  **Tuân thủ quy tắc:** Luôn tuân thủ các quy tắc GM đã được nêu trong vai trò hệ thống của bạn (định dạng thẻ, nhất quán, v.v.).
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.`;
 
     const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
-
-    // Strip tags from new core memories to ensure clean storage and display.
-    if (response.newCoreMemories) {
-        response.newCoreMemories = response.newCoreMemories.map(mem => mem.replace(/<[^>]*>/g, ''));
-    }
     
     return { ...response, newSummary };
 };
@@ -1555,12 +1511,13 @@ ${narration.replace(/<[^>]*>/g, '')}
 };
 
 export const updateDynamicStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<DynamicStateUpdateResponse | null> => {
-    const { inventory, playerStatus, companions, quests } = gameState;
+    const { inventory, playerStatus, companions, quests, character } = gameState;
 
     const gameItemSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ['name', 'description', 'quantity'] };
     const statusEffectSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, type: { type: Type.STRING, enum: ['buff', 'debuff'] } }, required: ['name', 'description', 'type'] };
     const companionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING } }, required: ['name', 'description'] };
     const questSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'] } }, required: ['name', 'description', 'status'] };
+    const statSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, value: { type: Type.NUMBER }, maxValue: { type: Type.NUMBER }, isPercentage: { type: Type.BOOLEAN }, description: { type: Type.STRING }, hasLimit: { type: Type.BOOLEAN }, }, required: ['name', 'value', 'maxValue', 'isPercentage', 'description', 'hasLimit'] };
 
     const schema = {
         type: Type.OBJECT,
@@ -1569,6 +1526,7 @@ export const updateDynamicStateFromNarration = async (gameState: GameState, last
             updatedPlayerStatus: { type: Type.ARRAY, description: "Toàn bộ danh sách trạng thái của người chơi sau khi đã được cập nhật.", items: statusEffectSchema },
             updatedCompanions: { type: Type.ARRAY, description: "Danh sách đồng hành đã được cập nhật hoặc mới xuất hiện.", items: companionSchema },
             updatedQuests: { type: Type.ARRAY, description: "Danh sách nhiệm vụ đã được cập nhật hoặc mới xuất hiện.", items: questSchema },
+            updatedStats: { type: Type.ARRAY, description: "Toàn bộ danh sách chỉ số nhân vật đã được cập nhật sau hành động.", items: statSchema },
         },
     };
     
@@ -1576,9 +1534,10 @@ export const updateDynamicStateFromNarration = async (gameState: GameState, last
 - **Vật phẩm (\`updatedInventory\`):** Có vật phẩm nào được thêm, bớt, hay thay đổi số lượng không?
 - **Trạng thái (\`updatedPlayerStatus\`):** Có trạng thái nào được thêm mới hoặc gỡ bỏ không?
 - **Đồng hành (\`updatedCompanions\`):** Có đồng hành mới, hoặc thông tin về đồng hành cũ có thay đổi không?
-- **Nhiệm vụ (\`updatedQuests\`):** Có nhiệm vụ mới, hoặc trạng thái nhiệm vụ cũ có thay đổi không?`;
+- **Nhiệm vụ (\`updatedQuests\`):** Có nhiệm vụ mới, hoặc trạng thái nhiệm vụ cũ có thay đổi không?
+- **Chỉ số (\`updatedStats\`):** Có thay đổi nào về chỉ số của nhân vật (Sinh lực, Thể lực...) không? Nếu có, trả về TOÀN BỘ danh sách chỉ số đã cập nhật.`;
 
-    const prompt = createUpdatePrompt(lastNarration, { inventory, playerStatus, companions, quests }, instructions);
+    const prompt = createUpdatePrompt(lastNarration, { inventory, playerStatus, companions, quests, stats: character.stats }, instructions);
 
     try {
         return await generateJson<DynamicStateUpdateResponse>(prompt, schema);
@@ -1620,9 +1579,11 @@ export const updateEncyclopediaEntriesFromNarration = async (gameState: GameStat
 };
 
 export const updateCharacterStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<CharacterStateUpdateResponse | null> => {
-    const { character } = gameState;
+    const { character, worldTime, reputation } = gameState;
 
     const skillSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
+    const timePassedSchema = { type: Type.OBJECT, description: "Thời gian đã trôi qua sau hành động, tính bằng giờ hoặc phút.", properties: { hours: { type: Type.NUMBER }, minutes: { type: Type.NUMBER } } };
+    const reputationChangeSchema = { type: Type.OBJECT, description: "Sự thay đổi về điểm danh vọng của người chơi sau hành động (nếu có).", properties: { score: { type: Type.NUMBER, description: "Số điểm thay đổi (có thể là số dương hoặc âm)." }, reason: { type: Type.STRING, description: "Lý do ngắn gọn cho sự thay đổi danh vọng." } } };
 
     const schema = {
         type: Type.OBJECT,
@@ -1630,18 +1591,27 @@ export const updateCharacterStateFromNarration = async (gameState: GameState, la
             updatedCharacter: { type: Type.OBJECT, description: "Cập nhật nếu có sự thay đổi LÂU DÀI về tiểu sử hoặc động lực của nhân vật.", properties: { bio: { type: Type.STRING }, motivation: { type: Type.STRING } } },
             updatedSkills: { type: Type.ARRAY, description: "Danh sách kỹ năng đã được cập nhật hoặc mới học được.", items: skillSchema },
             newMemories: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Chỉ thêm ký ức nếu có sự kiện CỰC KỲ quan trọng, thay đổi cốt truyện xảy ra." },
+            timePassed: timePassedSchema,
+            reputationChange: reputationChangeSchema,
         },
     };
 
-    const instructions = `Tìm ra tất cả những thay đổi liên quan đến sự phát triển của nhân vật chính:
+    const instructions = `Tìm ra tất cả những thay đổi liên quan đến sự phát triển của nhân vật chính và diễn biến thế giới:
 - **Nhân vật (\`updatedCharacter\`):** Có sự thay đổi LÂU DÀI, quan trọng nào về tiểu sử hoặc động lực của nhân vật không?
 - **Kỹ năng (\`updatedSkills\`):** Nhân vật có học được kỹ năng mới, hoặc kỹ năng cũ có được nâng cấp/thay đổi không?
-- **Ký ức (\`newMemories\`):** Có sự kiện nào CỰC KỲ quan trọng (plot twist, thay đổi cuộc đời...) xảy ra đáng để ghi lại làm ký ức cốt lõi không?`;
+- **Ký ức (\`newMemories\`):** Có sự kiện nào CỰC KỲ quan trọng (plot twist, thay đổi cuộc đời...) xảy ra đáng để ghi lại làm ký ức cốt lõi không?
+- **Thời gian (\`timePassed\`):** Ước tính thời gian (giờ, phút) đã trôi qua trong đoạn tường thuật.
+- **Danh vọng (\`reputationChange\`):** Hành động trong tường thuật có ảnh hưởng đến danh vọng không? Nếu có, tính toán điểm thay đổi và lý do.`;
 
-    const prompt = createUpdatePrompt(lastNarration, { character: { bio: character.bio, motivation: character.motivation, skills: character.skills } }, instructions);
+    const prompt = createUpdatePrompt(lastNarration, { character: { bio: character.bio, motivation: character.motivation, skills: character.skills }, worldTime, reputation }, instructions);
     
     try {
-        return await generateJson<CharacterStateUpdateResponse>(prompt, schema);
+        const response = await generateJson<CharacterStateUpdateResponse>(prompt, schema);
+        // Strip tags from new core memories to ensure clean storage and display.
+        if (response.newMemories) {
+            response.newMemories = response.newMemories.map(mem => mem.replace(/<[^>]*>/g, ''));
+        }
+        return response;
     } catch (error) {
         console.error("Lỗi khi cập nhật Nhân vật (Pha 2):", error);
         return null;
