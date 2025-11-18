@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { getSettings } from './settingsService';
 // Fix: Moved ENTITY_TYPE_OPTIONS to be imported from constants.ts instead of types.ts
-import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime, CharacterStat, EncyclopediaData, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../types';
+import { WorldConfig, SafetySetting, SafetySettingsConfig, InitialEntity, GameTurn, GameState, AiTurnResponse, StartGameResponse, StatusEffect, GameItem, CharacterConfig, EncounteredNPC, EncounteredFaction, Companion, Quest, ActionSuggestion, StyleGuideVector, EncyclopediaOptimizationResponse, WorldTime, CharacterStat, EncyclopediaData, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse, AiPerformanceSettings } from '../types';
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, AI_RESPONSE_LENGTH_OPTIONS, DEFAULT_AI_PERFORMANCE_SETTINGS, DEFAULT_STATS } from '../constants';
 import { GENRE_TAGGING_SYSTEMS } from '../prompts/genreTagging';
 
@@ -73,7 +73,7 @@ function processNarration(text: string): string {
     });
 
     // Strip tags inside quoted text ""
-    processedText = processedText.replace(/"(.*?)"/g, (match, innerContent) => {
+    processedText = processedText.replace(/"(.*?)"/gs, (match, innerContent) => {
         const strippedInnerContent = innerContent.replace(/<[^>]*>/g, '');
         return `"${strippedInnerContent}"`;
     });
@@ -154,7 +154,7 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
     throw lastError || new Error("AI không thể tạo phản hồi sau nhiều lần thử.");
 }
 
-async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash'): Promise<T> {
+async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>): Promise<T> {
     const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
@@ -174,8 +174,8 @@ async function generateJson<T>(prompt: string, schema: any, systemInstruction?: 
                 responseMimeType: "application/json",
                 responseSchema: schema,
                 safetySettings: activeSafetySettings as unknown as SafetySetting[],
-                maxOutputTokens: perfSettings.maxOutputTokens,
-                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
+                maxOutputTokens: overrideConfig?.maxOutputTokens ?? perfSettings.maxOutputTokens,
+                thinkingConfig: { thinkingBudget: overrideConfig?.thinkingBudget ?? perfSettings.thinkingBudget }
             }
          });
   
@@ -1137,7 +1137,9 @@ QUY TẮC BẮT BUỘC:
     - **Vật phẩm & Kỹ năng:** Bọc tên của các vật phẩm, vũ khí, kỹ năng hoặc các khái niệm quan trọng trong thẻ <important>. Ví dụ: "Bạn rút <important>Thanh Cổ Kiếm</important> ra và vận dụng chiêu thức <important>Nhất Kiếm Đoạn Hồn</important>." Thẻ này sẽ được hiển thị màu vàng.
     - **Trạng thái:** Khi một trạng thái được áp dụng hoặc đề cập, hãy bọc TÊN CHÍNH XÁC của trạng thái đó (giống với tên trong 'updatedPlayerStatus') trong thẻ <status>. Ví dụ: 'Hắn cảm thấy cơ thể lạnh buốt, một dấu hiệu của việc <status>Trúng Độc</status>.' Thẻ này sẽ được hiển thị màu xanh lam (cyan) và có thể tương tác.
 8.5. **TÊN NHÂN VẬT CHÍNH:** TUYỆT ĐỐI KHÔNG bọc tên của nhân vật chính trong bất kỳ thẻ nào (<entity>, <important>, etc.). Tên của họ phải luôn là văn bản thuần túy.
-8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng các thẻ <entity> hoặc <important> bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
+8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng bất kỳ thẻ nào (<entity>, <important>, v.v.) bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
+    - **VÍ DỤ SAI:** Hắn nói, "Chào ngươi, <entity>Lý Tiêu遙</entity>."
+    - **VÍ DỤ ĐÚNG:** Hắn nói, "Chào ngươi, Lý Tiêu遙."
 8.7. **NHẬN DIỆN THỰC THỂ NHẤT QUÁN (TỐI QUAN TRỌNG):** Khi bạn đề cập đến một thực thể đã tồn tại trong "Bách Khoa Toàn Thư", bạn BẮT BUỘC phải sử dụng lại TÊN CHÍNH XÁC của thực thể đó (bao gồm cả cách viết hoa) và bọc nó trong thẻ. Ví dụ: Nếu Bách Khoa có một nhân vật tên là "Monkey D. Luffy", khi bạn kể chuyện về anh ta, hãy luôn viết là "<entity>Monkey D. Luffy</entity>", TUYỆT ĐỐI KHÔNG viết là "<entity>luffy</entity>" hay "<entity>Luffy</entity>". Sự nhất quán này là tối quan trọng để hệ thống có thể nhận diện và hiển thị thông tin chính xác.
 9.  **XƯNG HÔ NHẤT QUÁN (TỐI QUAN TRỌNG):**
     a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.
@@ -1389,7 +1391,8 @@ ${allSummaries.map((s, i) => `[Ký ức ${i+1}]: ${s}`).join('\n\n')}
 
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
     const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers, character } = gameState;
-    const { ragSettings } = getSettings();
+    const { ragSettings, aiPerformanceSettings } = getSettings();
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
     // 1. Auto-summarization
     let newSummary: string | undefined = undefined;
@@ -1484,7 +1487,12 @@ ${adultContentDirectives}
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.`;
 
-    const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction);
+    const creativeCallConfig: Partial<AiPerformanceSettings> = {
+        maxOutputTokens: 8192, // Use absolute max for story length
+        thinkingBudget: perfSettings.thinkingBudget // Keep user-defined thinking budget
+    };
+
+    const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction, 'gemini-2.5-flash', creativeCallConfig);
     
     return { ...response, newSummary };
 };
@@ -1509,6 +1517,8 @@ ${narration.replace(/<[^>]*>/g, '')}
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ schema đã cho. Nếu không có bất kỳ thay đổi nào, bạn có thể trả về một đối tượng JSON trống \`{}\`.`;
 };
+
+const analyticalCallConfig: Partial<AiPerformanceSettings> = { maxOutputTokens: 8192, thinkingBudget: 1000 };
 
 export const updateDynamicStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<DynamicStateUpdateResponse | null> => {
     const { inventory, playerStatus, companions, quests, character } = gameState;
@@ -1540,7 +1550,7 @@ export const updateDynamicStateFromNarration = async (gameState: GameState, last
     const prompt = createUpdatePrompt(lastNarration, { inventory, playerStatus, companions, quests, stats: character.stats }, instructions);
 
     try {
-        return await generateJson<DynamicStateUpdateResponse>(prompt, schema);
+        return await generateJson<DynamicStateUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
     } catch (error) {
         console.error("Lỗi khi cập nhật Trạng thái động (Pha 2):", error);
         return null;
@@ -1571,7 +1581,7 @@ export const updateEncyclopediaEntriesFromNarration = async (gameState: GameStat
     const prompt = createUpdatePrompt(lastNarration, { encounteredNPCs, encounteredFactions, discoveredEntities }, instructions);
     
     try {
-        return await generateJson<EncyclopediaEntriesUpdateResponse>(prompt, schema);
+        return await generateJson<EncyclopediaEntriesUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
     } catch (error) {
         console.error("Lỗi khi cập nhật Bách khoa (Pha 2):", error);
         return null;
@@ -1606,7 +1616,7 @@ export const updateCharacterStateFromNarration = async (gameState: GameState, la
     const prompt = createUpdatePrompt(lastNarration, { character: { bio: character.bio, motivation: character.motivation, skills: character.skills }, worldTime, reputation }, instructions);
     
     try {
-        const response = await generateJson<CharacterStateUpdateResponse>(prompt, schema);
+        const response = await generateJson<CharacterStateUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
         // Strip tags from new core memories to ensure clean storage and display.
         if (response.newMemories) {
             response.newMemories = response.newMemories.map(mem => mem.replace(/<[^>]*>/g, ''));

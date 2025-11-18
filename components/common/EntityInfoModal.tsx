@@ -31,7 +31,7 @@ const EntityInfoModal: React.FC<EntityInfoModalProps> = ({ isOpen, onClose, titl
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4" onClick={onClose}>
       <div 
         className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-lg relative animate-fade-in-up"
         onClick={(e) => e.stopPropagation()}
