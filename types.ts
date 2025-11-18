@@ -111,6 +111,10 @@ export interface AppSettings {
 export interface GameTurn {
   type: 'narration' | 'action';
   content: string;
+  metadata?: {
+    isSummaryTurn?: boolean;
+    addedMemoryCount?: number;
+  }
 }
 
 export interface StatusEffect {
@@ -196,6 +200,13 @@ export interface SaveSlot extends GameState {
   saveDate: string; // ISO String for display
   previewText: string;
   worldName: string;
+}
+
+export interface FandomFile {
+  id: number; // Date.now()
+  name: string;
+  content: string;
+  date: string; // ISO String
 }
 
 export interface ActionSuggestion {

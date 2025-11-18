@@ -74,7 +74,7 @@ const TemporaryRulesModal: React.FC<TemporaryRulesModalProps> = ({ isOpen, onClo
             </ul>
         </div>
 
-        <div className="flex-grow overflow-y-auto pr-2 space-y-3">
+        <div className="flex-grow overflow-y-auto pr-2 space-y-3 min-h-0">
           {rules.map((rule, index) => (
             <div key={index} className="flex items-center gap-3 bg-slate-900/50 p-2 rounded-lg">
                 <ToggleSwitch enabled={rule.enabled} setEnabled={() => handleToggleRule(index)} />

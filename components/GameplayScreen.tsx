@@ -12,6 +12,7 @@ import InformationModal from './CharacterInfoModal';
 import EntityInfoModal from './common/EntityInfoModal';
 import { EncyclopediaModal } from './EncyclopediaModal';
 import StatusHubModal from './StatusHubModal';
+import NotificationModal from './common/NotificationModal';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -161,7 +162,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [playerInput, setPlayerInput] = useState('');
   const [isLoading, setIsLoading] = useState(initialGameState.history.length === 0);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notificationModal, setNotificationModal] = useState({ isOpen: false, title: '', messages: [''] });
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [showUndoConfirm, setShowUndoConfirm] = useState(false);
@@ -270,13 +271,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setGameState(prev => ({ ...prev, history: newHistory }));
     setPlayerInput('');
     setIsLoading(true);
-    setError(null);
+    setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
       const tempGameState = { ...gameState, history: newHistory };
       
       // --- PHA 1: Sáng tạo câu chuyện ---
       const { narration, suggestions, newSummary } = await aiService.getNextTurn(tempGameState);
-      const finalHistory: GameTurn[] = [...newHistory, { type: 'narration', content: narration }];
+      const narrationTurn: GameTurn = { type: 'narration', content: narration, metadata: { isSummaryTurn: !!newSummary } };
+      const finalHistory: GameTurn[] = [...newHistory, narrationTurn];
       
       const phase1GameState: GameState = { 
           ...gameState, 
@@ -344,9 +346,20 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                           newState.character.motivation = updates.updatedCharacter?.motivation || newState.character.motivation;
                           newState.character.skills = mergeAndDeduplicateByName(newState.character.skills, updates.updatedSkills);
                       }
-                      newState.memories = updates.newMemories 
-                          ? [...newState.memories, ...updates.newMemories] 
-                          : newState.memories;
+                      if (updates.newMemories && updates.newMemories.length > 0) {
+                        const lastNarrationIndex = newState.history.findLastIndex((t: GameTurn) => t.type === 'narration');
+                        if (lastNarrationIndex > -1) {
+                            const lastNarrationTurn = newState.history[lastNarrationIndex];
+                            newState.history[lastNarrationIndex] = {
+                                ...lastNarrationTurn,
+                                metadata: {
+                                    ...lastNarrationTurn.metadata,
+                                    addedMemoryCount: updates.newMemories.length,
+                                },
+                            };
+                        }
+                        newState.memories = [...newState.memories, ...updates.newMemories];
+                      }
                   } else if (characterResult.status === 'rejected') {
                       console.error("Lỗi luồng cập nhật Nhân vật (Pha 2):", characterResult.reason);
                   }
@@ -362,7 +375,23 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
-      setError(errorMessage);
+       if (/bị chặn bởi bộ lọc an toàn|prohibited|safety/i.test(errorMessage)) {
+          setNotificationModal({
+              isOpen: true,
+              title: 'Nội dung bị chặn',
+              messages: [
+                  'Phản hồi từ AI đã bị chặn vì có thể vi phạm chính sách nội dung.',
+                  'Nếu bạn đã bật tùy chọn 18+ và tắt bộ lọc an toàn trong Cài đặt, hãy thử diễn đạt lại hành động của bạn.',
+                  'Chi tiết lỗi: ' + errorMessage
+              ]
+          });
+      } else {
+          setNotificationModal({
+              isOpen: true,
+              title: 'Lỗi AI',
+              messages: [errorMessage]
+          });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -380,7 +409,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
     setSuggestions([]);
     setIsLoading(true);
-    setError(null);
+    setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
       const { narration, suggestions, initialPlayerStatus, initialInventory, timePassed, reputationChange, initialWorldTime, reputationTiers } = await aiService.startGame(gameState.worldConfig);
       const baseTime = initialWorldTime || gameState.worldTime;
@@ -397,7 +426,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setShowSuggestions(true);
       await gameService.saveGame(updatedGameState);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Lỗi không xác định khi bắt đầu game.');
+      const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi bắt đầu game.';
+      setNotificationModal({isOpen: true, title: 'Lỗi Khởi Tạo', messages: [errorMessage]});
     } finally {
       setIsLoading(false);
     }
@@ -416,7 +446,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                     gameService.saveGame(newState);
                     return newState;
                 });
-            } catch (e) { setError(e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.'); }
+            } catch (e) { 
+                const errorMessage = e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.';
+                setNotificationModal({isOpen: true, title: 'Lỗi Phụ Trợ', messages: [errorMessage]});
+            }
         };
         fetchTiers();
     }
@@ -470,16 +503,41 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleRestart = () => { setIsSidePanelOpen(false); setShowRestartConfirm(true); };
   const handleUndoTurn = () => { setIsSidePanelOpen(false); setShowUndoConfirm(true); };
   const handleConfirmUndo = async () => {
-    if (gameState.history.length < 2 || gameState.history[gameState.history.length - 1].type !== 'narration') { setShowUndoConfirm(false); return; }
-    setShowUndoConfirm(false);
-    setError(null);
-    const newHistory = gameState.history.slice(0, -1);
-    const newState = { ...gameState, history: newHistory, suggestions: [] };
-    setGameState(newState);
-    setPlayerInput('');
-    setSuggestions([]);
-    setShowSuggestions(false); 
-    await gameService.saveGame(newState);
+      if (gameState.history.length < 2 || gameState.history[gameState.history.length - 1].type !== 'narration') {
+          setShowUndoConfirm(false);
+          return;
+      }
+      setShowUndoConfirm(false);
+      setNotificationModal(prev => ({...prev, isOpen: false}));
+  
+      const lastNarrationTurn = gameState.history[gameState.history.length - 1];
+      let newSummaries = gameState.summaries;
+      let newMemories = gameState.memories;
+  
+      if (lastNarrationTurn.metadata) {
+          if (lastNarrationTurn.metadata.isSummaryTurn) {
+              newSummaries = gameState.summaries.slice(0, -1);
+          }
+          if (lastNarrationTurn.metadata.addedMemoryCount) {
+              newMemories = gameState.memories.slice(0, -lastNarrationTurn.metadata.addedMemoryCount);
+          }
+      }
+  
+      // Hoàn tác cả hành động cuối cùng và tường thuật cuối cùng
+      const newHistory = gameState.history.slice(0, -2);
+      const newState = {
+          ...gameState,
+          history: newHistory,
+          summaries: newSummaries,
+          memories: newMemories,
+          suggestions: [], // Xóa gợi ý từ lượt chơi đã hoàn tác
+      };
+      
+      setGameState(newState);
+      setPlayerInput('');
+      setSuggestions([]);
+      setShowSuggestions(false); 
+      await gameService.saveGame(newState);
   };
   const handleManualSave = useCallback(async () => {
     setIsSaving(true);
@@ -627,6 +685,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
   return (
     <>
+      <NotificationModal
+        isOpen={notificationModal.isOpen}
+        onClose={() => setNotificationModal(prev => ({ ...prev, isOpen: false }))}
+        title={notificationModal.title}
+        messages={notificationModal.messages}
+      />
       <TemporaryRulesModal isOpen={isTempRulesModalOpen} onClose={() => setIsTempRulesModalOpen(false)} onSave={handleSaveTemporaryRules} initialRules={gameState.worldConfig.temporaryRules} />
       <MemoryModal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} memories={gameState.memories} summaries={gameState.summaries} />
       <StoryLogModal isOpen={isStoryLogModalOpen} onClose={() => setIsStoryLogModalOpen(false)} history={currentTurns} title={`Diễn Biến Trang ${currentPage + 1}/${totalPages}`} initialScrollTop={storyLogInitialScrollTop} />
@@ -637,7 +701,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
       {showExitConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-slate-100">Xác nhận thoát</h2> <p className="text-slate-300 mb-6">Bạn có muốn lưu tiến trình trước khi thoát không?</p> <div className="flex justify-end gap-4"> <Button onClick={handleSaveAndExit} variant="primary" className="!w-auto !py-2 !px-4" disabled={isSaving}>{isSaving ? 'Đang lưu...' : 'Lưu & Thoát'}</Button> <Button onClick={onBack} variant="warning" className="!w-auto !py-2 !px-4">Thoát không lưu</Button> <button onClick={() => setShowExitConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
       {showRestartConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-slate-100">Bắt đầu lại cuộc phiêu lưu?</h2> <p className="text-slate-300 mb-6">Bạn có muốn lưu tiến trình hiện tại trước khi bắt đầu lại không?</p> <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3"> <button onClick={() => setShowRestartConfirm(false)} className="w-full sm:w-auto text-slate-300 hover:text-white transition px-4 py-2 rounded-md text-center bg-slate-700/50 hover:bg-slate-700">Hủy</button> <Button onClick={handleRestartWithoutSaving} variant="warning" className="!w-full sm:!w-auto !py-2 !px-4">Không Lưu & Bắt Đầu Lại</Button> <Button onClick={handleSaveAndRestart} variant="primary" className="!w-full sm:!w-auto !py-2 !px-4" disabled={isSaving}>{isSaving ? 'Đang lưu...' : 'Lưu & Bắt Đầu Lại'}</Button> </div> </div> </div> )}
-      {showUndoConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2> <p className="text-slate-300 mb-2">Hành động này sẽ chỉ xóa lượt đi cuối cùng của bạn và AI khỏi nhật ký.</p> <p className="text-amber-400 text-sm mb-6"><strong className="font-bold">Lưu ý:</strong> Các thay đổi về trạng thái, vật phẩm, ký ức... sẽ KHÔNG được hoàn tác.</p> <div className="flex justify-end gap-4"> <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button> <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
+      {showUndoConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2> <p className="text-slate-300 mb-2">Hành động này sẽ xóa lượt đi cuối cùng của bạn và AI, đồng thời hoàn tác các Ký ức hoặc Tóm tắt được tạo ra trong lượt đó.</p> <p className="text-amber-400 text-sm mb-6"><strong className="font-bold">Lưu ý:</strong> Các thay đổi về trạng thái, vật phẩm... sẽ KHÔNG được hoàn tác.</p> <div className="flex justify-end gap-4"> <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button> <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
       
       <div className="lg:flex h-screen bg-slate-900 text-slate-200 font-sans lg:gap-4">
         {/* Main Content (Left Column on Desktop) */}
@@ -691,7 +755,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                     </div>
                   </div>
                 )}
-                {error && <p className="text-red-400 mb-2">{error}</p>}
+                
                 <div> <label className="text-slate-300 font-semibold mb-2 block text-sm">Hoặc nhập hành động tùy ý:</label> <div className="flex items-stretch gap-2 sm:gap-3"> <textarea value={playerInput} onChange={(e) => setPlayerInput(e.target.value)} onKeyPress={handleKeyPress} placeholder="Ví dụ: Nhìn xung quanh, Hỏi về chiếc chìa khóa..." disabled={isLoading} className="flex-1 bg-slate-900/70 border border-slate-700 rounded-lg p-3 text-slate-200 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition resize-none" rows={1} /> <Button onClick={handleSendAction} disabled={isLoading} variant="primary" className="!w-auto !py-3 !px-4 sm:!px-6 self-stretch !text-base">{isTurnLoading ? <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : 'Gửi'}</Button> </div> </div>
                 <div className="flex items-center justify-center gap-2 mt-2 flex-shrink-0"> <button onClick={() => handlePageChange(p => Math.max(0, p - 1))} disabled={currentPage === 0} className="px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition"><Icon name="arrowUp" className="w-4 h-4 rotate-[-90deg]" /></button> <span className="text-xs text-slate-500 font-mono px-2">Trang {currentPage + 1}/{totalPages}</span> <button onClick={() => handlePageChange(p => Math.min(totalPages - 1, p + 1))} disabled={currentPage === totalPages - 1} className="px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition"><Icon name="arrowDown" className="w-4 h-4 rotate-[-90deg]" /></button> </div>
               </div>

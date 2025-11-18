@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { FandomFile } from '../services/fandomFileService';
+import { FandomFile } from '../types';
 import * as fandomFileService from '../services/fandomFileService';
 import Button from './common/Button';
 import Icon from './common/Icon';
@@ -29,7 +30,10 @@ const FandomFileLoadModal: React.FC<FandomFileLoadModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFiles(fandomFileService.getAllFandomFiles());
+      const fetchFiles = async () => {
+        setFiles(await fandomFileService.getAllFandomFiles());
+      };
+      fetchFiles();
       setSelectedFileIds(new Set()); // Reset selection on open
     }
   }, [isOpen]);

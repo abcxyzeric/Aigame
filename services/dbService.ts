@@ -1,8 +1,9 @@
-import { SaveSlot } from '../types';
+import { SaveSlot, FandomFile } from '../types';
 
 const DB_NAME = 'ai-rpg-simulator-db';
-const STORE_NAME = 'saves';
-const DB_VERSION = 1;
+const SAVES_STORE_NAME = 'saves';
+const FANDOM_STORE_NAME = 'fandom_files';
+const DB_VERSION = 2;
 
 let db: IDBDatabase;
 
@@ -26,18 +27,25 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const dbInstance = (event.target as IDBOpenDBRequest).result;
-      if (!dbInstance.objectStoreNames.contains(STORE_NAME)) {
-        dbInstance.createObjectStore(STORE_NAME, { keyPath: 'saveId' });
+      if (!dbInstance.objectStoreNames.contains(SAVES_STORE_NAME)) {
+        dbInstance.createObjectStore(SAVES_STORE_NAME, { keyPath: 'saveId' });
+      }
+      if (event.oldVersion < 2) {
+        if (!dbInstance.objectStoreNames.contains(FANDOM_STORE_NAME)) {
+          dbInstance.createObjectStore(FANDOM_STORE_NAME, { keyPath: 'id' });
+        }
       }
     };
   });
 }
 
+// --- Save Slot Functions ---
+
 export async function addSave(save: SaveSlot): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(SAVES_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(SAVES_STORE_NAME);
     const request = store.put(save);
 
     request.onsuccess = () => resolve();
@@ -51,12 +59,11 @@ export async function addSave(save: SaveSlot): Promise<void> {
 export async function getAllSaves(): Promise<SaveSlot[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(SAVES_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(SAVES_STORE_NAME);
     const request = store.getAll();
 
     request.onsuccess = () => {
-      // Sort descending by saveId (which is a timestamp) to get newest first
       const sortedSaves = request.result.sort((a, b) => b.saveId - a.saveId);
       resolve(sortedSaves);
     };
@@ -70,8 +77,8 @@ export async function getAllSaves(): Promise<SaveSlot[]> {
 export async function deleteSave(saveId: number): Promise<void> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
+        const transaction = db.transaction(SAVES_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(SAVES_STORE_NAME);
         const request = store.delete(saveId);
         
         request.onsuccess = () => resolve();
@@ -83,11 +90,48 @@ export async function deleteSave(saveId: number): Promise<void> {
 }
 
 export async function trimSaves(maxSaves: number): Promise<void> {
-  const allSaves = await getAllSaves(); // This is already sorted newest to oldest
+  const allSaves = await getAllSaves();
   if (allSaves.length > maxSaves) {
     const savesToDelete = allSaves.slice(maxSaves);
     for (const save of savesToDelete) {
       await deleteSave(save.saveId);
     }
   }
+}
+
+// --- Fandom File Functions ---
+
+export async function addFandomFile(file: FandomFile): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FANDOM_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(FANDOM_STORE_NAME);
+    const request = store.put(file);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject('Không thể lưu tệp nguyên tác.');
+  });
+}
+
+export async function getAllFandomFiles(): Promise<FandomFile[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FANDOM_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(FANDOM_STORE_NAME);
+    const request = store.getAll();
+    request.onsuccess = () => {
+      resolve(request.result.sort((a, b) => b.id - a.id));
+    };
+    request.onerror = () => reject('Không thể tải các tệp nguyên tác.');
+  });
+}
+
+export async function deleteFandomFile(id: number): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(FANDOM_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(FANDOM_STORE_NAME);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject('Không thể xóa tệp nguyên tác.');
+  });
 }

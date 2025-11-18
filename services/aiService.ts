@@ -56,7 +56,7 @@ function handleApiError(error: unknown, safetySettings: SafetySettingsConfig): E
     // Check if the error is due to a safety block and if the filter is enabled by the user
     const isSafetyBlock = /safety/i.test(rawMessage) || /blocked/i.test(rawMessage);
     if (safetySettings.enabled && isSafetyBlock) {
-        return new Error("Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài đặt để tạo nội dung tự do hơn.");
+        return new Error("Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài Đặt để tạo nội dung tự do hơn.");
     }
 
     return new Error(`Lỗi từ Gemini API: ${rawMessage}`);
@@ -66,6 +66,9 @@ function processNarration(text: string): string {
     // De-obfuscate words like [â-m-đ-ạ-o] back to 'âm đạo'
     let processedText = text.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
     
+    // Normalize smart quotes to straight quotes BEFORE stripping tags
+    processedText = processedText.replace(/[“”]/g, '"');
+
     // Strip tags inside <thought> tags to prevent rendering issues
     processedText = processedText.replace(/<thought>(.*?)<\/thought>/gs, (match, innerContent) => {
         const strippedInnerContent = innerContent.replace(/<\/?(entity|important|status|exp)>/g, '');
@@ -121,7 +124,7 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
                 }
                 
                 if (safetySettings.enabled) {
-                    throw new Error(`Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài đặt để tạo nội dung tự do hơn. (${blockDetails})`);
+                    throw new Error(`Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài Đặt để tạo nội dung tự do hơn. (${blockDetails})`);
                 } else {
                     throw new Error(`Phản hồi từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. Điều này có thể xảy ra với nội dung cực kỳ nhạy cảm. Vui lòng điều chỉnh lại hành động. (${blockDetails})`);
                 }
@@ -1137,9 +1140,11 @@ QUY TẮC BẮT BUỘC:
     - **Vật phẩm & Kỹ năng:** Bọc tên của các vật phẩm, vũ khí, kỹ năng hoặc các khái niệm quan trọng trong thẻ <important>. Ví dụ: "Bạn rút <important>Thanh Cổ Kiếm</important> ra và vận dụng chiêu thức <important>Nhất Kiếm Đoạn Hồn</important>." Thẻ này sẽ được hiển thị màu vàng.
     - **Trạng thái:** Khi một trạng thái được áp dụng hoặc đề cập, hãy bọc TÊN CHÍNH XÁC của trạng thái đó (giống với tên trong 'updatedPlayerStatus') trong thẻ <status>. Ví dụ: 'Hắn cảm thấy cơ thể lạnh buốt, một dấu hiệu của việc <status>Trúng Độc</status>.' Thẻ này sẽ được hiển thị màu xanh lam (cyan) và có thể tương tác.
 8.5. **TÊN NHÂN VẬT CHÍNH:** TUYỆT ĐỐI KHÔNG bọc tên của nhân vật chính trong bất kỳ thẻ nào (<entity>, <important>, etc.). Tên của họ phải luôn là văn bản thuần túy.
-8.6. **KHÔNG DÙNG THẺ TRONG HỘI THOẠI/SUY NGHĨ:** TUYỆT ĐỐI không sử dụng bất kỳ thẻ nào (<entity>, <important>, v.v.) bên trong các đoạn hội thoại (văn bản trong ngoặc kép "") hoặc suy nghĩ nội tâm (<thought>). Gợi ý hành động cũng không được chứa các thẻ này.
-    - **VÍ DỤ SAI:** Hắn nói, "Chào ngươi, <entity>Lý Tiêu遙</entity>."
-    - **VÍ DỤ ĐÚNG:** Hắn nói, "Chào ngươi, Lý Tiêu遙."
+8.6. **GIAO THỨC ĐỊNH DẠNG HỘI THOẠI TUYỆT ĐỐI (QUAN TRỌNG NHẤT):**
+    a. **QUY TẮC DẤU NGOẶC KÉP:** Chỉ được dùng dấu ngoặc kép thẳng \`"\` cho lời thoại. TUYỆT ĐỐI CẤM dùng dấu ngoặc cong \`“\` và \`”\`.
+    b. **QUY TẮC "SẠCH":** Nội dung bên trong dấu ngoặc kép \`"\` và thẻ \`<thought>\` phải là **VĂN BẢN THUẦN TÚY**. TUYỆT ĐỐI CẤM đặt bất kỳ thẻ nào (<entity>, <important>, etc.) vào bên trong.
+       - **VÍ DỤ SAI (Gây lỗi):** "Ngươi dám đụng vào <entity>Alvida</entity> sao?"
+       - **VÍ DỤ ĐÚNG (Chuẩn):** "Ngươi dám đụng vào Alvida sao?"
 8.7. **NHẬN DIỆN THỰC THỂ NHẤT QUÁN (TỐI QUAN TRỌNG):** Khi bạn đề cập đến một thực thể đã tồn tại trong "Bách Khoa Toàn Thư", bạn BẮT BUỘC phải sử dụng lại TÊN CHÍNH XÁC của thực thể đó (bao gồm cả cách viết hoa) và bọc nó trong thẻ. Ví dụ: Nếu Bách Khoa có một nhân vật tên là "Monkey D. Luffy", khi bạn kể chuyện về anh ta, hãy luôn viết là "<entity>Monkey D. Luffy</entity>", TUYỆT ĐỐI KHÔNG viết là "<entity>luffy</entity>" hay "<entity>Luffy</entity>". Sự nhất quán này là tối quan trọng để hệ thống có thể nhận diện và hiển thị thông tin chính xác.
 9.  **XƯNG HÔ NHẤT QUÁN (TỐI QUAN TRỌNG):**
     a.  **Thiết lập & Ghi nhớ:** Ngay từ đầu, hãy dựa vào bối cảnh và mối quan hệ để quyết định cách xưng hô (ví dụ: tôi-cậu, ta-ngươi, anh-em...). Bạn PHẢI ghi nhớ và duy trì cách xưng hô này cho tất cả các nhân vật trong suốt câu chuyện.

@@ -1,11 +1,12 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import * as aiService from '../services/aiService';
 import { saveTextToFile } from '../services/fileService';
 import * as fandomFileService from '../services/fandomFileService';
-import { FandomFile } from '../services/fandomFileService';
+import { FandomFile } from '../types';
 import NotificationModal from './common/NotificationModal';
 import FandomFileLoadModal from './FandomFileLoadModal';
 
@@ -44,8 +45,8 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
   const [arcProcessingProgress, setArcProcessingProgress] = useState({ current: 0, total: 0, status: 'idle' as 'idle' | 'extracting_arcs' | 'summarizing' | 'done', currentArcName: '' });
 
 
-  const refreshSavedFiles = () => {
-    setSavedFiles(fandomFileService.getAllFandomFiles());
+  const refreshSavedFiles = async () => {
+    setSavedFiles(await fandomFileService.getAllFandomFiles());
   };
 
   useEffect(() => {
@@ -154,8 +155,8 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
             
             const jsonContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
             const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.json`;
-            fandomFileService.saveFandomFile(fileName, JSON.stringify(jsonContent, null, 2));
-            refreshSavedFiles();
+            await fandomFileService.saveFandomFile(fileName, JSON.stringify(jsonContent, null, 2));
+            await refreshSavedFiles();
         }
 
         setArcProcessingProgress({ current: arcsToProcess.length, total: arcsToProcess.length, status: 'done', currentArcName: '' });
@@ -187,22 +188,22 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
   };
 
 
-  const handleSaveToBrowser = () => {
+  const handleSaveToBrowser = async () => {
     if (!generatedResult) return;
-    fandomFileService.saveFandomFile(generatedResult.name, generatedResult.content);
+    await fandomFileService.saveFandomFile(generatedResult.name, generatedResult.content);
     setNotification({ isOpen: true, title: 'Đã lưu!', messages: [`Đã lưu "${generatedResult.name}" vào kho lưu trữ của trình duyệt.`] });
     setGeneratedResult(null);
-    refreshSavedFiles();
+    await refreshSavedFiles();
   };
 
   const handleDownload = (name: string, content: string) => {
     saveTextToFile(content, name);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (confirm('Bạn có chắc muốn xóa tệp này khỏi kho lưu trữ?')) {
-      fandomFileService.deleteFandomFile(id);
-      refreshSavedFiles();
+      await fandomFileService.deleteFandomFile(id);
+      await refreshSavedFiles();
     }
   };
 
@@ -211,12 +212,12 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
     setNewFileName(file.name);
   };
 
-  const handleConfirmRename = () => {
+  const handleConfirmRename = async () => {
     if (renamingFileId && newFileName.trim()) {
-      fandomFileService.renameFandomFile(renamingFileId, newFileName.trim());
+      await fandomFileService.renameFandomFile(renamingFileId, newFileName.trim());
       setRenamingFileId(null);
       setNewFileName('');
-      refreshSavedFiles();
+      await refreshSavedFiles();
     }
   };
 
@@ -225,12 +226,11 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
     if (!files || files.length === 0) return;
 
     try {
-        // FIX: Iterate directly over the FileList to ensure correct typing.
         for (const file of files) {
             const content = await file.text();
-            fandomFileService.saveFandomFile(file.name, content);
+            await fandomFileService.saveFandomFile(file.name, content);
         }
-        refreshSavedFiles();
+        await refreshSavedFiles();
         setNotification({ 
             isOpen: true, 
             title: 'Thành công!', 

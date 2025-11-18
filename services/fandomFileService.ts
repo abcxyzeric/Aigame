@@ -1,59 +1,51 @@
+import { FandomFile } from '../types';
+import * as dbService from './dbService';
 
-export interface FandomFile {
-  id: number; // Date.now()
-  name: string;
-  content: string;
-  date: string; // ISO String
-}
-
-const STORAGE_KEY = 'ai_rpg_fandom_files';
-
-export const getAllFandomFiles = (): FandomFile[] => {
+export const getAllFandomFiles = async (): Promise<FandomFile[]> => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    return await dbService.getAllFandomFiles();
   } catch (e) {
-    console.error("Error loading fandom files:", e);
+    console.error("Error loading fandom files from DB:", e);
     return [];
   }
 };
 
-export const saveFandomFile = (name: string, content: string): void => {
+export const saveFandomFile = async (name: string, content: string): Promise<void> => {
   try {
-    const files = getAllFandomFiles();
     const newFile: FandomFile = {
       id: Date.now(),
       name,
       content,
       date: new Date().toISOString(),
     };
-    // Add new file to the beginning of the array
-    const updatedFiles = [newFile, ...files];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedFiles));
+    await dbService.addFandomFile(newFile);
   } catch (e) {
-    console.error("Error saving fandom file:", e);
+    console.error("Error saving fandom file to DB:", e);
+    throw new Error('Không thể lưu tệp vào cơ sở dữ liệu trình duyệt.');
   }
 };
 
-export const deleteFandomFile = (id: number): void => {
+export const deleteFandomFile = async (id: number): Promise<void> => {
    try {
-    let files = getAllFandomFiles();
-    files = files.filter(file => file.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+    await dbService.deleteFandomFile(id);
   } catch (e) {
-    console.error("Error deleting fandom file:", e);
+    console.error("Error deleting fandom file from DB:", e);
+    throw new Error('Không thể xóa tệp khỏi cơ sở dữ liệu.');
   }
 };
 
-export const renameFandomFile = (id: number, newName: string): void => {
+export const renameFandomFile = async (id: number, newName: string): Promise<void> => {
   try {
-    let files = getAllFandomFiles();
-    const fileIndex = files.findIndex(file => file.id === id);
-    if (fileIndex > -1) {
-      files[fileIndex].name = newName;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
+    const files = await dbService.getAllFandomFiles();
+    const fileToUpdate = files.find(file => file.id === id);
+    if (fileToUpdate) {
+      fileToUpdate.name = newName;
+      await dbService.addFandomFile(fileToUpdate); // `put` operation will update the existing entry
+    } else {
+      throw new Error('Không tìm thấy tệp để đổi tên.');
     }
   } catch (e) {
-    console.error("Error renaming fandom file:", e);
+    console.error("Error renaming fandom file in DB:", e);
+    throw new Error('Không thể đổi tên tệp.');
   }
 };
