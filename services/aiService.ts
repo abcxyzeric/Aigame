@@ -559,7 +559,7 @@ QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
         maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget
+        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
     };
     const result = await generateJson<any>(prompt, fandomGenesisSchema, "Bạn là một chuyên gia phân tích văn học.", 'gemini-2.5-pro', creativeCallConfig);
     if (result.arc_name === 'ARC_NOT_FOUND') {
@@ -663,7 +663,8 @@ YÊU CẦU BẮT BUỘC:
   const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   const creativeCallConfig: Partial<AiPerformanceSettings> = {
       maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-      thinkingBudget: perfSettings.thinkingBudget
+      // FIX: Liên kết jsonBuffer với thinkingBudget để AI có thêm "ngân sách" suy nghĩ cho các tác vụ sáng tạo phức tạp, tránh việc trả lời lười biếng hoặc tóm tắt.
+      thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
   };
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
@@ -764,7 +765,8 @@ YÊU CẦU BẮT BUỘC:
   const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   const creativeCallConfig: Partial<AiPerformanceSettings> = {
       maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-      thinkingBudget: perfSettings.thinkingBudget
+      // FIX: Liên kết jsonBuffer với thinkingBudget để AI có thêm "ngân sách" suy nghĩ cho các tác vụ sáng tạo phức tạp, tránh việc trả lời lười biếng hoặc tóm tắt.
+      thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
   };
   return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
@@ -815,7 +817,8 @@ Trả về một đối tượng JSON tuân thủ schema đã cho.`;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
         maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget
+        // FIX: Liên kết jsonBuffer với thinkingBudget để AI có thêm "ngân sách" suy nghĩ cho các tác vụ sáng tạo phức tạp, tránh việc trả lời lười biếng hoặc tóm tắt.
+        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
     };
     return generateJson<InitialEntity>(prompt, schema, undefined, 'gemini-2.5-flash', creativeCallConfig);
 };
@@ -1363,7 +1366,8 @@ ${adultContentDirectives}
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
         maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget
+        // FIX: Liên kết jsonBuffer với thinkingBudget để AI có thêm "ngân sách" suy nghĩ cho các tác vụ sáng tạo phức tạp, tránh việc trả lời lười biếng hoặc tóm tắt.
+        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
     };
     return generateJson<StartGameResponse>(prompt, schema, systemInstruction, 'gemini-2.5-flash', creativeCallConfig);
 };
@@ -1484,67 +1488,171 @@ Chỉ trả về tên tệp chính xác. Nếu không có gì liên quan, trả 
     return buildBackgroundKnowledgePrompt(selectedKnowledgeFiles, hasDetailFiles);
 }
 
+// PHA 0: Tối ưu hóa Ngữ cảnh Động để chống overload
+interface RelevantEntities {
+    relevantNPCs: string[];
+    relevantItems: string[];
+    relevantQuests: string[];
+    relevantFactions: string[];
+    relevantCompanions: string[];
+    relevantSkills: string[];
+    relevantPlayerStatus: string[];
+}
+
+async function getRelevantContextEntities(gameState: GameState, playerAction: string): Promise<RelevantEntities> {
+    const { inventory, playerStatus, companions, quests, encounteredNPCs, encounteredFactions, character } = gameState;
+
+    // Create a lightweight manifest of entity names
+    const manifest: { [key: string]: string[] } = {
+        availableNPCs: encounteredNPCs.map(e => e.name),
+        availableItems: inventory.map(e => e.name),
+        activeQuests: quests.filter(q => q.status !== 'hoàn thành').map(e => e.name),
+        availableFactions: encounteredFactions.map(e => e.name),
+        availableCompanions: companions.map(e => e.name),
+        characterSkills: character.skills.map(e => e.name),
+        currentPlayerStatus: playerStatus.map(e => e.name),
+    };
+    
+    // Remove empty lists to save tokens
+    for (const key in manifest) {
+        if (Array.isArray(manifest[key]) && manifest[key].length === 0) {
+            delete manifest[key];
+        }
+    }
+    
+    if (Object.keys(manifest).length === 0) {
+        return { relevantNPCs: [], relevantItems: [], relevantQuests: [], relevantFactions: [], relevantCompanions: [], relevantSkills: [], relevantPlayerStatus: [] };
+    }
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            relevantNPCs: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantItems: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantQuests: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantFactions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantCompanions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+            relevantPlayerStatus: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+    };
+
+    const systemInstruction = `You are a highly efficient Context Analyzer AI. Your sole job is to identify which entities from a provided manifest are relevant to a player's action.`;
+    
+    const prompt = `
+--- PLAYER ACTION ---
+"${playerAction}"
+
+--- AVAILABLE ENTITIES (BY NAME) ---
+${JSON.stringify(manifest, null, 2)}
+
+--- TASK ---
+Based *only* on the player's action, identify which of the available entities are directly mentioned or clearly implied.
+- Be strict. Only include an entity if it's highly relevant.
+- Match the names exactly as they appear in the manifest.
+- If no entities from a category are relevant, return an empty array for that category.
+- Return a JSON object with the names of the relevant entities.
+`;
+
+    try {
+        // Using a smaller, faster config for this analytical task.
+        const smallAnalyticalConfig: Partial<AiPerformanceSettings> = { maxOutputTokens: 2048, thinkingBudget: 200 };
+        const result = await generateJson<Partial<RelevantEntities>>(prompt, schema, systemInstruction, 'gemini-2.5-flash', smallAnalyticalConfig);
+        
+        // Ensure all keys exist even if AI omits them
+        return {
+            relevantNPCs: result.relevantNPCs || [],
+            relevantItems: result.relevantItems || [],
+            relevantQuests: result.relevantQuests || [],
+            relevantFactions: result.relevantFactions || [],
+            relevantCompanions: result.relevantCompanions || [],
+            relevantSkills: result.relevantSkills || [],
+            relevantPlayerStatus: result.relevantPlayerStatus || [],
+        };
+
+    } catch (error) {
+        console.error("Error in getRelevantContextEntities (Phase 0). Returning empty context.", error);
+        // Fallback to an empty context to prevent crashing the main call. This is safer than the old fallback.
+        return { relevantNPCs: [], relevantItems: [], relevantQuests: [], relevantFactions: [], relevantCompanions: [], relevantSkills: [], relevantPlayerStatus: [] };
+    }
+}
+
+
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
     const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers, character } = gameState;
     const { ragSettings, aiPerformanceSettings } = getSettings();
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
-    // 1. Auto-summarization
-    let newSummary: string | undefined = undefined;
-    const narrationTurnsCount = history.filter(t => t.type === 'narration').length;
-    const shouldSummarize = narrationTurnsCount > 0 && narrationTurnsCount % ragSettings.summaryFrequency === 0;
-
-    if (shouldSummarize) {
-        // Find the index to start summarizing from
-        const lastSummaryTurnIndex = history.length - (ragSettings.summaryFrequency * 2); // Each turn is action + narration
-        const turnsToSummarize = history.slice(lastSummaryTurnIndex > 0 ? lastSummaryTurnIndex : 0);
-        newSummary = await generateSummary(turnsToSummarize);
-    }
-    
-    // 2. RAG step for memories
-    let relevantMemories = '';
-    const combinedMemories = [...memories, ...summaries];
-    if (combinedMemories.length > 0) {
-        const lastPlayerAction = history[history.length - 1];
-        let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
-        
-        if (ragSettings.summarizeBeforeRag) {
-            ragQuery = await generateSummary(history.slice(-4));
-        }
-        
-        relevantMemories = await retrieveRelevantSummaries(ragQuery, combinedMemories, ragSettings.topK);
-    }
-
-    // 2.5. RAG for Background Knowledge
-    let relevantKnowledge = '';
-    if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
-        const lastPlayerActionForQuery = history[history.length - 1];
-        let ragQuery = `Hành động của người chơi: ${lastPlayerActionForQuery.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
-        
-        if (ragSettings.summarizeBeforeRag) {
-            ragQuery = await generateSummary(history.slice(-4));
-        }
-        
-        // Select up to 3 most relevant detail files + all summary files
-        relevantKnowledge = await retrieveRelevantKnowledge(ragQuery, worldConfig.backgroundKnowledge, 3);
-    }
-    
-    const systemInstruction = getGameMasterSystemInstruction(worldConfig);
-    const adultContentDirectives = getAdultContentDirectives(worldConfig);
-
     const lastPlayerAction = history[history.length - 1];
     if (!lastPlayerAction || lastPlayerAction.type !== 'action') {
         throw new Error("Lỗi logic: Lượt đi cuối cùng phải là hành động của người chơi.");
     }
     
+    // --- PHA 0: CHỌN LỌC NGỮ CẢNH ĐỘNG ---
+    const relevantEntityNames = await getRelevantContextEntities(gameState, lastPlayerAction.content);
+    const dynamicContext: { [key: string]: any[] } = {
+        playerStatus: playerStatus.filter(s => relevantEntityNames.relevantPlayerStatus.includes(s.name)),
+        inventory: inventory.filter(i => relevantEntityNames.relevantItems.includes(i.name)),
+        companions: companions.filter(c => relevantEntityNames.relevantCompanions.includes(c.name)),
+        quests: quests.filter(q => relevantEntityNames.relevantQuests.includes(q.name)),
+        encounteredNPCs: encounteredNPCs.filter(n => relevantEntityNames.relevantNPCs.includes(n.name)),
+        encounteredFactions: encounteredFactions.filter(f => relevantEntityNames.relevantFactions.includes(f.name)),
+        relevantSkills: character.skills.filter(s => relevantEntityNames.relevantSkills.includes(s.name)),
+    };
+    Object.keys(dynamicContext).forEach(key => {
+        if (Array.isArray(dynamicContext[key]) && dynamicContext[key].length === 0) {
+            delete dynamicContext[key];
+        }
+    });
+
+    // --- Tự động tóm tắt ---
+    let newSummary: string | undefined = undefined;
+    const narrationTurnsCount = history.filter(t => t.type === 'narration').length;
+    const shouldSummarize = narrationTurnsCount > 0 && narrationTurnsCount % ragSettings.summaryFrequency === 0;
+
+    if (shouldSummarize) {
+        const lastSummaryTurnIndex = history.length - (ragSettings.summaryFrequency * 2);
+        const turnsToSummarize = history.slice(lastSummaryTurnIndex > 0 ? lastSummaryTurnIndex : 0);
+        newSummary = await generateSummary(turnsToSummarize);
+    }
+    
+    // --- PHA 0.5: TRUY XUẤT TRÍ NHỚ (RAG) ---
+    // 1. RAG cho Ký ức Dài hạn (Ký ức Cốt lõi & Tóm tắt)
+    let relevantMemories = '';
+    const combinedMemories = [
+        ...memories.map(m => `[Ký ức cốt lõi]: ${m}`), 
+        ...summaries.map(s => `[Tóm tắt]: ${s}`)
+    ];
+    if (combinedMemories.length > 0) {
+        let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
+        if (ragSettings.summarizeBeforeRag) {
+            ragQuery = await generateSummary(history.slice(-4));
+        }
+        relevantMemories = await retrieveRelevantSummaries(ragQuery, combinedMemories, ragSettings.topK);
+    }
+
+    // 2. RAG cho Kiến thức Nền (được tăng cường bởi Pha 0)
+    let relevantKnowledge = '';
+    if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
+        const relevantEntitiesString = Object.values(relevantEntityNames).flat().join(', ');
+        let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
+        if (relevantEntitiesString) {
+            ragQuery += `\nCác thực thể liên quan: ${relevantEntitiesString}`;
+        }
+        if (ragSettings.summarizeBeforeRag) {
+            ragQuery = await generateSummary(history.slice(-4));
+        }
+        relevantKnowledge = await retrieveRelevantKnowledge(ragQuery, worldConfig.backgroundKnowledge, 3);
+    }
+    
+    // --- PHA 1: SÁNG TẠO CỐT TRUYỆN ---
+    const systemInstruction = getGameMasterSystemInstruction(worldConfig);
+    const adultContentDirectives = getAdultContentDirectives(worldConfig);
     const lastNarrationTurn = history.length > 1 ? history[history.length - 2] : null;
     const previousNarration = (lastNarrationTurn && lastNarrationTurn.type === 'narration') 
         ? lastNarrationTurn.content.replace(/<[^>]*>/g, '') 
         : "Cuộc phiêu lưu vừa bắt đầu.";
-
-    const contextHistory = history.slice(0, -1); 
-    const recentHistoryForPrompt = contextHistory.slice(-4).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
-    
+    const recentHistoryForPrompt = history.slice(0, -1).slice(-4).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
     const playerActionContent = (!worldConfig.allowAdultContent || getSettings().safetySettings.enabled)
         ? lastPlayerAction.content
         : obfuscateText(lastPlayerAction.content);
@@ -1555,39 +1663,30 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
             risk: { type: Type.STRING }, reward: { type: Type.STRING }
         }, required: ['description', 'successRate', 'risk', 'reward']
     };
-
     const schema = {
         type: Type.OBJECT, properties: {
             narration: { type: Type.STRING },
             suggestions: { type: Type.ARRAY, items: suggestionSchema },
         }, required: ['narration', 'suggestions']
     };
-
     const lengthDirective = getResponseLengthDirective(worldConfig.aiResponseLength);
     
     const prompt = `Bạn là một Quản trò (Game Master) tài ba, một người kể chuyện bậc thầy. Nhiệm vụ của bạn là tiếp tục câu chuyện dựa trên hành động mới nhất của người chơi.
 
---- BỐI CẢNH TOÀN DIỆN (Trạng thái hiện tại) ---
+--- THÔNG TIN CỐT LÕI (Luôn có) ---
 ${JSON.stringify({
-    worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength, enableStatsSystem: worldConfig.enableStatsSystem },
-    character: character,
+    worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
+    character: { name: character.name, gender: character.gender, bio: character.bio, motivation: character.motivation, personality: character.personality === 'Tuỳ chỉnh' ? character.customPersonality : character.personality, stats: character.stats },
     worldTime: worldTime,
     reputation: { ...reputation, reputationTiers },
-    playerStatus,
-    inventory,
-    companions,
-    quests,
-    encyclopedia: {
-        encounteredNPCs: encounteredNPCs.slice(-10), // Limit context size
-        encounteredFactions: encounteredFactions.slice(-5),
-    }
 }, null, 2)}
-${relevantKnowledge}
---- Ký ức cốt lõi (Sự kiện quan trọng nhất đã xảy ra) ---
-${memories.join('\n- ')}
 
---- Tóm tắt các giai đoạn trước (Bối cảnh gần đây) ---
-${relevantMemories}
+--- BỐI CẢNH TÌNH HUỐNG (Các thực thể & kiến thức liên quan trực tiếp) ---
+${Object.keys(dynamicContext).length > 0 ? JSON.stringify(dynamicContext, null, 2) : "Không có thực thể động nào liên quan trực tiếp đến hành động này."}
+${relevantKnowledge}
+
+--- Ký ức Dài hạn (Các sự kiện & tóm tắt liên quan nhất) ---
+${relevantMemories || "Chưa có ký ức dài hạn nào liên quan."}
 
 --- Diễn biến gần đây nhất (Bối cảnh ngắn hạn - BẮT BUỘC ĐỌC KỸ) ---
 ${recentHistoryForPrompt}
@@ -1614,7 +1713,7 @@ ${adultContentDirectives}
 
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
         maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget
+        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
     };
 
     const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction, 'gemini-2.5-flash', creativeCallConfig);
