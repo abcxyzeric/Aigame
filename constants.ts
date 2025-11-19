@@ -114,4 +114,5 @@ export const DEFAULT_RAG_SETTINGS: RagSettings = {
 export const DEFAULT_AI_PERFORMANCE_SETTINGS: AiPerformanceSettings = {
   maxOutputTokens: 8000,
   thinkingBudget: 1200,
+  jsonBuffer: 1024,
 };

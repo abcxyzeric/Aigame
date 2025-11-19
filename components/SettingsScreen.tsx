@@ -389,6 +389,32 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             />
             <p className="text-xs text-slate-500 mt-1">Cung cấp cho AI "ngân sách suy nghĩ" lớn hơn để xử lý các yêu-cầu-phức-tạp, giúp diễn biến linh-hoạt hơn. Mặc định: 1200.</p>
           </div>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+                <label htmlFor="json-buffer-input" className="block text-sm font-medium text-slate-300">Độ dài Bổ sung cho JSON (jsonBuffer)</label>
+                 <input
+                  type="number"
+                  id="json-buffer-input"
+                  value={settings.aiPerformanceSettings.jsonBuffer}
+                  onChange={(e) => handleAiPerformanceSettingChange('jsonBuffer', e.target.value)}
+                  className="w-24 bg-slate-900 border border-slate-600 rounded-md px-2 py-1 text-sm text-center"
+                  min="0"
+                  max="8192"
+                  step="128"
+                />
+            </div>
+            <input
+              type="range"
+              id="json-buffer-slider"
+              value={settings.aiPerformanceSettings.jsonBuffer}
+              onChange={(e) => handleAiPerformanceSettingChange('jsonBuffer', e.target.value)}
+              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+              min="0"
+              max="8192"
+              step="128"
+            />
+            <p className="text-xs text-slate-500 mt-1">Thêm token dự phòng để đảm bảo AI có đủ không gian cho cấu trúc dữ liệu game (JSON), tránh lỗi. Giá trị này sẽ được cộng thêm vào giới hạn token cuối cùng khi gọi AI. Mặc định: 1024.</p>
+          </div>
         </div>
       </Accordion>
 

@@ -89,11 +89,12 @@ function processNarration(text: string): string {
 
 
 async function generate(prompt: string, systemInstruction?: string): Promise<string> {
-    const { safetySettings, aiPerformanceSettings } = getSettings();
+    const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
-    const MAX_RETRIES = 3;
+    const keys = apiKeyConfig.keys.filter(Boolean);
+    const MAX_RETRIES = Math.max(keys.length, 3); // At least 3 retries, but enough to cycle all keys.
     let lastError: Error | null = null;
   
     for (let i = 0; i < MAX_RETRIES; i++) {
@@ -158,11 +159,12 @@ async function generate(prompt: string, systemInstruction?: string): Promise<str
 }
 
 async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>): Promise<T> {
-    const { safetySettings, aiPerformanceSettings } = getSettings();
+    const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   
-    const MAX_RETRIES = 3;
+    const keys = apiKeyConfig.keys.filter(Boolean);
+    const MAX_RETRIES = Math.max(keys.length, 3); // At least 3 retries, but enough to cycle all keys.
     let lastError: Error | null = null;
   
     for (let i = 0; i < MAX_RETRIES; i++) {
@@ -553,7 +555,13 @@ QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
 5.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một đối tượng JSON với trường "arc_name" chứa chuỗi "ARC_NOT_FOUND".
 `;
 
-    const result = await generateJson<any>(prompt, fandomGenesisSchema, "Bạn là một chuyên gia phân tích văn học.", 'gemini-2.5-pro');
+    const { aiPerformanceSettings } = getSettings();
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    const creativeCallConfig: Partial<AiPerformanceSettings> = {
+        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+        thinkingBudget: perfSettings.thinkingBudget
+    };
+    const result = await generateJson<any>(prompt, fandomGenesisSchema, "Bạn là một chuyên gia phân tích văn học.", 'gemini-2.5-pro', creativeCallConfig);
     if (result.arc_name === 'ARC_NOT_FOUND') {
         throw new Error(`Không tìm thấy thông tin về Arc "${arcName}" trong bản tóm tắt được cung cấp.`);
     }
@@ -651,7 +659,13 @@ YÊU CẦU BẮT BUỘC:
 6.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại (VD: 'Linh Lực' cho tiên hiệp, 'Năng Lượng' cho sci-fi).
 7.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
 8.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
-  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
+  const { aiPerformanceSettings } = getSettings();
+  const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+  const creativeCallConfig: Partial<AiPerformanceSettings> = {
+      maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+      thinkingBudget: perfSettings.thinkingBudget
+  };
+  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
 export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
@@ -746,7 +760,13 @@ YÊU CẦU BẮT BUỘC:
 8.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
 9.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
     
-  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro');
+  const { aiPerformanceSettings } = getSettings();
+  const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+  const creativeCallConfig: Partial<AiPerformanceSettings> = {
+      maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+      thinkingBudget: perfSettings.thinkingBudget
+  };
+  return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
 export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: string): Promise<InitialEntity> => {
@@ -791,7 +811,13 @@ Sau khi đã xác định rõ mô tả và loại, hãy tạo ra các thông tin
 - Hãy tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng') để phân loại thực thể này.
 Trả về một đối tượng JSON tuân thủ schema đã cho.`;
 
-    return generateJson<InitialEntity>(prompt, schema);
+    const { aiPerformanceSettings } = getSettings();
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    const creativeCallConfig: Partial<AiPerformanceSettings> = {
+        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+        thinkingBudget: perfSettings.thinkingBudget
+    };
+    return generateJson<InitialEntity>(prompt, schema, undefined, 'gemini-2.5-flash', creativeCallConfig);
 };
 
 
@@ -1333,8 +1359,13 @@ ${adultContentDirectives}
 
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.
 `;
-// FIX: Added missing return statement.
-return generateJson<StartGameResponse>(prompt, schema, systemInstruction);
+    const { aiPerformanceSettings } = getSettings();
+    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    const creativeCallConfig: Partial<AiPerformanceSettings> = {
+        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+        thinkingBudget: perfSettings.thinkingBudget
+    };
+    return generateJson<StartGameResponse>(prompt, schema, systemInstruction, 'gemini-2.5-flash', creativeCallConfig);
 };
 
 export const generateReputationTiers = async (genre: string): Promise<string[]> => {
@@ -1403,6 +1434,56 @@ ${allSummaries.map((s, i) => `[Ký ức ${i+1}]: ${s}`).join('\n\n')}
     return (result.relevant_summaries || []).join('\n\n');
 }
 
+async function retrieveRelevantKnowledge(context: string, allKnowledge: {name: string, content: string}[], topK: number): Promise<string> {
+    if (!allKnowledge || allKnowledge.length === 0) return "";
+
+    const summaries = allKnowledge.filter(k => k.name.startsWith('tom_tat_'));
+    const detailFiles = allKnowledge.filter(k => !k.name.startsWith('tom_tat_'));
+    
+    let selectedKnowledgeFiles = [...summaries]; // Summaries are always included
+
+    if (detailFiles.length > 0) {
+        const schema = {
+            type: Type.OBJECT,
+            properties: {
+                relevant_files: {
+                    type: Type.ARRAY,
+                    description: `Một danh sách chứa tên của ${topK} (hoặc ít hơn) tệp kiến thức CHI TIẾT liên quan nhất từ 'Danh sách tệp' dựa trên 'Tình huống hiện tại'.`,
+                    items: { type: Type.STRING }
+                }
+            },
+            required: ['relevant_files']
+        };
+
+        const prompt = `Bạn là một hệ thống truy xuất thông tin thông minh (RAG). Dựa vào 'Tình huống hiện tại', hãy phân tích 'Danh sách tệp kiến thức chi tiết' và chọn ra ${topK} tệp có nội dung liên quan nhất để cung cấp bối cảnh cho AI dẫn truyện.
+
+## Tình huống hiện tại:
+${context}
+
+## Danh sách tệp kiến thức chi tiết (Chỉ chứa tên tệp):
+${detailFiles.map(f => `- ${f.name}`).join('\n')}
+
+Chỉ trả về tên tệp chính xác. Nếu không có gì liên quan, trả về mảng trống.`;
+        
+        try {
+            const result = await generateJson<{ relevant_files: string[] }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
+            if (result && result.relevant_files) {
+                const relevantFileNames = new Set(result.relevant_files);
+                const relevantDetailFiles = detailFiles.filter(f => relevantFileNames.has(f.name));
+                selectedKnowledgeFiles.push(...relevantDetailFiles);
+            }
+        } catch (error) {
+            console.error("Error retrieving relevant knowledge, using summaries only:", error);
+            // Fallback to using only summaries if AI call fails, which is already in selectedKnowledgeFiles
+        }
+    }
+    
+    if (selectedKnowledgeFiles.length === 0) return "";
+    
+    const hasDetailFiles = selectedKnowledgeFiles.some(f => !f.name.startsWith('tom_tat_'));
+    return buildBackgroundKnowledgePrompt(selectedKnowledgeFiles, hasDetailFiles);
+}
+
 export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse> => {
     const { worldConfig, history, playerStatus, inventory, summaries, memories, companions, quests, worldTime, reputation, encounteredNPCs, encounteredFactions, reputationTiers, character } = gameState;
     const { ragSettings, aiPerformanceSettings } = getSettings();
@@ -1420,7 +1501,7 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         newSummary = await generateSummary(turnsToSummarize);
     }
     
-    // 2. RAG step
+    // 2. RAG step for memories
     let relevantMemories = '';
     const combinedMemories = [...memories, ...summaries];
     if (combinedMemories.length > 0) {
@@ -1432,6 +1513,20 @@ export const getNextTurn = async (gameState: GameState): Promise<AiTurnResponse>
         }
         
         relevantMemories = await retrieveRelevantSummaries(ragQuery, combinedMemories, ragSettings.topK);
+    }
+
+    // 2.5. RAG for Background Knowledge
+    let relevantKnowledge = '';
+    if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
+        const lastPlayerActionForQuery = history[history.length - 1];
+        let ragQuery = `Hành động của người chơi: ${lastPlayerActionForQuery.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
+        
+        if (ragSettings.summarizeBeforeRag) {
+            ragQuery = await generateSummary(history.slice(-4));
+        }
+        
+        // Select up to 3 most relevant detail files + all summary files
+        relevantKnowledge = await retrieveRelevantKnowledge(ragQuery, worldConfig.backgroundKnowledge, 3);
     }
     
     const systemInstruction = getGameMasterSystemInstruction(worldConfig);
@@ -1487,7 +1582,7 @@ ${JSON.stringify({
         encounteredFactions: encounteredFactions.slice(-5),
     }
 }, null, 2)}
-
+${relevantKnowledge}
 --- Ký ức cốt lõi (Sự kiện quan trọng nhất đã xảy ra) ---
 ${memories.join('\n- ')}
 
@@ -1518,8 +1613,8 @@ ${adultContentDirectives}
 **OUTPUT:** Trả về MỘT đối tượng JSON duy nhất tuân thủ nghiêm ngặt schema đã cho.`;
 
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
-        maxOutputTokens: 8192, // Use absolute max for story length
-        thinkingBudget: perfSettings.thinkingBudget // Keep user-defined thinking budget
+        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
+        thinkingBudget: perfSettings.thinkingBudget
     };
 
     const response = await generateJson<AiTurnResponse>(prompt, schema, systemInstruction, 'gemini-2.5-flash', creativeCallConfig);

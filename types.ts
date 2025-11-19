@@ -99,6 +99,7 @@ export interface RagSettings {
 export interface AiPerformanceSettings {
   maxOutputTokens: number;
   thinkingBudget: number;
+  jsonBuffer: number;
 }
 
 export interface AppSettings {

@@ -14,6 +14,13 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.4.3 (Nâng Cấp Hệ Thống & Sửa Lỗi)",
+      notes: [
+        "**Cải thiện Xoay Vòng API Key:** Hệ thống giờ đây sẽ tự động chuyển sang API key tiếp theo trong danh sách nếu key hiện tại gặp lỗi (hết hạn mức, lỗi 429), đảm bảo trải nghiệm liền mạch cho người dùng có nhiều key.",
+        "**Trợ lý RAG thông minh cho Kiến thức nền:** Tích hợp một AI phụ chạy ngầm để phân tích và chỉ chọn lọc những kiến thức nền liên quan nhất đến tình huống hiện tại trước khi gửi cho AI dẫn truyện. Giúp câu chuyện bám sát nguyên tác hơn mà vẫn tối ưu, không bị quá tải token.",
+      ]
+    },
+    {
       version: "1.4.2 (Tinh Chỉnh & Sửa Lỗi)",
       notes: [
         "**Tinh chỉnh Hệ Thống Chỉ Số:** Cải thiện logic xử lý chỉ số trong màn hình kiến tạo, ngăn chặn việc nhập giá trị hiện tại lớn hơn giá trị tối đa và tự động điều chỉnh khi cần, đảm bảo dữ liệu luôn hợp lệ.",
