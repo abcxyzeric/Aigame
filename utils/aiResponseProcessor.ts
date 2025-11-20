@@ -75,14 +75,16 @@ export interface ParsedAiResponse {
 
 
 export function parseAiResponse(rawText: string): ParsedAiResponse {
-    const separator = '[NARRATION_END]';
-    const separatorIndex = rawText.indexOf(separator);
+    const separatorRegex = /(\[NARRATION_END\]|NARRATION_END)/;
+    const separatorMatch = rawText.match(separatorRegex);
+    const separatorIndex = separatorMatch ? separatorMatch.index : -1;
+    const separatorLength = separatorMatch ? (separatorMatch[0]?.length || 0) : 0;
 
     const narration = separatorIndex === -1 
         ? processNarration(rawText)
         : processNarration(rawText.substring(0, separatorIndex).trim());
         
-    const tagsPart = separatorIndex === -1 ? '' : rawText.substring(separatorIndex + separator.length).trim();
+    const tagsPart = separatorIndex === -1 ? '' : rawText.substring(separatorIndex + separatorLength).trim();
 
     const response: ParsedAiResponse = {
         narration,
@@ -99,14 +101,22 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         newMemories: [],
     };
 
-    const tagRegex = /\[(\w+):\s*([\s\S]+?)\s*\]/g;
+    const tagRegex = /^\s*\[?(\w+):\s*([\s\S]+?)(?=\s*\[?\w+:\s*|$)/gm;
     let match;
 
     while ((match = tagRegex.exec(tagsPart)) !== null) {
         const tagName = match[1];
-        const content = match[2];
+        let content = match[2].trim();
+
+        if (content.endsWith(',') || content.endsWith(']')) {
+             content = content.slice(0, -1).trim();
+        }
 
         try {
+            if (tagName === 'REPUTATION_TIERS' && !content.startsWith('[')) {
+                content = `[${content}]`;
+            }
+
             if (tagName === 'MEMORY_ADD' || tagName === 'SUMMARY_ADD') {
                  const stringContent = JSON.parse(content); 
                  if (tagName === 'MEMORY_ADD') {
