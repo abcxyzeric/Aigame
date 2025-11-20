@@ -135,7 +135,7 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         }
   
         const rawText = response.text.trim();
-        return processNarration(rawText); // Success!
+        return rawText; // Success! Return raw text without processing.
   
       } catch (error) {
         console.error(`Error in generate attempt ${i + 1}:`, error);

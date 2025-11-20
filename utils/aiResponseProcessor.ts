@@ -75,45 +75,58 @@ export interface ParsedAiResponse {
     initialStats?: CharacterStat[];
 }
 
-function parseKeyValue(content: string): Record<string, any> {
+/**
+ * A robust key-value parser that can handle unquoted, single-quoted, and double-quoted values.
+ * It's designed to be resilient to common AI formatting errors.
+ */
+function robustParseKeyValue(content: string): Record<string, any> {
     const result: Record<string, any> = {};
-    // Handles key="string", key=123, key=true, key=false
-    const regex = /(\w+)\s*=\s*(?:"([^"]*)"|([\d.-]+)|(true|false))/g;
+    const regex = /(\w+)\s*=\s*("([^"]*)"|'([^']*)'|([^,\]\n]+))/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
         const key = match[1];
-        const stringValue = match[2];
-        const numberValue = match[3];
-        const boolValue = match[4];
+        let valueStr: string = (match[3] ?? match[4] ?? match[5] ?? '').trim();
+        let value: string | number | boolean = valueStr;
 
-        if (stringValue !== undefined) {
-            result[key] = stringValue;
-        } else if (numberValue !== undefined) {
-            result[key] = Number(numberValue);
-        } else if (boolValue !== undefined) {
-            result[key] = boolValue === 'true';
+        if (valueStr.match(/^-?\d+(\.\d+)?$/) && valueStr.trim() !== '') {
+            value = Number(valueStr);
+        } else if (valueStr.toLowerCase() === 'true') {
+            value = true;
+        } else if (valueStr.toLowerCase() === 'false') {
+            value = false;
         }
+        result[key] = value;
     }
     return result;
 }
 
 
 export function parseAiResponse(rawText: string): ParsedAiResponse {
-    let narration = '';
+    let rawNarration = '';
     let tagsPart = '';
     
     const separatorRegex = /(\[NARRATION_END\]|NARRATION_END)/i;
     const separatorMatch = rawText.match(separatorRegex);
 
     if (separatorMatch && typeof separatorMatch.index === 'number') {
-        narration = processNarration(rawText.substring(0, separatorMatch.index).trim());
+        rawNarration = rawText.substring(0, separatorMatch.index).trim();
         tagsPart = rawText.substring(separatorMatch.index + separatorMatch[0].length).trim();
     } else {
-        // Fallback if separator is missing
-        narration = processNarration(rawText);
-        tagsPart = '';
-        console.warn("NARRATION_END separator not found in AI response.");
+        // Fallback if separator is missing: find the first potential tag and split there
+        const firstTagMatch = rawText.match(/\n\s*\[?\w+:/);
+        if (firstTagMatch && typeof firstTagMatch.index === 'number') {
+            console.warn("NARRATION_END separator not found. Splitting at the first detected tag.");
+            rawNarration = rawText.substring(0, firstTagMatch.index).trim();
+            tagsPart = rawText.substring(firstTagMatch.index).trim();
+        } else {
+            console.warn("NARRATION_END separator and any tags not found in AI response. Treating whole response as narration.");
+            rawNarration = rawText;
+            tagsPart = '';
+        }
     }
+
+    // Process narration AFTER splitting it from the tags part
+    const narration = processNarration(rawNarration);
 
     const response: ParsedAiResponse = {
         narration,
@@ -140,11 +153,14 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         const content = match[2].trim();
 
         try {
-            const data = parseKeyValue(content);
+            const data = robustParseKeyValue(content);
             switch (tagName) {
                 case 'SUGGESTION':
-                    if (data.description && data.successRate && data.risk && data.reward) {
-                        response.suggestions.push(data as ActionSuggestion);
+                    if (data.description && data.successRate !== undefined && data.risk && data.reward) {
+                        data.successRate = Number(data.successRate);
+                        if (!isNaN(data.successRate)) {
+                            response.suggestions.push(data as ActionSuggestion);
+                        }
                     }
                     break;
                 case 'PLAYER_STATS_UPDATE':

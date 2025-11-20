@@ -11,6 +11,12 @@ Sau thẻ đó, bạn PHẢI liệt kê TOÀN BỘ các thay đổi về dữ li
 Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách bởi dấu phẩy. Chuỗi phải được đặt trong dấu ngoặc kép. Số và boolean có thể viết trực tiếp.
 Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<entity>, <important>...).
 
+**LƯU Ý CÚ PHÁP (CỰC KỲ QUAN TRỌNG):**
+- Luôn dùng dấu ngoặc kép \`"\` cho tất cả các giá trị chuỗi (string values).
+- TUYỆT ĐỐI không thêm dấu phẩy (,) vào sau cặp key-value cuối cùng trong một thẻ.
+- Ví dụ ĐÚNG: \`[ITEM_ADD: name="Kiếm Sắt", quantity=1, description="Một thanh kiếm bình thường."]\`
+- Ví dụ SAI: \`[ITEM_ADD: name='Kiếm Sắt', quantity=1, description="Một thanh kiếm bình thường.",]\` (Sai dấu ngoặc đơn và có dấu phẩy thừa)
+
 **--- CÁC THẺ CHÍNH ---**
 [SUGGESTION: description="Một hành động gợi ý", successRate=80, risk="Mô tả rủi ro", reward="Mô tả phần thưởng"] (BẮT BUỘC có 4 thẻ này)
 [TIME_PASSED: years=0, months=0, days=0, hours=1, minutes=30] (BẮT BUỘC có thẻ này trong MỌI lượt)

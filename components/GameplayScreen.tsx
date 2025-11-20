@@ -276,7 +276,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             const finalState = JSON.parse(JSON.stringify(newStateWithNarration)); // Deep copy for safety
 
             // Apply all other updates from the parsed response
-            finalState.suggestions = parsedResponse.suggestions;
+            if (parsedResponse.suggestions && parsedResponse.suggestions.length > 0) {
+                finalState.suggestions = parsedResponse.suggestions;
+            }
 
             finalState.inventory = updateInventory(finalState.inventory, parsedResponse.updatedInventory);
             
@@ -733,7 +735,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 {showScrollDown && <button onClick={handleScrollToBottom} className="bg-slate-700/80 hover:bg-slate-600/90 backdrop-blur-sm text-white p-2 rounded-full transition-opacity duration-300 animate-fade-in" aria-label="Cuộn xuống dưới"><Icon name="arrowDown" className="w-6 h-6" /></button>}
               </div>
               <div className="flex-shrink-0 mt-auto bg-slate-900/50 rounded-lg p-3 sm:p-4">
-                {gameState.suggestions && gameState.suggestions.length > 0 && !isTurnLoading && (
+                {gameState.suggestions && gameState.suggestions.length > 0 && (
                   <div className="mb-4">
                     <div className="flex justify-between items-center mb-2"> <h3 className="text-lg font-bold text-green-400">Lựa chọn của ngươi:</h3> <button onClick={() => setShowSuggestions(!showSuggestions)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition" title={showSuggestions ? "Ẩn gợi ý" : "Hiện gợi ý"}> <span>{showSuggestions ? 'Ẩn' : 'Hiện'} Gợi Ý</span> <Icon name={showSuggestions ? 'arrowUp' : 'arrowDown'} className={`w-3 h-3 transition-transform duration-300 ${showSuggestions ? 'rotate-180' : ''}`} /> </button> </div>
                     <div className={`grid transition-all duration-500 ease-in-out ${showSuggestions ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
