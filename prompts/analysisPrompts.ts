@@ -222,3 +222,21 @@ YÊU CẦU TỐI ƯU HÓA (BẮT BUỘC):
 Trả về một đối tượng JSON duy nhất chứa toàn bộ dữ liệu đã được tối ưu hóa, tuân thủ nghiêm ngặt schema đã cho.`;
     return { prompt, schema };
 };
+
+export const getDistillKnowledgePrompt = (storyIdea: string, chunk: string, isFinalReduce: boolean = false) => {
+    const task = isFinalReduce
+        ? `Dưới đây là tập hợp các bản tóm tắt từ nhiều phần của một tài liệu lớn. Hãy tổng hợp chúng thành MỘT bản tóm tắt cốt lõi, mạch lạc và súc tích. Bản tóm tắt cuối cùng này phải nắm bắt được tất cả các điểm chính đã được chắt lọc.`
+        : `Bạn là một AI chuyên chắt lọc thông tin. Dựa trên "Ý tưởng game" của người dùng, hãy đọc "Đoạn văn bản" dưới đây và rút ra những thông tin QUAN TRỌNG NHẤT (nhân vật, địa điểm, sự kiện, lore) liên quan trực tiếp đến ý tưởng đó. Trả lời bằng một bản tóm tắt ngắn gọn.`;
+
+    return `
+--- Ý TƯỞNG GAME ---
+"${storyIdea}"
+
+--- ${isFinalReduce ? 'CÁC BẢN TÓM TẮT CẦN TỔNG HỢP' : 'ĐOẠN VĂN BẢN'} ---
+${chunk}
+
+--- NHIỆM VỤ ---
+${task}
+Chỉ trả về nội dung tóm tắt.
+`;
+};

@@ -75,16 +75,46 @@ export interface ParsedAiResponse {
 
 
 export function parseAiResponse(rawText: string): ParsedAiResponse {
-    const separatorRegex = /(\[NARRATION_END\]|NARRATION_END)/;
+    let narration = '';
+    let tagsPart = '';
+    
+    const separatorRegex = /(\[NARRATION_END\]|NARRATION_END)/i;
     const separatorMatch = rawText.match(separatorRegex);
-    const separatorIndex = separatorMatch ? separatorMatch.index : -1;
-    const separatorLength = separatorMatch ? (separatorMatch[0]?.length || 0) : 0;
 
-    const narration = separatorIndex === -1 
-        ? processNarration(rawText)
-        : processNarration(rawText.substring(0, separatorIndex).trim());
+    if (separatorMatch && typeof separatorMatch.index === 'number') {
+        const separatorIndex = separatorMatch.index;
+        const separatorLength = separatorMatch[0]?.length || 0;
+        narration = processNarration(rawText.substring(0, separatorIndex).trim());
+        tagsPart = rawText.substring(separatorIndex + separatorLength).trim();
+    } else {
+        // Fallback: If separator is missing, try to find the first tag-like line
+        const lines = rawText.split('\n');
+        let firstTagLineIndex = -1;
         
-    const tagsPart = separatorIndex === -1 ? '' : rawText.substring(separatorIndex + separatorLength).trim();
+        const validTags = [
+            'SUGGESTION', 'STAT_UPDATE', 'ITEM_UPDATE', 'STATUS_ADD', 'STATUS_REMOVE',
+            'QUEST_UPDATE', 'COMPANION_ADD', 'NPC_UPDATE', 'FACTION_UPDATE', 'ENTITY_DISCOVER',
+            'MEMORY_ADD', 'SUMMARY_ADD', 'TIME_PASS', 'REPUTATION_CHANGE',
+            'WORLD_TIME_SET', 'REPUTATION_TIERS'
+        ];
+        const potentialTagRegex = new RegExp(`^\\s*\\[?(${validTags.join('|')}):\\s*`, 'i');
+
+        for (let i = 0; i < lines.length; i++) {
+            if (potentialTagRegex.test(lines[i])) {
+                firstTagLineIndex = i;
+                break;
+            }
+        }
+
+        if (firstTagLineIndex !== -1) {
+            narration = processNarration(lines.slice(0, firstTagLineIndex).join('\n').trim());
+            tagsPart = lines.slice(firstTagLineIndex).join('\n').trim();
+        } else {
+            // No tags found, assume whole text is narration
+            narration = processNarration(rawText);
+            tagsPart = '';
+        }
+    }
 
     const response: ParsedAiResponse = {
         narration,
@@ -113,13 +143,13 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         }
 
         try {
-            if (tagName === 'REPUTATION_TIERS' && !content.startsWith('[')) {
+            if (tagName.toUpperCase() === 'REPUTATION_TIERS' && !content.startsWith('[')) {
                 content = `[${content}]`;
             }
 
-            if (tagName === 'MEMORY_ADD' || tagName === 'SUMMARY_ADD') {
+            if (tagName.toUpperCase() === 'MEMORY_ADD' || tagName.toUpperCase() === 'SUMMARY_ADD') {
                  const stringContent = JSON.parse(content); 
-                 if (tagName === 'MEMORY_ADD') {
+                 if (tagName.toUpperCase() === 'MEMORY_ADD') {
                     response.newMemories.push(stringContent);
                  } else {
                     response.newSummary = stringContent;
@@ -129,7 +159,7 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
 
             const data = JSON.parse(content);
 
-            switch (tagName) {
+            switch (tagName.toUpperCase()) {
                 case 'SUGGESTION':
                     response.suggestions.push(data);
                     break;

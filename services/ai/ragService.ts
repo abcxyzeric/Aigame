@@ -4,7 +4,8 @@ import {
     getGenerateSummaryPrompt,
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
-    getRelevantContextEntitiesPrompt
+    getRelevantContextEntitiesPrompt,
+    getDistillKnowledgePrompt
 } from '../../prompts/analysisPrompts';
 import { buildBackgroundKnowledgePrompt } from '../../prompts/worldCreationPrompts';
 
@@ -78,4 +79,41 @@ export async function getRelevantContextEntities(gameState: GameState, playerAct
         console.error("Error in getRelevantContextEntities (Phase 0). Returning empty context.", error);
         return { relevantNPCs: [], relevantItems: [], relevantQuests: [], relevantFactions: [], relevantCompanions: [], relevantSkills: [], relevantPlayerStatus: [] };
     }
+}
+
+const CHUNK_SIZE = 15000; // Character limit for each chunk
+
+export async function distillKnowledgeForWorldCreation(
+    idea: string,
+    knowledge: { name: string; content: string }[]
+): Promise<{ name: string; content: string }[]> {
+    const fullContent = knowledge.map(k => k.content).join('\n\n');
+    
+    // Split into chunks
+    const chunks: string[] = [];
+    for (let i = 0; i < fullContent.length; i += CHUNK_SIZE) {
+        chunks.push(fullContent.substring(i, i + CHUNK_SIZE));
+    }
+
+    if (chunks.length <= 1) { // If it's not actually that big, just return it
+        return knowledge;
+    }
+
+    // Map step: Summarize each chunk in parallel
+    const mapPromises = chunks.map(chunk => {
+        const prompt = getDistillKnowledgePrompt(idea, chunk);
+        return generate(prompt);
+    });
+    
+    const chunkSummaries = await Promise.all(mapPromises);
+
+    // Reduce step: Create a final summary from the chunk summaries
+    const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
+    const finalReducePrompt = getDistillKnowledgePrompt(idea, combinedSummaries, true);
+    const finalSummary = await generate(finalReducePrompt);
+    
+    return [{
+        name: `tom_tat_chiet_loc_tu_${knowledge.length}_tep.txt`,
+        content: finalSummary
+    }];
 }

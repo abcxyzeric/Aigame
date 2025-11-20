@@ -402,19 +402,32 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       setIsNotificationOpen(true);
   }
 
-  const handleGenerateWorldFromIdea = useCallback(() => {
+  const handleGenerateWorldFromIdea = useCallback(async () => {
     if (!storyIdea.trim()) {
       setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng nhập một ý tưởng để AI có thể bắt đầu kiến tạo.'] });
       setIsNotificationOpen(true);
       return;
     }
     const task = async () => {
-      setLoadingStates(prev => ({...prev, worldIdea: true}));
+      setLoadingStates(prev => ({...prev, worldIdea: true, distilling: false}));
+      let knowledgeForGeneration = config.backgroundKnowledge;
+      
       try {
-        const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.backgroundKnowledge);
+        const totalKnowledgeSize = (config.backgroundKnowledge || []).reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        const KNOWLEDGE_SIZE_THRESHOLD = 500 * 1024; // 500 KB
+
+        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            setLoadingStates(prev => ({...prev, worldIdea: true, distilling: true}));
+            
+            knowledgeForGeneration = await aiService.distillKnowledgeForWorldCreation(storyIdea, config.backgroundKnowledge || []);
+            
+            setLoadingStates(prev => ({...prev, worldIdea: true, distilling: false}));
+        }
+
+        const newConfig = await aiService.generateWorldFromIdea(storyIdea, knowledgeForGeneration);
         processAndSetConfig(newConfig);
       } finally {
-        setLoadingStates(prev => ({...prev, worldIdea: false}));
+        setLoadingStates(prev => ({...prev, worldIdea: false, distilling: false}));
       }
     };
     executeAiTask(task);
@@ -682,9 +695,14 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                     isFullWidth
                     className="sm:!w-auto"
                 >
-                    Kiến Tạo Nhanh
+                    {loadingStates['distilling'] ? 'Đang chắt lọc...' : 'Kiến Tạo Nhanh'}
                 </AiAssistButton>
             </div>
+            {loadingStates['distilling'] && (
+                <p className="text-xs text-amber-300 mt-2 animate-pulse text-center sm:text-left">
+                    AI đang phân tích và tóm tắt tệp kiến thức nền lớn. Quá trình này có thể mất vài phút...
+                </p>
+            )}
         </div>
         
         <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg mb-8 border-l-4 border-violet-500 p-4">
