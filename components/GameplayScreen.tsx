@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
+import { parseAiResponse, ParsedAiResponse } from '../utils/aiResponseProcessor';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import TemporaryRulesModal from './TemporaryRulesModal';
@@ -263,115 +264,139 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
   }, [gameState]);
   
+  const updateStateFromParsedResponse = (parsedResponse: ParsedAiResponse) => {
+    setGameState(prev => {
+        const newState = JSON.parse(JSON.stringify(prev)); // Deep copy
+
+        // Update suggestions
+        newState.suggestions = parsedResponse.suggestions;
+
+        // Update inventory
+        const updatedInventory = mergeAndDeduplicateByName(newState.inventory, parsedResponse.updatedInventory);
+        newState.inventory = updatedInventory.filter(item => item.quantity > 0);
+        
+        // Update statuses
+        const currentStatusNames = new Set(newState.playerStatus.map((s: StatusEffect) => s.name.toLowerCase()));
+        parsedResponse.addedStatuses.forEach(newStatus => {
+            if (!currentStatusNames.has(newStatus.name.toLowerCase())) {
+                newState.playerStatus.push(newStatus);
+            }
+        });
+        const removedStatusNames = new Set(parsedResponse.removedStatuses.map(s => s.name.toLowerCase()));
+        newState.playerStatus = newState.playerStatus.filter((s: StatusEffect) => !removedStatusNames.has(s.name.toLowerCase()));
+
+        // Update stats
+        if (parsedResponse.updatedStats.length > 0) {
+            newState.character.stats = mergeAndDeduplicateByName(newState.character.stats, parsedResponse.updatedStats);
+        }
+
+        // Update quests, companions, NPCs, factions, entities
+        newState.quests = mergeAndDeduplicateByName(newState.quests, parsedResponse.updatedQuests);
+        newState.companions = mergeAndDeduplicateByName(newState.companions, parsedResponse.addedCompanions);
+        newState.encounteredNPCs = mergeAndDeduplicateByName(newState.encounteredNPCs, parsedResponse.updatedNPCs);
+        newState.encounteredFactions = mergeAndDeduplicateByName(newState.encounteredFactions, parsedResponse.updatedFactions);
+        newState.discoveredEntities = mergeAndDeduplicateByName(newState.discoveredEntities, parsedResponse.discoveredEntities);
+
+        // Time and Reputation
+        newState.worldTime = advanceTime(newState.worldTime, parsedResponse.timePassed || {});
+        if (parsedResponse.reputationChange && newState.reputationTiers.length === 5) {
+            const newScore = Math.max(-100, Math.min(100, newState.reputation.score + parsedResponse.reputationChange.score));
+            newState.reputation = { score: newScore, tier: getReputationTier(newScore, newState.reputationTiers) };
+        }
+
+        // Memories and Summary
+        if (parsedResponse.newMemories.length > 0) {
+            newState.memories.push(...parsedResponse.newMemories);
+        }
+        if (parsedResponse.newSummary) {
+            newState.summaries.push(parsedResponse.newSummary);
+        }
+
+        return newState;
+    });
+  };
+
   const handleActionSubmit = useCallback(async (actionContent: string) => {
     if (!actionContent.trim() || isLoading) return;
+
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
-    const newHistory = [...gameState.history, newAction];
+    
+    // Update UI immediately with the action
+    setGameState(prev => ({ ...prev, history: [...prev.history, newAction] }));
     setSuggestions([]);
-    setGameState(prev => ({ ...prev, history: newHistory }));
     setPlayerInput('');
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
+
     try {
-      const tempGameState = { ...gameState, history: newHistory };
-      
-      // --- PHA 1: Sáng tạo câu chuyện ---
-      const { narration, suggestions, newSummary } = await aiService.getNextTurn(tempGameState);
-      const narrationTurn: GameTurn = { type: 'narration', content: narration, metadata: { isSummaryTurn: !!newSummary } };
-      const finalHistory: GameTurn[] = [...newHistory, narrationTurn];
-      
-      const phase1GameState: GameState = { 
-          ...gameState, 
-          history: finalHistory, 
-          suggestions: suggestions, 
-          summaries: newSummary ? [...gameState.summaries, newSummary] : gameState.summaries, 
-      };
-      
-      const newNarrationTurns = phase1GameState.history.filter(h => h.type === 'narration');
-      const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
-      const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
+        const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
+        const rawResponse = await aiService.getNextTurn(tempGameState);
+        const parsedResponse = parseAiResponse(rawResponse);
 
-      // Cập nhật giao diện ngay lập tức với nội dung câu chuyện
-      setGameState(phase1GameState);
-      setSuggestions(suggestions);
-      setShowSuggestions(true);
-      setCurrentPage(lastPage);
-      await gameService.saveGame(phase1GameState); // Lưu phần truyện mới
+        // Add narration turn to history
+        const narrationTurn: GameTurn = { 
+            type: 'narration', 
+            content: parsedResponse.narration,
+            metadata: {
+                isSummaryTurn: !!parsedResponse.newSummary,
+                addedMemoryCount: parsedResponse.newMemories.length,
+            }
+        };
+        
+        setGameState(prev => {
+            const newStateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
+            const finalState = JSON.parse(JSON.stringify(newStateWithNarration)); // Deep copy for safety
 
-      // --- PHA 2: 3 Luồng Xử Lý Phân Tích Song Song (Chạy ngầm) ---
-      const runBackgroundUpdates = () => {
-          Promise.allSettled([
-              aiService.updateDynamicStateFromNarration(phase1GameState, narration),
-              aiService.updateEncyclopediaEntriesFromNarration(phase1GameState, narration),
-              aiService.updateCharacterStateFromNarration(phase1GameState, narration)
-          ]).then(([dynamicResult, encyclopediaResult, characterResult]) => {
-              setGameState(prevGameState => {
-                  // Sử dụng deep copy để tránh các vấn đề về thay đổi tham chiếu lồng nhau
-                  const newState = JSON.parse(JSON.stringify(prevGameState));
+            // Apply all other updates from the parsed response
+            finalState.suggestions = parsedResponse.suggestions;
 
-                  // Luồng 1: Xử lý cập nhật Trạng thái Động
-                  if (dynamicResult.status === 'fulfilled' && dynamicResult.value) {
-                      const updates = dynamicResult.value as DynamicStateUpdateResponse;
-                      newState.inventory = updates.updatedInventory || newState.inventory;
-                      newState.playerStatus = mergeAndDeduplicateByName(newState.playerStatus, updates.updatedPlayerStatus);
-                      newState.companions = mergeAndDeduplicateByName(newState.companions, updates.updatedCompanions);
-                      newState.quests = mergeAndDeduplicateByName(newState.quests, updates.updatedQuests);
-                      if (newState.character) {
-                          newState.character.stats = updates.updatedStats || newState.character.stats;
-                      }
-                  } else if (dynamicResult.status === 'rejected') {
-                      console.error("Lỗi luồng cập nhật Trạng thái Động (Pha 2):", dynamicResult.reason);
-                  }
+            const updatedInventory = mergeAndDeduplicateByName(finalState.inventory, parsedResponse.updatedInventory);
+            finalState.inventory = updatedInventory.filter(item => item.quantity > 0);
+            
+            const currentStatusNames = new Set(finalState.playerStatus.map((s: StatusEffect) => s.name.toLowerCase()));
+            parsedResponse.addedStatuses.forEach(newStatus => {
+                if (!currentStatusNames.has(newStatus.name.toLowerCase())) {
+                    finalState.playerStatus.push(newStatus);
+                }
+            });
+            const removedStatusNames = new Set(parsedResponse.removedStatuses.map(s => s.name.toLowerCase()));
+            finalState.playerStatus = finalState.playerStatus.filter((s: StatusEffect) => !removedStatusNames.has(s.name.toLowerCase()));
 
-                  // Luồng 2: Xử lý cập nhật Bách khoa
-                  if (encyclopediaResult.status === 'fulfilled' && encyclopediaResult.value) {
-                      const updates = encyclopediaResult.value as EncyclopediaEntriesUpdateResponse;
-                      newState.encounteredNPCs = mergeAndDeduplicateByName(newState.encounteredNPCs, updates.updatedEncounteredNPCs);
-                      newState.encounteredFactions = mergeAndDeduplicateByName(newState.encounteredFactions, updates.updatedEncounteredFactions);
-                      newState.discoveredEntities = mergeAndDeduplicateByName(newState.discoveredEntities, updates.updatedDiscoveredEntities);
-                  } else if (encyclopediaResult.status === 'rejected') {
-                      console.error("Lỗi luồng cập nhật Bách khoa (Pha 2):", encyclopediaResult.reason);
-                  }
+            if (parsedResponse.updatedStats.length > 0) {
+                finalState.character.stats = mergeAndDeduplicateByName(finalState.character.stats, parsedResponse.updatedStats);
+            }
 
-                  // Luồng 3: Xử lý cập nhật Trạng thái Nhân vật
-                  if (characterResult.status === 'fulfilled' && characterResult.value) {
-                      const updates = characterResult.value as CharacterStateUpdateResponse;
-                      newState.worldTime = advanceTime(newState.worldTime, updates.timePassed || {});
-                      if (updates.reputationChange && newState.reputationTiers && newState.reputationTiers.length === 5) {
-                          const newScore = Math.max(-100, Math.min(100, newState.reputation.score + updates.reputationChange.score));
-                          newState.reputation = { score: newScore, tier: getReputationTier(newScore, newState.reputationTiers) };
-                      }
-                      if (newState.character) {
-                          newState.character.bio = updates.updatedCharacter?.bio || newState.character.bio;
-                          newState.character.motivation = updates.updatedCharacter?.motivation || newState.character.motivation;
-                          newState.character.skills = mergeAndDeduplicateByName(newState.character.skills, updates.updatedSkills);
-                      }
-                      if (updates.newMemories && updates.newMemories.length > 0) {
-                        const lastNarrationIndex = newState.history.findLastIndex((t: GameTurn) => t.type === 'narration');
-                        if (lastNarrationIndex > -1) {
-                            const lastNarrationTurn = newState.history[lastNarrationIndex];
-                            newState.history[lastNarrationIndex] = {
-                                ...lastNarrationTurn,
-                                metadata: {
-                                    ...lastNarrationTurn.metadata,
-                                    addedMemoryCount: updates.newMemories.length,
-                                },
-                            };
-                        }
-                        newState.memories = [...newState.memories, ...updates.newMemories];
-                      }
-                  } else if (characterResult.status === 'rejected') {
-                      console.error("Lỗi luồng cập nhật Nhân vật (Pha 2):", characterResult.reason);
-                  }
+            finalState.quests = mergeAndDeduplicateByName(finalState.quests, parsedResponse.updatedQuests);
+            finalState.companions = mergeAndDeduplicateByName(finalState.companions, parsedResponse.addedCompanions);
+            finalState.encounteredNPCs = mergeAndDeduplicateByName(finalState.encounteredNPCs, parsedResponse.updatedNPCs);
+            finalState.encounteredFactions = mergeAndDeduplicateByName(finalState.encounteredFactions, parsedResponse.updatedFactions);
+            finalState.discoveredEntities = mergeAndDeduplicateByName(finalState.discoveredEntities, parsedResponse.discoveredEntities);
 
-                  // Lưu trạng thái cuối cùng sau khi đã tổng hợp tất cả các cập nhật
-                  gameService.saveGame(newState);
-                  return newState;
-              });
-          });
-      };
-      
-      runBackgroundUpdates(); // Kích hoạt các luồng chạy ngầm
+            finalState.worldTime = advanceTime(finalState.worldTime, parsedResponse.timePassed || {});
+            if (parsedResponse.reputationChange && finalState.reputationTiers.length === 5) {
+                const newScore = Math.max(-100, Math.min(100, finalState.reputation.score + parsedResponse.reputationChange.score));
+                finalState.reputation = { score: newScore, tier: getReputationTier(newScore, finalState.reputationTiers) };
+            }
+
+            if (parsedResponse.newMemories.length > 0) {
+                finalState.memories.push(...parsedResponse.newMemories);
+            }
+            if (parsedResponse.newSummary) {
+                finalState.summaries.push(parsedResponse.newSummary);
+            }
+
+            // Save the final state
+            gameService.saveGame(finalState);
+            return finalState;
+        });
+
+        const newNarrationTurns = [...narrationTurns, narrationTurn];
+        const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
+        const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
+
+        setSuggestions(parsedResponse.suggestions);
+        setShowSuggestions(true);
+        setCurrentPage(lastPage);
 
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'AI đã gặp lỗi khi xử lý. Vui lòng thử lại.';
@@ -395,7 +420,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, isLoading, getReputationTier]);
+  }, [gameState, isLoading, getReputationTier, narrationTurns]);
   
   const startGame = useCallback(async () => {
     if (gameState.history.length > 0) {
@@ -411,27 +436,45 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
-      const { narration, suggestions, initialPlayerStatus, initialInventory, timePassed, reputationChange, initialWorldTime, reputationTiers } = await aiService.startGame(gameState.worldConfig);
-      const baseTime = initialWorldTime || gameState.worldTime;
-      const newWorldTime = advanceTime(baseTime, timePassed || {});
+      const rawResponse = await aiService.startGame(gameState.worldConfig);
+      const parsedResponse = parseAiResponse(rawResponse);
+
+      const narrationTurn: GameTurn = { type: 'narration', content: parsedResponse.narration };
+      const baseTime = parsedResponse.initialWorldTime || gameState.worldTime;
+      const newWorldTime = advanceTime(baseTime, parsedResponse.timePassed || {});
+      
       let newReputation = gameState.reputation;
-      const newTiers = reputationTiers || [];
+      const newTiers = parsedResponse.reputationTiers || [];
       if (newTiers.length === 5) {
-          const newScore = reputationChange?.score || 0;
+          const newScore = parsedResponse.reputationChange?.score || 0;
           newReputation = { score: newScore, tier: getReputationTier(newScore, newTiers) };
       }
-      const updatedGameState: GameState = { ...gameState, history: [{ type: 'narration', content: narration }], playerStatus: initialPlayerStatus || [], inventory: initialInventory || [], companions: [], quests: [], suggestions: suggestions, worldTime: newWorldTime, reputation: newReputation, reputationTiers: newTiers };
+
+      const updatedGameState: GameState = { 
+          ...gameState, 
+          history: [narrationTurn], 
+          playerStatus: parsedResponse.addedStatuses || [], 
+          inventory: parsedResponse.updatedInventory.filter(i => i.quantity > 0), 
+          companions: parsedResponse.addedCompanions || [], 
+          quests: parsedResponse.updatedQuests || [], 
+          suggestions: parsedResponse.suggestions, 
+          worldTime: newWorldTime, 
+          reputation: newReputation, 
+          reputationTiers: newTiers 
+        };
+        
       setGameState(updatedGameState);
-      setSuggestions(suggestions);
+      setSuggestions(parsedResponse.suggestions);
       setShowSuggestions(true);
       await gameService.saveGame(updatedGameState);
+
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi bắt đầu game.';
       setNotificationModal({isOpen: true, title: 'Lỗi Khởi Tạo', messages: [errorMessage]});
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, getReputationTier]);
+  }, [gameState, getReputationTier, suggestions.length]);
 
   useEffect(() => { if (gameState.history.length === 0) startGame(); }, [gameState.history.length, startGame]);
 
