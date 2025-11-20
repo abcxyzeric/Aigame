@@ -14,11 +14,13 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-      version: "1.4.5 (Quản lý Lưu trữ & Tối ưu API)",
+      version: "1.4.5 (Quản lý Thông Minh)",
       notes: [
-        "**Giới hạn File Lưu Tự động:** Giờ đây hệ thống sẽ chỉ lưu tối đa 15 file. Khi vượt quá, file lưu tự động (auto save) cũ nhất sẽ bị xóa để tránh làm đầy bộ nhớ trình duyệt.",
+        "**Nâng cấp Hệ thống Thời gian:** AI giờ đây sẽ hoạt động như một 'Người giữ thời gian' nghiêm ngặt, tự động tính toán và cập nhật thời gian (phút, giờ, ngày, tháng, năm) một cách logic sau MỖI hành động của người chơi, giúp thế giới vận hành chân thực hơn.",
+        "**Đại tu Hệ thống Túi đồ:** Chuyển đổi sang logic Thêm/Bớt vật phẩm, loại bỏ hoàn toàn lỗi mất đồ hoặc sai số lượng. AI giờ đây sẽ sử dụng các lệnh `ITEM_ADD` và `ITEM_REMOVE` để quản lý túi đồ của bạn một cách chính xác tuyệt đối.",
+        "**Cải thiện Logic Bách Khoa & Đồng hành:** AI sẽ chỉ tạo mô tả và tính cách cho NPC MỘT LẦN DUY NHẤT, các lần gặp sau chỉ cập nhật 'suy nghĩ về người chơi', giữ cho Bách khoa luôn gọn gàng. Bổ sung logic để đồng hành có thể rời nhóm.",
+        "**Giới hạn File Lưu Tự động:** Hệ thống sẽ chỉ lưu tối đa 15 file. Khi vượt quá, file lưu tự động (auto save) cũ nhất sẽ bị xóa để tránh làm đầy bộ nhớ trình duyệt.",
         "**Phân loại File Lưu:** Các bản lưu giờ được đánh dấu rõ ràng là 'Thủ công' hoặc 'Tự động' trong màn hình tải game, giúp bạn dễ dàng quản lý.",
-        "**Sửa lỗi API 429:** Cải thiện logic xoay vòng API key, đặc biệt khi AI đọc nhiều file kiến thức nền trong lúc kiến tạo thế giới, giảm thiểu lỗi quá tải yêu cầu (429).",
       ]
     },
     {

@@ -224,16 +224,21 @@ export interface AiTurnResponse {
   newSummary?: string;
 }
 
+export interface TimePassed {
+  years?: number;
+  months?: number;
+  days?: number;
+  hours?: number;
+  minutes?: number;
+}
+
 export interface StartGameResponse {
   narration: string;
   suggestions: ActionSuggestion[];
   initialPlayerStatus?: StatusEffect[];
   initialInventory?: GameItem[];
   initialWorldTime?: WorldTime;
-  timePassed?: {
-    hours?: number;
-    minutes?: number;
-  };
+  timePassed?: TimePassed;
   reputationChange?: {
     score: number;
     reason: string;
@@ -262,10 +267,7 @@ export interface CharacterStateUpdateResponse {
     updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
     updatedSkills?: { name: string; description: string; }[];
     newMemories?: string[];
-    timePassed?: {
-        hours?: number;
-        minutes?: number;
-    };
+    timePassed?: TimePassed;
     reputationChange?: {
         score: number;
         reason: string;

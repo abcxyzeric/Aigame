@@ -3,7 +3,9 @@ import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, Ini
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
-import { parseAiResponse, ParsedAiResponse } from '../utils/aiResponseProcessor';
+import { parseAiResponse } from '../utils/aiResponseProcessor';
+import { advanceTime, getTimeOfDay } from '../utils/timeUtils';
+import { updateInventory } from '../utils/inventoryUtils';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import TemporaryRulesModal from './TemporaryRulesModal';
@@ -128,26 +130,6 @@ const SuggestionCard: React.FC<{ suggestion: ActionSuggestion; onSelect: (descri
     );
 };
 
-const advanceTime = (currentTime: WorldTime, timePassed: { hours?: number; minutes?: number }): WorldTime => {
-    if (!timePassed || (!timePassed.hours && !timePassed.minutes)) return currentTime;
-    const newDate = new Date(0);
-    newDate.setUTCFullYear(currentTime.year);
-    newDate.setUTCMonth(currentTime.month - 1);
-    newDate.setUTCDate(currentTime.day);
-    newDate.setUTCHours(currentTime.hour);
-    if (timePassed.hours) newDate.setUTCHours(newDate.getUTCHours() + timePassed.hours);
-    if (timePassed.minutes) newDate.setUTCMinutes(newDate.getUTCMinutes() + timePassed.minutes);
-    return { year: newDate.getUTCFullYear(), month: newDate.getUTCMonth() + 1, day: newDate.getUTCDate(), hour: newDate.getUTCHours() };
-};
-
-const getTimeOfDay = (hour: number): string => {
-    if (hour >= 6 && hour < 12) return 'Sáng';
-    if (hour >= 12 && hour < 14) return 'Trưa';
-    if (hour >= 14 && hour < 18) return 'Chiều';
-    if (hour >= 18 && hour < 22) return 'Tối';
-    return 'Đêm';
-};
-
 const mergeAndDeduplicateByName = <T extends { name: string }>(original: T[] = [], updates: T[] = []): T[] => {
     const itemMap = new Map<string, T>();
     [...original, ...updates].forEach(item => {
@@ -176,7 +158,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [showScrollUp, setShowScrollUp] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
-  const [suggestions, setSuggestions] = useState<ActionSuggestion[]>(initialGameState.suggestions || []);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
@@ -264,66 +245,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
   }, [gameState]);
   
-  const updateStateFromParsedResponse = (parsedResponse: ParsedAiResponse) => {
-    setGameState(prev => {
-        const newState = JSON.parse(JSON.stringify(prev)); // Deep copy
-
-        // Update suggestions
-        newState.suggestions = parsedResponse.suggestions;
-
-        // Update inventory
-        const updatedInventory = mergeAndDeduplicateByName(newState.inventory, parsedResponse.updatedInventory);
-        newState.inventory = updatedInventory.filter(item => item.quantity > 0);
-        
-        // Update statuses
-        const currentStatusNames = new Set(newState.playerStatus.map((s: StatusEffect) => s.name.toLowerCase()));
-        parsedResponse.addedStatuses.forEach(newStatus => {
-            if (!currentStatusNames.has(newStatus.name.toLowerCase())) {
-                newState.playerStatus.push(newStatus);
-            }
-        });
-        const removedStatusNames = new Set(parsedResponse.removedStatuses.map(s => s.name.toLowerCase()));
-        newState.playerStatus = newState.playerStatus.filter((s: StatusEffect) => !removedStatusNames.has(s.name.toLowerCase()));
-
-        // Update stats
-        if (parsedResponse.updatedStats.length > 0) {
-            newState.character.stats = mergeAndDeduplicateByName(newState.character.stats, parsedResponse.updatedStats);
-        }
-
-        // Update quests, companions, NPCs, factions, entities
-        newState.quests = mergeAndDeduplicateByName(newState.quests, parsedResponse.updatedQuests);
-        newState.companions = mergeAndDeduplicateByName(newState.companions, parsedResponse.addedCompanions);
-        newState.encounteredNPCs = mergeAndDeduplicateByName(newState.encounteredNPCs, parsedResponse.updatedNPCs);
-        newState.encounteredFactions = mergeAndDeduplicateByName(newState.encounteredFactions, parsedResponse.updatedFactions);
-        newState.discoveredEntities = mergeAndDeduplicateByName(newState.discoveredEntities, parsedResponse.discoveredEntities);
-
-        // Time and Reputation
-        newState.worldTime = advanceTime(newState.worldTime, parsedResponse.timePassed || {});
-        if (parsedResponse.reputationChange && newState.reputationTiers.length === 5) {
-            const newScore = Math.max(-100, Math.min(100, newState.reputation.score + parsedResponse.reputationChange.score));
-            newState.reputation = { score: newScore, tier: getReputationTier(newScore, newState.reputationTiers) };
-        }
-
-        // Memories and Summary
-        if (parsedResponse.newMemories.length > 0) {
-            newState.memories.push(...parsedResponse.newMemories);
-        }
-        if (parsedResponse.newSummary) {
-            newState.summaries.push(parsedResponse.newSummary);
-        }
-
-        return newState;
-    });
-  };
-
   const handleActionSubmit = useCallback(async (actionContent: string) => {
     if (!actionContent.trim() || isLoading) return;
 
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     
-    // Update UI immediately with the action
+    // Update UI immediately with the action, keep old suggestions during loading for context
     setGameState(prev => ({ ...prev, history: [...prev.history, newAction] }));
-    setSuggestions([]);
     setPlayerInput('');
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
@@ -350,8 +278,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // Apply all other updates from the parsed response
             finalState.suggestions = parsedResponse.suggestions;
 
-            const updatedInventory = mergeAndDeduplicateByName(finalState.inventory, parsedResponse.updatedInventory);
-            finalState.inventory = updatedInventory.filter(item => item.quantity > 0);
+            finalState.inventory = updateInventory(finalState.inventory, parsedResponse.updatedInventory);
             
             const currentStatusNames = new Set(finalState.playerStatus.map((s: StatusEffect) => s.name.toLowerCase()));
             parsedResponse.addedStatuses.forEach(newStatus => {
@@ -368,6 +295,15 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
             finalState.quests = mergeAndDeduplicateByName(finalState.quests, parsedResponse.updatedQuests);
             finalState.companions = mergeAndDeduplicateByName(finalState.companions, parsedResponse.addedCompanions);
+            
+            // Handle removed companions
+            if (parsedResponse.removedCompanions && parsedResponse.removedCompanions.length > 0) {
+                const removedCompanionNames = new Set(parsedResponse.removedCompanions.map(c => c.name.toLowerCase()));
+                finalState.companions = finalState.companions.filter((c: Companion) => {
+                    return !removedCompanionNames.has(c.name.toLowerCase());
+                });
+            }
+
             finalState.encounteredNPCs = mergeAndDeduplicateByName(finalState.encounteredNPCs, parsedResponse.updatedNPCs);
             finalState.encounteredFactions = mergeAndDeduplicateByName(finalState.encounteredFactions, parsedResponse.updatedFactions);
             finalState.discoveredEntities = mergeAndDeduplicateByName(finalState.discoveredEntities, parsedResponse.discoveredEntities);
@@ -394,7 +330,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
         const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
 
-        setSuggestions(parsedResponse.suggestions);
         setShowSuggestions(true);
         setCurrentPage(lastPage);
 
@@ -429,10 +364,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       const totalPages = Math.max(1, Math.ceil(narrationTurns.length / turnsPerPage));
       const lastPage = totalPages > 0 ? totalPages - 1 : 0;
       setCurrentPage(lastPage);
-      setShowSuggestions(suggestions.length > 0);
+      setShowSuggestions(gameState.suggestions ? gameState.suggestions.length > 0 : false);
       return;
     }
-    setSuggestions([]);
+    
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
@@ -440,7 +375,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       const parsedResponse = parseAiResponse(rawResponse);
 
       const narrationTurn: GameTurn = { type: 'narration', content: parsedResponse.narration };
-      const baseTime = parsedResponse.initialWorldTime || gameState.worldTime;
+      
+      const baseTime = parsedResponse.initialWorldTime ? parsedResponse.initialWorldTime : (gameState.worldTime || { year: 1, month: 1, day: 1, hour: 8 });
       const newWorldTime = advanceTime(baseTime, parsedResponse.timePassed || {});
       
       let newReputation = gameState.reputation;
@@ -454,17 +390,25 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           ...gameState, 
           history: [narrationTurn], 
           playerStatus: parsedResponse.addedStatuses || [], 
-          inventory: parsedResponse.updatedInventory.filter(i => i.quantity > 0), 
+          inventory: updateInventory(gameState.inventory, parsedResponse.updatedInventory),
           companions: parsedResponse.addedCompanions || [], 
           quests: parsedResponse.updatedQuests || [], 
           suggestions: parsedResponse.suggestions, 
           worldTime: newWorldTime, 
           reputation: newReputation, 
-          reputationTiers: newTiers 
+          reputationTiers: newTiers,
+          discoveredEntities: [...(gameState.discoveredEntities || []), ...(parsedResponse.discoveredEntities || [])],
+          encounteredNPCs: [...(gameState.encounteredNPCs || []), ...(parsedResponse.updatedNPCs || [])],
         };
         
+      if (parsedResponse.initialStats && parsedResponse.initialStats.length > 0) {
+          updatedGameState.character = {
+              ...updatedGameState.character,
+              stats: parsedResponse.initialStats,
+          };
+      }
+        
       setGameState(updatedGameState);
-      setSuggestions(parsedResponse.suggestions);
       setShowSuggestions(true);
       await gameService.saveGame(updatedGameState, 'auto');
 
@@ -474,7 +418,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, getReputationTier, suggestions.length]);
+  }, [gameState, getReputationTier]);
 
   useEffect(() => { if (gameState.history.length === 0) startGame(); }, [gameState.history.length, startGame]);
 
@@ -578,7 +522,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       
       setGameState(newState);
       setPlayerInput('');
-      setSuggestions([]);
       setShowSuggestions(false); 
       await gameService.saveGame(newState, 'auto');
   };
@@ -744,7 +687,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
       {showExitConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-slate-100">Xác nhận thoát</h2> <p className="text-slate-300 mb-6">Bạn có muốn lưu tiến trình trước khi thoát không?</p> <div className="flex justify-end gap-4"> <Button onClick={handleSaveAndExit} variant="primary" className="!w-auto !py-2 !px-4" disabled={isSaving}>{isSaving ? 'Đang lưu...' : 'Lưu & Thoát'}</Button> <Button onClick={onBack} variant="warning" className="!w-auto !py-2 !px-4">Thoát không lưu</Button> <button onClick={() => setShowExitConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
       {showRestartConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-slate-100">Bắt đầu lại cuộc phiêu lưu?</h2> <p className="text-slate-300 mb-6">Bạn có muốn lưu tiến trình hiện tại trước khi bắt đầu lại không?</p> <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3"> <button onClick={() => setShowRestartConfirm(false)} className="w-full sm:w-auto text-slate-300 hover:text-white transition px-4 py-2 rounded-md text-center bg-slate-700/50 hover:bg-slate-700">Hủy</button> <Button onClick={handleRestartWithoutSaving} variant="warning" className="!w-full sm:!w-auto !py-2 !px-4">Không Lưu & Bắt Đầu Lại</Button> <Button onClick={handleSaveAndRestart} variant="primary" className="!w-full sm:!w-auto !py-2 !px-4" disabled={isSaving}>{isSaving ? 'Đang lưu...' : 'Lưu & Bắt Đầu Lại'}</Button> </div> </div> </div> )}
-      {showUndoConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2> <p className="text-slate-300 mb-2">Hành động này sẽ xóa lượt đi cuối cùng của bạn và AI, đồng thời hoàn tác các Ký ức hoặc Tóm tắt được tạo ra trong lượt đó.</p> <p className="text-amber-400 text-sm mb-6"><strong className="font-bold">Lưu ý:</strong> Các thay đổi về trạng thái, vật phẩm... sẽ KHÔNG được hoàn tác.</p> <div className="flex justify-end gap-4"> <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button> <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
+      {showUndoConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2> <p className="text-slate-300 mb-2">Hành động này sẽ xóa lượt đi cuối cùng của bạn và AI, đồng thời hoàn tác các Ký Ức hoặc Tóm tắt được tạo ra trong lượt đó.</p> <p className="text-amber-400 text-sm mb-6"><strong className="font-bold">Lưu ý:</strong> Các thay đổi về trạng thái, vật phẩm... sẽ KHÔNG được hoàn tác.</p> <div className="flex justify-end gap-4"> <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button> <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
       
       <div className="lg:flex h-screen bg-slate-900 text-slate-200 font-sans lg:gap-4">
         {/* Main Content (Left Column on Desktop) */}
@@ -790,11 +733,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 {showScrollDown && <button onClick={handleScrollToBottom} className="bg-slate-700/80 hover:bg-slate-600/90 backdrop-blur-sm text-white p-2 rounded-full transition-opacity duration-300 animate-fade-in" aria-label="Cuộn xuống dưới"><Icon name="arrowDown" className="w-6 h-6" /></button>}
               </div>
               <div className="flex-shrink-0 mt-auto bg-slate-900/50 rounded-lg p-3 sm:p-4">
-                {suggestions.length > 0 && !isTurnLoading && (
+                {gameState.suggestions && gameState.suggestions.length > 0 && !isTurnLoading && (
                   <div className="mb-4">
                     <div className="flex justify-between items-center mb-2"> <h3 className="text-lg font-bold text-green-400">Lựa chọn của ngươi:</h3> <button onClick={() => setShowSuggestions(!showSuggestions)} className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-purple-300 bg-purple-900/40 hover:bg-purple-800/60 rounded-lg transition" title={showSuggestions ? "Ẩn gợi ý" : "Hiện gợi ý"}> <span>{showSuggestions ? 'Ẩn' : 'Hiện'} Gợi Ý</span> <Icon name={showSuggestions ? 'arrowUp' : 'arrowDown'} className={`w-3 h-3 transition-transform duration-300 ${showSuggestions ? 'rotate-180' : ''}`} /> </button> </div>
                     <div className={`grid transition-all duration-500 ease-in-out ${showSuggestions ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
-                      <div className="overflow-hidden"> <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 max-h-[18rem] overflow-y-auto pr-2 pb-2">{suggestions.map((s, i) => <SuggestionCard key={i} index={i} suggestion={s} onSelect={handleActionSubmit}/>)}</div> </div>
+                      <div className="overflow-hidden"> <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 max-h-[18rem] overflow-y-auto pr-2 pb-2">{gameState.suggestions.map((s, i) => <SuggestionCard key={i} index={i} suggestion={s} onSelect={handleActionSubmit}/>)}</div> </div>
                     </div>
                   </div>
                 )}

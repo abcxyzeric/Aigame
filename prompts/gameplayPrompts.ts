@@ -5,29 +5,44 @@ import { obfuscateText } from '../utils/aiResponseProcessor';
 import { getSettings } from "../services/settingsService";
 
 const getTagInstructions = () => `
---- QUY TẮC ĐỊNH DẠNG DỮ LIỆU (BẮT BUỘC TUÂN THỦ) ---
+--- QUY TẮC ĐỊNH DẠNG DỮ LIỆU (BẮT BUỘC TUÂN THỦ - CÚ PHÁP KEY-VALUE) ---
 Sau khi viết xong phần tường thuật, bạn PHẢI xuống dòng và viết chính xác thẻ '[NARRATION_END]'.
 Sau thẻ đó, bạn PHẢI liệt kê TOÀN BỘ các thay đổi về dữ liệu game bằng cách sử dụng các thẻ định dạng sau. Mỗi thẻ trên một dòng riêng.
-Bên trong mỗi thẻ là một đối tượng JSON hợp lệ (hoặc một chuỗi JSON cho MEMORY/SUMMARY).
+Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách bởi dấu phẩy. Chuỗi phải được đặt trong dấu ngoặc kép. Số và boolean có thể viết trực tiếp.
+Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<entity>, <important>...).
 
-[SUGGESTION: {"description": "...", "successRate": 1-100, "risk": "...", "reward": "..."}] (BẮT BUỘC có 4 thẻ này)
-[STAT_UPDATE: {"name": "Tên chỉ số", "value": số, "maxValue": số, "isPercentage": boolean, "description": "...", "hasLimit": boolean}] (Sử dụng cho mỗi chỉ số thay đổi)
-[ITEM_UPDATE: {"name": "Tên vật phẩm", "description": "...", "quantity": số}] (Ghi đè vật phẩm. quantity > 0: Thêm/cập nhật. quantity <= 0: Xóa)
-[STATUS_ADD: {"name": "Tên trạng thái", "description": "...", "type": "buff" | "debuff"}]
-[STATUS_REMOVE: {"name": "Tên trạng thái cần xóa"}]
-[QUEST_UPDATE: {"name": "Tên nhiệm vụ", "description": "...", "status": "đang tiến hành" | "hoàn thành"}] (Dùng cho cả nhiệm vụ mới và cập nhật)
-[COMPANION_ADD: {"name": "Tên đồng hành", "description": "...", "personality": "..."}]
-[NPC_UPDATE: {"name": "Tên NPC", "description": "...", "personality": "...", "thoughtsOnPlayer": "..."}] (Dùng cho cả NPC mới và cập nhật)
-[FACTION_UPDATE: {"name": "Tên phe phái", "description": "..."}]
-[ENTITY_DISCOVER: {"name": "Tên thực thể", "type": "Loại", "description": "..."}] (Dùng cho các lore, địa điểm mới)
-[MEMORY_ADD: "Nội dung ký ức cốt lõi mới."] (Dùng khi có sự kiện cực kỳ quan trọng. Nội dung là một chuỗi JSON)
-[SUMMARY_ADD: "Nội dung tóm tắt mới."] (Dùng khi đến lượt tóm tắt. Nội dung là một chuỗi JSON)
-[TIME_PASS: {"hours": số, "minutes": số}]
-[REPUTATION_CHANGE: {"score": số, "reason": "..."}]
+**--- CÁC THẺ CHÍNH ---**
+[SUGGESTION: description="Một hành động gợi ý", successRate=80, risk="Mô tả rủi ro", reward="Mô tả phần thưởng"] (BẮT BUỘC có 4 thẻ này)
+[TIME_PASSED: years=0, months=0, days=0, hours=1, minutes=30] (BẮT BUỘC có thẻ này trong MỌI lượt)
+[REPUTATION_CHANGED: score=-10, reason="Ăn trộm"]
+[MEMORY_ADD: content="Một ký ức cốt lõi mới rất quan trọng."]
+[SUMMARY_ADD: content="Tóm tắt các sự kiện vừa qua."]
 
---- DÀNH RIÊNG CHO LƯỢT ĐẦU TIÊN (startGame) ---
-[WORLD_TIME_SET: {"year": số, "month": số, "day": số, "hour": số}] (Thời gian bắt đầu game)
-[REPUTATION_TIERS: ["Cấp 1", "Cấp 2", "Cấp 3", "Cấp 4", "Cấp 5"]] (5 cấp danh vọng từ xấu nhất đến tốt nhất)
+**--- THẺ CẬP NHẬT TRẠNG THÁI ---**
+[PLAYER_STATS_UPDATE: name="Sinh Lực", value=80, maxValue=100]
+[STATUS_ACQUIRED: name="Trúng Độc", description="Mất máu mỗi lượt", type="debuff"]
+[STATUS_REMOVED: name="Phấn Chấn"]
+[ITEM_ADD: name="Thanh Kiếm Gỉ Sét", quantity=1, description="Một thanh kiếm cũ."] (Dùng khi nhận được vật phẩm)
+[ITEM_REMOVE: name="Bánh Mì", quantity=1] (Dùng khi mất đi/sử dụng vật phẩm)
+[SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."] // Chỉ dùng khi học được kỹ năng MỚI
+[QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]
+[COMPANION_REMOVE: name="Sói Con"] // Dùng khi đồng hành rời nhóm
+
+**--- THẺ ĐỊNH NGHĨA & CẬP NHẬT THỰC THỂ ---**
+(Sử dụng [XXX_NEW] hoặc [XXX_DEFINED] khi một thực thể mới xuất hiện trong tường thuật)
+[ITEM_DEFINED: name="Lá Bùa May Mắn", description="Một lá bùa cũ kỹ mang lại may mắn.", type="Phụ kiện", rarity="Hiếm"]
+[SKILL_DEFINED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ.", type="Phép thuật"]
+[NPC_NEW: name="Lão Ăn Mày", description="Một ông lão bí ẩn...", personality="Khôn ngoan, khó lường", thoughtsOnPlayer="Tò mò"] // Dùng MỘT LẦN khi NPC xuất hiện lần đầu.
+[NPC_UPDATE: name="Lão Ăn Mày", thoughtsOnPlayer="Bắt đầu cảm thấy nghi ngờ bạn."] // Dùng để cập nhật suy nghĩ của NPC. KHÔNG dùng description/personality.
+[LOCATION_DISCOVERED: name="Hang Sói", description="Một hang động tối tăm và ẩm ướt."]
+[LORE_DISCOVERED: name="Lời Tiên Tri Cổ", description="Lời tiên tri về người anh hùng sẽ giải cứu vương quốc."]
+[QUEST_NEW: name="Tìm kho báu", description="Tìm kho báu được giấu trong Hang Sói."]
+[COMPANION_NEW: name="Sói Con", description="Một con sói nhỏ đi theo bạn.", personality="Trung thành"]
+
+**--- DÀNH RIÊNG CHO LƯỢT ĐẦU TIÊN (startGame) ---**
+[PLAYER_STATS_INIT: name="Sinh Lực", value=100, maxValue=100, isPercentage=true, description="Sức sống", hasLimit=true] (Sử dụng cho MỖI chỉ số)
+[WORLD_TIME_SET: year=1, month=1, day=1, hour=8]
+[REPUTATION_TIERS_SET: tiers="Ma Đầu,Kẻ Bị Truy Nã,Vô Danh,Thiện Nhân,Anh Hùng"] (5 cấp, không có dấu cách, phân cách bằng dấu phẩy)
 `;
 
 export const getStartGamePrompt = (config: WorldConfig) => {
@@ -48,10 +63,11 @@ ${adultContentDirectives}
     *   Thiết lập không khí, giới thiệu nhân vật trong một tình huống cụ thể, và gợi mở cốt truyện.
     *   Sử dụng các thẻ định dạng (<entity>, <important>, <thought>...) trong lời kể một cách tự nhiên.
 2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc trong ${getTagInstructions()}
-    *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`REPUTATION_TIERS\`) phù hợp với thế giới.
+    *   BẮT BUỘC khởi tạo TOÀN BỘ chỉ số của nhân vật bằng các thẻ \`PLAYER_STATS_INIT\`.
+    *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
     *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`).
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`SUGGESTION\`) đa dạng.
-    *   Nếu có, hãy thêm các thẻ cập nhật khác (vật phẩm, trạng thái ban đầu, danh vọng...).
+    *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`ITEM_DEFINED\`, \`NPC_NEW\`...) VÀ thẻ sở hữu (\`ITEM_ADD\`).
 
 **OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) duy nhất, bao gồm cả phần tường thuật và phần thẻ dữ liệu.`;
     
@@ -101,9 +117,11 @@ ${adultContentDirectives}
 1.  **VIẾT TIẾP CÂU CHUYỆN:** Dựa vào **TOÀN BỘ BỐI CẢNH** và hành động của người chơi, hãy viết một đoạn tường thuật **HOÀN TOÀN MỚI**. ${lengthDirective}
     *   Áp dụng "GIAO THỨC MỞ RỘNG HÀNH ĐỘNG" để miêu tả chi tiết.
     *   Sử dụng các thẻ định dạng (<entity>, <important>...) trong lời kể.
+    *   Nếu có thực thể mới xuất hiện, hãy áp dụng quy tắc "ONE-SHOT GENERATION".
 2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc trong ${getTagInstructions()}
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`SUGGESTION\`) đa dạng.
-    *   Thêm các thẻ cập nhật khác (STATS_UPDATE, ITEM_UPDATE, TIME_PASS...) nếu có thay đổi trong lượt này.
+    *   BẮT BUỘC ước tính thời gian trôi qua và xuất thẻ \`TIME_PASSED\`.
+    *   Thêm các thẻ cập nhật khác (PLAYER_STATS_UPDATE, ITEM_ADD, ITEM_REMOVE,...) nếu có thay đổi trong lượt này.
 
 **OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) duy nhất.`;
 

@@ -1,4 +1,4 @@
-import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity } from './types';
+import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity, TimePassed } from '../types';
 
 export const OBFUSCATION_MAP: Record<string, string> = {
     'lồn': '[l-ồ-n]',
@@ -61,16 +61,40 @@ export interface ParsedAiResponse {
     updatedQuests: Quest[];
     updatedStats: CharacterStat[];
     addedCompanions: Companion[];
+    removedCompanions: { name: string }[];
     updatedNPCs: EncounteredNPC[];
     updatedFactions: EncounteredFaction[];
     discoveredEntities: InitialEntity[];
     newMemories: string[];
     newSummary?: string;
-    timePassed?: { hours?: number; minutes?: number };
+    timePassed?: TimePassed;
     reputationChange?: { score: number; reason: string };
     // Start game specific
     initialWorldTime?: WorldTime;
     reputationTiers?: string[];
+    initialStats?: CharacterStat[];
+}
+
+function parseKeyValue(content: string): Record<string, any> {
+    const result: Record<string, any> = {};
+    // Handles key="string", key=123, key=true, key=false
+    const regex = /(\w+)\s*=\s*(?:"([^"]*)"|([\d.-]+)|(true|false))/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+        const key = match[1];
+        const stringValue = match[2];
+        const numberValue = match[3];
+        const boolValue = match[4];
+
+        if (stringValue !== undefined) {
+            result[key] = stringValue;
+        } else if (numberValue !== undefined) {
+            result[key] = Number(numberValue);
+        } else if (boolValue !== undefined) {
+            result[key] = boolValue === 'true';
+        }
+    }
+    return result;
 }
 
 
@@ -82,38 +106,13 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
     const separatorMatch = rawText.match(separatorRegex);
 
     if (separatorMatch && typeof separatorMatch.index === 'number') {
-        const separatorIndex = separatorMatch.index;
-        const separatorLength = separatorMatch[0]?.length || 0;
-        narration = processNarration(rawText.substring(0, separatorIndex).trim());
-        tagsPart = rawText.substring(separatorIndex + separatorLength).trim();
+        narration = processNarration(rawText.substring(0, separatorMatch.index).trim());
+        tagsPart = rawText.substring(separatorMatch.index + separatorMatch[0].length).trim();
     } else {
-        // Fallback: If separator is missing, try to find the first tag-like line
-        const lines = rawText.split('\n');
-        let firstTagLineIndex = -1;
-        
-        const validTags = [
-            'SUGGESTION', 'STAT_UPDATE', 'ITEM_UPDATE', 'STATUS_ADD', 'STATUS_REMOVE',
-            'QUEST_UPDATE', 'COMPANION_ADD', 'NPC_UPDATE', 'FACTION_UPDATE', 'ENTITY_DISCOVER',
-            'MEMORY_ADD', 'SUMMARY_ADD', 'TIME_PASS', 'REPUTATION_CHANGE',
-            'WORLD_TIME_SET', 'REPUTATION_TIERS'
-        ];
-        const potentialTagRegex = new RegExp(`^\\s*\\[?(${validTags.join('|')}):\\s*`, 'i');
-
-        for (let i = 0; i < lines.length; i++) {
-            if (potentialTagRegex.test(lines[i])) {
-                firstTagLineIndex = i;
-                break;
-            }
-        }
-
-        if (firstTagLineIndex !== -1) {
-            narration = processNarration(lines.slice(0, firstTagLineIndex).join('\n').trim());
-            tagsPart = lines.slice(firstTagLineIndex).join('\n').trim();
-        } else {
-            // No tags found, assume whole text is narration
-            narration = processNarration(rawText);
-            tagsPart = '';
-        }
+        // Fallback if separator is missing
+        narration = processNarration(rawText);
+        tagsPart = '';
+        console.warn("NARRATION_END separator not found in AI response.");
     }
 
     const response: ParsedAiResponse = {
@@ -125,82 +124,123 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         updatedQuests: [],
         updatedStats: [],
         addedCompanions: [],
+        removedCompanions: [],
         updatedNPCs: [],
         updatedFactions: [],
         discoveredEntities: [],
         newMemories: [],
+        initialStats: [],
     };
 
-    const tagRegex = /^\s*\[?(\w+):\s*([\s\S]+?)(?=\s*\[?\w+:\s*|$)/gm;
+    const tagBlockRegex = /\[(\w+):\s*([\s\S]*?)\]/g;
     let match;
 
-    while ((match = tagRegex.exec(tagsPart)) !== null) {
-        const tagName = match[1];
-        let content = match[2].trim();
-
-        if (content.endsWith(',') || content.endsWith(']')) {
-             content = content.slice(0, -1).trim();
-        }
+    while ((match = tagBlockRegex.exec(tagsPart)) !== null) {
+        const tagName = match[1].toUpperCase();
+        const content = match[2].trim();
 
         try {
-            if (tagName.toUpperCase() === 'REPUTATION_TIERS' && !content.startsWith('[')) {
-                content = `[${content}]`;
-            }
-
-            if (tagName.toUpperCase() === 'MEMORY_ADD' || tagName.toUpperCase() === 'SUMMARY_ADD') {
-                 const stringContent = JSON.parse(content); 
-                 if (tagName.toUpperCase() === 'MEMORY_ADD') {
-                    response.newMemories.push(stringContent);
-                 } else {
-                    response.newSummary = stringContent;
-                 }
-                 continue;
-            }
-
-            const data = JSON.parse(content);
-
-            switch (tagName.toUpperCase()) {
+            const data = parseKeyValue(content);
+            switch (tagName) {
                 case 'SUGGESTION':
-                    response.suggestions.push(data);
+                    if (data.description && data.successRate && data.risk && data.reward) {
+                        response.suggestions.push(data as ActionSuggestion);
+                    }
                     break;
-                case 'STAT_UPDATE':
-                    response.updatedStats.push(data);
+                case 'PLAYER_STATS_UPDATE':
+                case 'PLAYER_STATS_INIT':
+                    if (data.name && data.value !== undefined) {
+                        const statsList = tagName === 'PLAYER_STATS_INIT' ? response.initialStats : response.updatedStats;
+                        statsList?.push(data as CharacterStat);
+                    }
                     break;
-                case 'ITEM_UPDATE':
-                    response.updatedInventory.push(data);
+                case 'ITEM_ADD':
+                    if (data.name && data.quantity) {
+                        response.updatedInventory.push({ ...data, description: data.description || '' } as GameItem);
+                    }
                     break;
-                case 'STATUS_ADD':
-                    response.addedStatuses.push(data);
+                case 'ITEM_REMOVE':
+                     if (data.name && data.quantity) {
+                        response.updatedInventory.push({ ...data, quantity: -Math.abs(data.quantity), description: '' } as GameItem);
+                    }
                     break;
-                case 'STATUS_REMOVE':
-                    response.removedStatuses.push(data);
+                case 'STATUS_ACQUIRED':
+                    if (data.name && data.description && data.type) {
+                        response.addedStatuses.push(data as StatusEffect);
+                    }
+                    break;
+                case 'STATUS_REMOVED':
+                    if (data.name) {
+                        response.removedStatuses.push({ name: data.name as string });
+                    }
+                    break;
+                case 'QUEST_NEW':
+                    if (data.name && data.description) {
+                        response.updatedQuests.push({ ...data, status: 'đang tiến hành' } as Quest);
+                    }
                     break;
                 case 'QUEST_UPDATE':
-                    response.updatedQuests.push(data);
+                    if (data.name && data.status) {
+                        response.updatedQuests.push({ ...data, description: data.description || '' } as Quest);
+                    }
                     break;
-                case 'COMPANION_ADD':
-                    response.addedCompanions.push(data);
+                case 'COMPANION_NEW':
+                     if (data.name && data.description) {
+                        response.addedCompanions.push(data as Companion);
+                    }
+                    break;
+                case 'COMPANION_REMOVE':
+                    if (data.name) {
+                        response.removedCompanions.push({ name: data.name as string });
+                    }
+                    break;
+                case 'NPC_NEW':
+                    if (data.name && data.description) {
+                        response.updatedNPCs.push(data as EncounteredNPC);
+                    }
                     break;
                 case 'NPC_UPDATE':
-                    response.updatedNPCs.push(data);
+                     if (data.name && data.thoughtsOnPlayer) {
+                        // Push a partial update. The merge logic will handle it.
+                        response.updatedNPCs.push({ name: data.name, thoughtsOnPlayer: data.thoughtsOnPlayer } as EncounteredNPC);
+                    }
                     break;
                 case 'FACTION_UPDATE':
-                    response.updatedFactions.push(data);
+                    if (data.name && data.description) {
+                        response.updatedFactions.push(data as EncounteredFaction);
+                    }
                     break;
-                case 'ENTITY_DISCOVER':
-                    response.discoveredEntities.push(data);
+                case 'ITEM_DEFINED':
+                case 'SKILL_DEFINED':
+                case 'LOCATION_DISCOVERED':
+                case 'LORE_DISCOVERED':
+                    if (data.name && data.description) {
+                         let type = 'Hệ thống sức mạnh / Lore';
+                         if (tagName === 'ITEM_DEFINED') type = 'Vật phẩm';
+                         if (tagName === 'LOCATION_DISCOVERED') type = 'Địa điểm';
+                         if (tagName === 'SKILL_DEFINED') type = 'Công pháp / Kỹ năng';
+                        response.discoveredEntities.push({ ...data, type } as InitialEntity);
+                    }
                     break;
-                case 'TIME_PASS':
-                    response.timePassed = data;
+                case 'MEMORY_ADD':
+                    if (data.content) response.newMemories.push(data.content as string);
                     break;
-                case 'REPUTATION_CHANGE':
-                    response.reputationChange = data;
+                case 'SUMMARY_ADD':
+                    if (data.content) response.newSummary = data.content as string;
+                    break;
+                case 'TIME_PASSED':
+                    response.timePassed = data as TimePassed;
+                    break;
+                case 'REPUTATION_CHANGED':
+                    response.reputationChange = data as { score: number, reason: string };
                     break;
                 case 'WORLD_TIME_SET':
-                    response.initialWorldTime = data;
+                    response.initialWorldTime = data as WorldTime;
                     break;
-                case 'REPUTATION_TIERS':
-                    response.reputationTiers = data;
+                case 'REPUTATION_TIERS_SET':
+                    if (typeof data.tiers === 'string') {
+                        response.reputationTiers = data.tiers.split(',').filter(Boolean);
+                    }
                     break;
             }
         } catch (e) {
