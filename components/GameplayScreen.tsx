@@ -386,7 +386,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             }
 
             // Save the final state
-            gameService.saveGame(finalState);
+            gameService.saveGame(finalState, 'auto');
             return finalState;
         });
 
@@ -466,7 +466,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setGameState(updatedGameState);
       setSuggestions(parsedResponse.suggestions);
       setShowSuggestions(true);
-      await gameService.saveGame(updatedGameState);
+      await gameService.saveGame(updatedGameState, 'auto');
 
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Lỗi không xác định khi bắt đầu game.';
@@ -486,7 +486,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 const updatedTierName = getReputationTier(gameState.reputation.score, tiers);
                 setGameState(prev => {
                     const newState = { ...prev, reputationTiers: tiers, reputation: { ...prev.reputation, tier: updatedTierName } };
-                    gameService.saveGame(newState);
+                    gameService.saveGame(newState, 'auto');
                     return newState;
                 });
             } catch (e) { 
@@ -541,7 +541,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleScrollToBottom = () => { if (logContainerRef.current) logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: 'smooth' }); };
   
   const performRestart = () => setGameState(prevState => ({ ...prevState, history: [], character: prevState.worldConfig.character, memories: [], summaries: [], playerStatus: [], inventory: [], encounteredNPCs: [], encounteredFactions: [], discoveredEntities: [], companions: [], quests: [], suggestions: [], worldTime: { year: 1, month: 1, day: 1, hour: 8 }, reputation: { score: 0, tier: 'Vô Danh' }, reputationTiers: [] }));
-  const handleSaveAndRestart = async () => { setIsSaving(true); await gameService.saveGame(gameState); setIsSaving(false); setShowRestartConfirm(false); performRestart(); };
+  const handleSaveAndRestart = async () => { setIsSaving(true); await gameService.saveGame(gameState, 'manual'); setIsSaving(false); setShowRestartConfirm(false); performRestart(); };
   const handleRestartWithoutSaving = () => { setShowRestartConfirm(false); performRestart(); };
   const handleRestart = () => { setIsSidePanelOpen(false); setShowRestartConfirm(true); };
   const handleUndoTurn = () => { setIsSidePanelOpen(false); setShowUndoConfirm(true); };
@@ -580,27 +580,27 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       setPlayerInput('');
       setSuggestions([]);
       setShowSuggestions(false); 
-      await gameService.saveGame(newState);
+      await gameService.saveGame(newState, 'auto');
   };
   const handleManualSave = useCallback(async () => {
     setIsSaving(true);
     try {
+      await gameService.saveGame(gameState, 'manual');
       fileService.saveGameStateToFile(gameState);
-      await gameService.saveGame(gameState);
       alert('Đã lưu game vào trình duyệt và tải tệp xuống thành công!');
     } catch (error) { alert(error instanceof Error ? error.message : "Lỗi khi lưu game."); console.error(error); } finally { setIsSaving(false); setIsSidePanelOpen(false); }
   }, [gameState]);
   const handleSendAction = () => handleActionSubmit(playerInput);
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleActionSubmit(playerInput); } };
-  const handleSaveAndExit = async () => { setIsSaving(true); await gameService.saveGame(gameState); setIsSaving(false); onBack(); };
+  const handleSaveAndExit = async () => { setIsSaving(true); await gameService.saveGame(gameState, 'manual'); setIsSaving(false); onBack(); };
   const handleSaveTemporaryRules = async (newRules: TemporaryRule[]) => {
     const updatedGameState = { ...gameState, worldConfig: { ...gameState.worldConfig, temporaryRules: newRules } };
     setGameState(updatedGameState);
-    await gameService.saveGame(updatedGameState);
+    await gameService.saveGame(updatedGameState, 'auto');
     setIsTempRulesModalOpen(false);
   };
   const handleNarrationContainerClick = (e: React.MouseEvent<HTMLDivElement>) => { if ((e.target as HTMLElement).tagName.toLowerCase() !== 'button') handleOpenStoryLog(); };
-  const handleDeleteStatus = (statusName: string) => { if (confirm(`Bạn có chắc muốn xóa trạng thái "${statusName}" không?`)) setGameState(prev => { const newStatus = prev.playerStatus.filter(s => s.name.trim().toLowerCase() !== statusName.trim().toLowerCase()); const newState = { ...prev, playerStatus: newStatus }; gameService.saveGame(newState); return newState; }); };
+  const handleDeleteStatus = (statusName: string) => { if (confirm(`Bạn có chắc muốn xóa trạng thái "${statusName}" không?`)) setGameState(prev => { const newStatus = prev.playerStatus.filter(s => s.name.trim().toLowerCase() !== statusName.trim().toLowerCase()); const newState = { ...prev, playerStatus: newStatus }; gameService.saveGame(newState, 'auto'); return newState; }); };
   const handleDeleteEntity = useCallback((entityToDelete: { name: string }) => {
     if (!confirm(`Bạn có chắc muốn xóa "${entityToDelete.name}" không? Thao tác này sẽ xóa mục này khỏi mọi nơi trong game.`)) return;
     setGameState(prev => {
@@ -614,13 +614,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         newState.encounteredFactions = (newState.encounteredFactions || []).filter((f: EncounteredFaction) => f.name.toLowerCase() !== nameToDelete);
         newState.discoveredEntities = (newState.discoveredEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
         newState.worldConfig.initialEntities = (newState.worldConfig.initialEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
-        gameService.saveGame(newState);
+        gameService.saveGame(newState, 'auto');
         return newState;
     });
   }, []);
   const handleCompanionClick = useCallback((companion: Companion) => setEntityModalContent({ title: companion.name, description: companion.description + (companion.personality ? `\n\nTính cách: ${companion.personality}` : ''), type: 'Đồng hành' }), []);
   const handleQuestClick = useCallback((quest: Quest) => setEntityModalContent({ title: quest.name, description: quest.description, type: 'Nhiệm Vụ' }), []);
-  const handleDeleteQuest = useCallback((questName: string) => { if (confirm(`Bạn có chắc muốn từ bỏ nhiệm vụ "${questName}" không?`)) setGameState(prev => { const newQuests = prev.quests.filter(q => q.name !== questName); const newState = { ...prev, quests: newQuests }; gameService.saveGame(newState); return newState; }); }, []);
+  const handleDeleteQuest = useCallback((questName: string) => { if (confirm(`Bạn có chắc muốn từ bỏ nhiệm vụ "${questName}" không?`)) setGameState(prev => { const newQuests = prev.quests.filter(q => q.name !== questName); const newState = { ...prev, quests: newQuests }; gameService.saveGame(newState, 'auto'); return newState; }); }, []);
   const handlePageChange = (updater: (p: number) => number) => { setCurrentPage(prev => { const newPage = updater(prev); if (newPage !== prev) setIsPaginating(true); return newPage; }); };
   
   const characterPersonality = gameState.character.personality === 'Tuỳ chỉnh' ? gameState.character.customPersonality : gameState.character.personality;

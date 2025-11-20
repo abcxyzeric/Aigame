@@ -14,6 +14,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.4.5 (Quản lý Lưu trữ & Tối ưu API)",
+      notes: [
+        "**Giới hạn File Lưu Tự động:** Giờ đây hệ thống sẽ chỉ lưu tối đa 15 file. Khi vượt quá, file lưu tự động (auto save) cũ nhất sẽ bị xóa để tránh làm đầy bộ nhớ trình duyệt.",
+        "**Phân loại File Lưu:** Các bản lưu giờ được đánh dấu rõ ràng là 'Thủ công' hoặc 'Tự động' trong màn hình tải game, giúp bạn dễ dàng quản lý.",
+        "**Sửa lỗi API 429:** Cải thiện logic xoay vòng API key, đặc biệt khi AI đọc nhiều file kiến thức nền trong lúc kiến tạo thế giới, giảm thiểu lỗi quá tải yêu cầu (429).",
+      ]
+    },
+    {
       version: "1.4.3 (Nâng Cấp Hệ Thống & Sửa Lỗi)",
       notes: [
         "**Cải thiện Xoay Vòng API Key:** Hệ thống giờ đây sẽ tự động chuyển sang API key tiếp theo trong danh sách nếu key hiện tại gặp lỗi (hết hạn mức, lỗi 429), đảm bảo trải nghiệm liền mạch cho người dùng có nhiều key.",

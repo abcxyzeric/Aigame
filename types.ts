@@ -201,6 +201,7 @@ export interface SaveSlot extends GameState {
   saveDate: string; // ISO String for display
   previewText: string;
   worldName: string;
+  saveType: 'manual' | 'auto';
 }
 
 export interface FandomFile {

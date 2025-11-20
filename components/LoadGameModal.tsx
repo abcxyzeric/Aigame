@@ -70,9 +70,14 @@ const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }
               {saves.map((save) => (
                 <div key={save.saveId} className="bg-slate-900/50 p-3 rounded-lg flex items-center justify-between gap-4">
                   <div className="flex-grow min-w-0">
-                    <p className="font-bold text-slate-200 truncate">
-                      {save.worldName || 'Cuộc phiêu lưu không tên'}
-                    </p>
+                     <div className="flex items-center justify-between">
+                       <p className="font-bold text-slate-200 truncate">
+                        {save.worldName || 'Cuộc phiêu lưu không tên'}
+                       </p>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${save.saveType === 'manual' ? 'bg-blue-600/70 text-blue-100' : 'bg-slate-600 text-slate-200'}`}>
+                         {save.saveType === 'manual' ? 'Thủ công' : 'Tự động'}
+                        </span>
+                    </div>
                     <p className="text-xs text-slate-400 mt-1">Lưu lúc: {new Date(save.saveDate).toLocaleString('vi-VN')}</p>
                     <p className="text-sm text-slate-400 italic mt-1 truncate">{save.previewText}</p>
                   </div>

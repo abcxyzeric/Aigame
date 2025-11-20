@@ -2,7 +2,7 @@ import { GameState, SaveSlot } from '../types';
 import * as dbService from './dbService';
 
 const LEGACY_SAVES_STORAGE_KEY = 'ai_rpg_all_saves';
-const MAX_SAVES = 50; // Increased limit for IndexedDB
+const MAX_SAVES = 15;
 
 // --- Legacy localStorage functions for migration ---
 const loadAllSavesFromLocalStorage = (): SaveSlot[] => {
@@ -61,7 +61,7 @@ export const loadAllSaves = async (): Promise<SaveSlot[]> => {
     return dbService.getAllSaves();
 };
 
-export const saveGame = async (gameState: GameState): Promise<void> => {
+export const saveGame = async (gameState: GameState, saveType: 'manual' | 'auto' = 'auto'): Promise<void> => {
   try {
     const lastTurn = gameState.history.length > 0 ? gameState.history[gameState.history.length - 1] : null;
     
@@ -77,6 +77,7 @@ export const saveGame = async (gameState: GameState): Promise<void> => {
       saveId: Date.now(),
       saveDate: new Date().toISOString(),
       previewText: previewText,
+      saveType: saveType,
     };
 
     await dbService.addSave(newSave);

@@ -61,6 +61,46 @@ function handleApiError(error: unknown, safetySettings: SafetySettingsConfig): E
     return new Error(`Lỗi từ Gemini API: ${rawMessage}`);
 }
 
+function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetySettingsConfig, isJson: boolean): Error {
+    const finishReason = candidate?.finishReason;
+    const safetyRatings = candidate?.safetyRatings;
+    const responseType = isJson ? "JSON" : "";
+
+    switch (finishReason) {
+        case 'SAFETY':
+            console.error(`Gemini API ${responseType} response blocked due to safety settings.`, { finishReason, safetyRatings });
+            let blockDetails = "Lý do: Bộ lọc an toàn.";
+            if (safetyRatings && safetyRatings.length > 0) {
+                const blockedCategories = safetyRatings.filter((r: any) => r.blocked).map((r: any) => r.category).join(', ');
+                if (blockedCategories) {
+                    blockDetails += ` Các danh mục bị chặn: ${blockedCategories}.`;
+                }
+            }
+            if (safetySettings.enabled) {
+                return new Error(`Phản hồi ${responseType} từ AI đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài Đặt. ${blockDetails}`);
+            } else {
+                return new Error(`Phản hồi ${responseType} từ AI đã bị chặn vì lý do an toàn nội bộ của mô hình, ngay cả khi bộ lọc đã tắt. Điều này có thể xảy ra với nội dung cực kỳ nhạy cảm. Vui lòng điều chỉnh lại hành động. ${blockDetails}`);
+            }
+        
+        case 'MAX_TOKENS':
+            return new Error("Phản hồi từ AI đã bị cắt ngắn vì đạt đến giới hạn token tối đa (Max Output Tokens). Bạn có thể tăng giá trị này trong 'Cài đặt > Cài đặt Hiệu suất AI' để nhận được phản hồi dài hơn.");
+            
+        case 'RECITATION':
+             return new Error("Phản hồi từ AI đã bị dừng vì có dấu hiệu lặp lại nội dung từ các nguồn khác. Vui lòng thử lại với một hành động khác để thay đổi hướng câu chuyện.");
+
+        case 'OTHER':
+        default:
+            const reason = finishReason || 'Không rõ lý do';
+            console.error(`Gemini API returned no text. Finish reason: ${reason}`, candidate);
+            if (!safetySettings.enabled) {
+                return new Error(`Phản hồi ${responseType} từ AI trống. Lý do: ${reason}. Điều này có thể do bộ lọc an toàn nội bộ của mô hình. Nếu bạn đã bật nội dung 18+, hãy thử diễn đạt lại hành động của mình một cách "văn học" hơn để vượt qua bộ lọc.`);
+            } else {
+                return new Error(`Phản hồi ${responseType} từ AI trống. Lý do kết thúc: ${reason}.`);
+            }
+    }
+}
+
+
 export async function generate(prompt: string, systemInstruction?: string): Promise<string> {
     const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
@@ -86,27 +126,10 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         });
         
         const candidate = response.candidates?.[0];
-        const finishReason = candidate?.finishReason;
-        const safetyRatings = candidate?.safetyRatings;
   
         if (!response.text) {
-            if (finishReason === 'SAFETY') {
-                console.error("Gemini API response blocked due to safety settings.", { finishReason, safetyRatings });
-                let blockDetails = "Lý do: Bộ lọc an toàn.";
-                if (safetyRatings && safetyRatings.length > 0) {
-                    blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
-                }
-                
-                if (safetySettings.enabled) {
-                    throw new Error(`Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài Đặt để tạo nội dung tự do hơn. (${blockDetails})`);
-                } else {
-                    throw new Error(`Phản hồi từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. Điều này có thể xảy ra với nội dung cực kỳ nhạy cảm. Vui lòng điều chỉnh lại hành động. (${blockDetails})`);
-                }
-            }
-  
-            const reason = finishReason || 'Không rõ lý do';
-            console.error(`Gemini API returned no text on attempt ${i + 1}. Finish reason: ${reason}`, response);
-            lastError = new Error(`Phản hồi từ AI trống. Lý do: ${reason}.`);
+            lastError = createDetailedErrorFromResponse(candidate, safetySettings, false);
+            console.error(`Gemini API returned no text on attempt ${i + 1}.`, { finishReason: candidate?.finishReason, safetyRatings: candidate?.safetyRatings });
             if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
             continue; // Retry
         }
@@ -159,30 +182,13 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
          });
   
         const candidate = response.candidates?.[0];
-        const finishReason = candidate?.finishReason;
-        const safetyRatings = candidate?.safetyRatings;
         const jsonString = response.text;
   
         if (!jsonString) {
-            if (finishReason === 'SAFETY') {
-                console.error("Gemini API JSON response blocked due to safety settings.", { finishReason, safetyRatings });
-                let blockDetails = "Lý do: Bộ lọc an toàn.";
-                if (safetyRatings && safetyRatings.length > 0) {
-                    blockDetails += " " + safetyRatings.filter(r => r.blocked).map(r => `Danh mục: ${r.category}`).join(', ');
-                }
-                
-                if (safetySettings.enabled) {
-                    throw new Error(`Phản hồi JSON từ AI đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc trong Cài đặt. (${blockDetails})`);
-                } else {
-                    throw new Error(`Phản hồi JSON từ AI đã bị chặn vì lý do an toàn, ngay cả khi bộ lọc đã tắt. (${blockDetails})`);
-                }
-            } else {
-               const reason = finishReason || 'Không rõ lý do';
-               console.error(`Gemini API returned no JSON text on attempt ${i + 1}. Finish reason: ${reason}`, response);
-               lastError = new Error(`Phản hồi JSON từ AI trống. Lý do: ${reason}.`);
-               if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-               continue;
-            }
+            lastError = createDetailedErrorFromResponse(candidate, safetySettings, true);
+            console.error(`Gemini API returned no JSON text on attempt ${i + 1}.`, { finishReason: candidate?.finishReason, safetyRatings: candidate?.safetyRatings });
+            if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            continue;
         }
         
         try {
