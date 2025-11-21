@@ -45,43 +45,49 @@ ${summaryContent}
 export const getGenerateFandomGenesisPrompt = (summaryContent: string, arcName: string, workName: string, authorName?: string) => {
     const authorInfo = authorName ? ` (tác giả: ${authorName})` : '';
     
-    const systemInstruction = "Bạn là một chuyên gia phân tích văn học và biên kịch chuyên nghiệp. Nhiệm vụ của bạn là phân tích sâu một phần của tác phẩm và trình bày nó một cách có cấu trúc, chi tiết và logic.";
+    const systemInstruction = "Bạn là một nhà biên niên sử AI và chuyên gia phân tích văn học. Nhiệm vụ của bạn là ghi chép lại một cách CỰC KỲ CHI TIẾT và TOÀN DIỆN một phần của tác phẩm, đảm bảo không bỏ sót bất kỳ chi tiết nào.";
 
-    const prompt = `Bạn là một biên kịch chuyên nghiệp đang phân tích kịch bản. Dưới đây là TÓM TẮT TỔNG QUAN về tác phẩm "${workName}"${authorInfo}.
+    const prompt = `Bạn là một nhà biên niên sử chuyên nghiệp. Dưới đây là TÓM TẮT TỔNG QUAN về tác phẩm "${workName}"${authorInfo}.
 
 --- TÓM TẮT TỔNG QUAN ---
 ${summaryContent}
 --- KẾT THÚC TÓM TẮT ---
 
-Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản phân tích CHI TIẾT SÂU SẮC và TOÀN DIỆN, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
+**NHIỆM VỤ TỐI CAO:** Dựa vào bản tóm tắt trên, hãy viết một **BIÊN NIÊN SỬ CHI TIẾT**, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
 
-QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
-1.  **PHẠM VI HẸP:** Chỉ trích xuất, tổng hợp và suy luận thông tin liên quan đến Arc "${arcName}".
-2.  **ĐỘ CHI TIẾT TỐI ĐA:** BẮT BUỘC phải phân tích đầy đủ tất cả các chi tiết. Không được bỏ sót bất kỳ sự kiện nào, dù là nhỏ nhất. Liệt kê TẤT CẢ các nhân vật xuất hiện, kể cả những nhân vật phụ chỉ có một vài lời thoại hoặc hành động nhỏ. Tập trung vào chiều sâu và sự liên kết logic.
+**QUY TẮC BẮT BUỘC (TUYỆT ĐỐI):**
+
+1.  **KHÔNG TÓM TẮT:** TUYỆT ĐỐI CẤM tóm tắt. Mục tiêu của bạn là **MỞ RỘNG** và **LÀM RÕ** mọi chi tiết. Hãy viết càng dài và càng chi tiết càng tốt, khai thác tối đa giới hạn token cho phép.
+2.  **LIỆT KÊ TOÀN BỘ:**
+    *   **Nhân vật:** BẮT BUỘC liệt kê tên của TẤT CẢ các nhân vật xuất hiện trong Arc này, dù là nhân vật chính, phụ, hay chỉ xuất hiện thoáng qua.
+    *   **Hội thoại:** Ghi lại những đoạn hội thoại quan trọng, giữ nguyên giọng điệu và ý nghĩa.
+    *   **Chi tiết:** Mô tả chi tiết bối cảnh, các chiêu thức được sử dụng, các vật phẩm được đề cập, và các sự kiện nhỏ nhất.
 3.  **CẤU TRÚC MARKDOWN BẮT BUỘC:** Trả về một bài văn bản thuần túy (plain text) tuân thủ nghiêm ngặt cấu trúc Markdown sau:
 
-# ARC: ${arcName}
+# BIÊN NIÊN SỬ ARC: ${arcName}
 
-## 1. Tóm Tắt Cốt Truyện
-(Viết một đoạn văn xuôi chi tiết, đầy đủ diễn biến, các tình tiết chính và phụ trong Arc này.)
+## 1. Diễn Biến Chi Tiết
+(Viết một đoạn văn xuôi CỰC KỲ DÀI và chi tiết, kể lại toàn bộ câu chuyện của Arc này như một cuốn biên niên sử. Mô tả từng sự kiện, từng trận đánh, từng cuộc đối thoại một cách tường tận.)
 
-## 2. Sự Kiện Quan Trọng
-(Liệt kê các sự kiện then chốt dưới dạng gạch đầu dòng)
-- [Tên Sự kiện 1]: Mô tả chi tiết về sự kiện và tầm ảnh hưởng của nó.
-- [Tên Sự kiện 2]: Mô tả chi tiết về sự kiện và tầm ảnh hưởng của nó.
+## 2. Dòng Sự Kiện Then Chốt
+(Liệt kê các sự kiện chính theo trình tự thời gian dưới dạng gạch đầu dòng)
+- **[Tên Sự kiện 1]**: Mô tả chi tiết về sự kiện, các nhân vật tham gia, và kết quả.
+- **[Tên Sự kiện 2]**: Mô tả chi tiết...
 
-## 3. Nhân Vật & Chuyển Biến
-(Liệt kê các nhân vật quan trọng trong Arc và phân tích sự phát triển của họ)
-- **[Tên Nhân Vật 1]**: Phân tích chi tiết vai trò, hành động, thay đổi tâm lý, sức mạnh và mối quan hệ của nhân vật trong suốt Arc.
-- **[Tên Nhân Vật 2]**: Phân tích chi tiết vai trò, hành động, thay đổi tâm lý, sức mạnh và mối quan hệ của nhân vật trong suốt Arc.
+## 3. Hồ Sơ Nhân Vật Trong Arc
+(Liệt kê TẤT CẢ các nhân vật xuất hiện và phân tích vai trò của họ CHỈ TRONG ARC NÀY)
+- **[Tên Nhân Vật 1 (Vai trò: Chính/Phụ/Phản diện)]**: Phân tích chi tiết hành động, quyết định, sự phát triển và mối quan hệ của nhân vật trong suốt Arc.
+- **[Tên Nhân Vật 2 (Vai trò: ...)]**: Phân tích chi tiết...
 
-## 4. Thế Lực & Bối Cảnh Mới
+## 4. Bối Cảnh & Thế Lực
 (Mô tả các địa điểm, phe phái, tổ chức mới xuất hiện hoặc đóng vai trò quan trọng trong Arc này.)
 
-## 5. Hệ Thống Sức Mạnh / Vật Phẩm (Nếu có)
-(Phân tích các chiêu thức, cấp độ, bảo vật, hoặc công nghệ mới được giới thiệu hoặc sử dụng nhiều trong Arc này.)
+## 5. Dữ liệu (Sức Mạnh, Vật Phẩm, Thuật Ngữ)
+(Phân tích chi tiết các chiêu thức, bảo vật, công nghệ, hoặc thuật ngữ mới được giới thiệu trong Arc này.)
 
-4.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một chuỗi duy nhất: "ARC_NOT_FOUND".
+4.  **XỬ LÝ ARC DÀI:** Nếu Arc "${arcName}" quá dài và phức tạp để có thể phân tích chi tiết trong một lần trả lời, bạn BẮT BUỘC phải tự động chia nó thành các phần nhỏ hơn (Phần 1, Phần 2...). Trong trường hợp này, hãy chỉ phân tích phần đầu tiên và kết thúc tên tiêu đề chính bằng \`(Phần 1)\`. Ví dụ: \`# BIÊN NIÊN SỬ ARC: ${arcName} (Phần 1)\`.
+
+5.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một chuỗi duy nhất: "ARC_NOT_FOUND".
 `;
     
     const { aiPerformanceSettings } = getSettings();

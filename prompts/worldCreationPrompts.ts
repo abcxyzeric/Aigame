@@ -3,6 +3,11 @@ import { WorldConfig, InitialEntity, AiPerformanceSettings } from "../types";
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS } from '../constants';
 import { getSettings } from "../services/settingsService";
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from "../constants";
+import { isFandomDataset, extractCleanTextFromDataset } from "../utils/datasetUtils";
+
+const getCleanContent = (content: string): string => {
+    return isFandomDataset(content) ? extractCleanTextFromDataset(content) : content;
+};
 
 const buildWorldCreationKnowledgePrompt = (knowledge?: {name: string, content: string}[]): string => {
     if (!knowledge || knowledge.length === 0) return '';
@@ -10,7 +15,7 @@ const buildWorldCreationKnowledgePrompt = (knowledge?: {name: string, content: s
     let prompt = '\n\n--- KIẾN THỨC NỀN (TÀI LIỆU THAM KHẢO) ---\n';
     prompt += 'Đây là toàn bộ tài liệu tham khảo bạn có. Hãy đọc kỹ và sử dụng chúng làm cơ sở cốt lõi để kiến tạo thế giới.\n\n';
 
-    prompt += knowledge.map(file => `--- NGUỒN TÀI LIỆU: ${file.name} ---\n${file.content}\n--- KẾT THÚC NGUỒN: ${file.name} ---`).join('\n\n');
+    prompt += knowledge.map(file => `--- NGUỒN TÀI LIỆU: ${file.name} ---\n${getCleanContent(file.content)}\n--- KẾT THÚC NGUỒN: ${file.name} ---`).join('\n\n');
 
     prompt += '\n\n--- KẾT THÚC KIẾN THỨC NỀN ---';
     return prompt;
@@ -32,12 +37,12 @@ export const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, conten
 
     if (summaries.length > 0) {
         prompt += '\n### TÓM TẮT TỔNG QUAN ###\n';
-        prompt += summaries.map(s => `--- NGUỒN: ${s.name} ---\n${s.content}`).join('\n\n');
+        prompt += summaries.map(s => `--- NGUỒN: ${s.name} ---\n${getCleanContent(s.content)}`).join('\n\n');
     }
 
     if (arcs.length > 0) {
         prompt += `\n\n### ${hasDetailFiles ? 'CHI TIẾT LIÊN QUAN' : 'PHÂN TÍCH CHI TIẾT TỪNG PHẦN'} ###\n`;
-        prompt += arcs.map(a => `--- NGUỒN: ${a.name} ---\n${a.content}`).join('\n\n');
+        prompt += arcs.map(a => `--- NGUỒN: ${a.name} ---\n${getCleanContent(a.content)}`).join('\n\n');
     }
 
     prompt += '\n--- KẾT THÚC KIẾN THÚC NỀN ---';

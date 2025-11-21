@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } from "@google/genai";
 import { getSettings } from '../settingsService';
-import { SafetySetting, SafetySettingsConfig, AiPerformanceSettings, HarmCategory, HarmBlockThreshold } from '../../types';
+import { AiPerformanceSettings, SafetySettingsConfig } from '../../types';
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
 import { processNarration } from '../../utils/aiResponseProcessor';
 
@@ -35,14 +35,11 @@ function getAiInstance(): GoogleGenAI {
     throw new Error('Không tìm thấy API Key nào. Vui lòng thêm API Key trong phần Cài đặt.');
   }
   
-  // Rotate key
   if (keyIndex >= keys.length) {
     keyIndex = 0;
   }
   const apiKey = keys[keyIndex];
   
-  // If the key is the same, reuse the instance. If different, create a new one.
-  // We increment keyIndex here so the *next* call that fails will try a new key.
   if (ai && currentApiKey === apiKey) {
     keyIndex++;
     return ai;
@@ -58,20 +55,17 @@ function handleApiError(error: unknown, safetySettings: SafetySettingsConfig): E
     const rawMessage = error instanceof Error ? error.message : String(error);
     console.error('Gemini API Error:', error);
 
-    // Try to parse the error message as JSON for specific codes
     try {
         const errorJson = JSON.parse(rawMessage);
         if (errorJson.error && (errorJson.error.code === 429 || errorJson.error.status === 'RESOURCE_EXHAUSTED')) {
             return new Error(
-                'Bạn đã vượt quá hạn mức yêu cầu API (Lỗi 429). Vui lòng đợi một lát rồi thử lại. ' +
-                'Nếu lỗi này xảy ra thường xuyên, hãy thêm nhiều API key khác nhau trong phần Cài đặt để phân bổ yêu cầu.'
+                'Bạn đã vượt quá hạn mức yêu cầu API (Lỗi 429/RESOURCE_EXHAUSTED). Vui lòng đợi một lát rồi thử lại.'
             );
         }
     } catch (e) {
         // Not a JSON error message, proceed with other checks
     }
 
-    // Check if the error is due to a safety block and if the filter is enabled by the user
     const isSafetyBlock = /safety/i.test(rawMessage) || /blocked/i.test(rawMessage);
     if (safetySettings.enabled && isSafetyBlock) {
         return new Error("Nội dung của bạn có thể đã bị chặn bởi bộ lọc an toàn. Vui lòng thử lại với nội dung khác hoặc tắt bộ lọc an toàn trong mục Cài Đặt để tạo nội dung tự do hơn.");
@@ -126,12 +120,12 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
     const keys = apiKeyConfig.keys.filter(Boolean);
-    const MAX_RETRIES = Math.max(keys.length, 3); // At least 3 retries, but enough to cycle all keys.
+    const MAX_RETRIES = Math.max(keys.length, 3);
     let lastError: Error | null = null;
   
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
-        const aiInstance = getAiInstance(); // Get a potentially new key on each retry
+        const aiInstance = getAiInstance();
   
         const response = await aiInstance.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -149,24 +143,27 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         if (!response.text) {
             lastError = createDetailedErrorFromResponse(candidate, safetySettings, false);
             console.error(`Gemini API returned no text on attempt ${i + 1}.`, { finishReason: candidate?.finishReason, safetyRatings: candidate?.safetyRatings });
-            if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
-            continue; // Retry
+            continue;
         }
   
-        const rawText = response.text.trim();
-        return rawText; // Success! Return raw text without processing.
+        return response.text.trim();
   
       } catch (error) {
         console.error(`Error in generate attempt ${i + 1}:`, error);
         lastError = handleApiError(error, safetySettings);
         
-        const rawMessage = lastError.message.toLowerCase();
-        // Retry on API key issues, rate limits, or resource exhausted errors
-        if ((rawMessage.includes('api key') || /429|rate limit|resource_exhausted/.test(rawMessage)) && i < MAX_RETRIES - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-            continue; // Retry with next key
+        if (i < MAX_RETRIES - 1) {
+            const rawMessage = lastError.message.toLowerCase();
+            if (/429|rate limit|resource_exhausted|503/.test(rawMessage)) {
+                const delay = 1500 * Math.pow(2, i);
+                console.warn(`Rate limit/server error on attempt ${i + 1}. Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.warn(`Error on attempt ${i + 1}. Trying next key immediately...`);
+            }
+            continue;
         } else {
-            throw lastError; // Don't retry for other errors (e.g. safety)
+            throw lastError;
         }
       }
     }
@@ -206,7 +203,6 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         if (!jsonString) {
             lastError = createDetailedErrorFromResponse(candidate, safetySettings, true);
             console.error(`Gemini API returned no JSON text on attempt ${i + 1}.`, { finishReason: candidate?.finishReason, safetyRatings: candidate?.safetyRatings });
-            if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             continue;
         }
         
@@ -223,7 +219,6 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
               console.error(`JSON Parsing Error on attempt ${i + 1}:`, e);
               console.error('Malformed JSON string from AI:', jsonString);
               lastError = new Error(`Lỗi phân tích JSON từ AI: ${e.message}. Chuỗi nhận được: "${jsonString.substring(0, 100)}..."`);
-              if (i < MAX_RETRIES - 1) await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
               continue;
             }
             throw e;
@@ -233,9 +228,15 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         console.error(`Error in generateJson attempt ${i + 1}:`, error);
         lastError = handleApiError(error, safetySettings);
         
-        const rawMessage = lastError.message.toLowerCase();
-        if ((rawMessage.includes('api key') || /429|rate limit|resource_exhausted/.test(rawMessage)) && i < MAX_RETRIES - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        if (i < MAX_RETRIES - 1) {
+            const rawMessage = lastError.message.toLowerCase();
+            if (/429|rate limit|resource_exhausted|503/.test(rawMessage)) {
+                const delay = 1500 * Math.pow(2, i);
+                console.warn(`Rate limit/server error on attempt ${i + 1}. Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                console.warn(`Error on attempt ${i + 1}. Trying next key immediately...`);
+            }
             continue;
         } else {
             throw lastError;
@@ -244,4 +245,47 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
     }
   
     throw lastError || new Error("AI không thể tạo phản hồi JSON sau nhiều lần thử.");
+}
+
+export async function generateEmbedding(text: string): Promise<number[]> {
+    const { apiKeyConfig } = getSettings();
+    const keys = apiKeyConfig.keys.filter(Boolean);
+    if (keys.length === 0) {
+        throw new Error('Không có API Key nào được cấu hình để tạo embeddings.');
+    }
+    const MAX_RETRIES = Math.max(keys.length, 3);
+    let lastError: Error | null = null;
+    
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        try {
+            const aiInstance = getAiInstance(); // Rotates key
+            const result = await aiInstance.models.embedContent({
+                model: "text-embedding-004",
+// FIX: The parameter name for the content to be embedded is 'contents', not 'content'.
+                contents: text,
+            });
+// FIX: The response object contains an array of embeddings under the 'embeddings' property. Since a single string is passed, the result is the first element of this array.
+            const embedding = result.embeddings[0];
+            if (embedding?.values) {
+                return embedding.values;
+            }
+            throw new Error("API không trả về embedding hợp lệ.");
+        } catch (error) {
+            console.error(`Error in generateEmbedding attempt ${i + 1}:`, error);
+            lastError = handleApiError(error, getSettings().safetySettings);
+            
+            if (i < MAX_RETRIES - 1) {
+                const rawMessage = lastError.message.toLowerCase();
+                if (/429|rate limit|resource_exhausted|503/.test(rawMessage)) {
+                    const delay = 1500 * Math.pow(2, i);
+                    console.warn(`Embedding rate limit/server error on attempt ${i + 1}. Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                continue;
+            } else {
+                throw lastError;
+            }
+        }
+    }
+    throw lastError || new Error("Không thể tạo embedding sau nhiều lần thử.");
 }

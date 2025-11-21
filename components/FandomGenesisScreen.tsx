@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import * as aiService from '../services/aiService';
-import { saveTextToFile } from '../services/fileService';
+import { saveTextToFile, saveJsonToFile } from '../services/fileService';
 import * as fandomFileService from '../services/fandomFileService';
-import { FandomFile } from '../types';
+import { FandomFile, FandomDataset } from '../types';
 import NotificationModal from './common/NotificationModal';
 import FandomFileLoadModal from './FandomFileLoadModal';
+import Accordion from './common/Accordion';
 
 interface FandomGenesisScreenProps {
   onBack: () => void;
@@ -19,28 +20,42 @@ const StyledInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (prop
   />
 );
 
+
 const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => {
+  // --- State for Steps 1 & 2 ---
   const [workName, setWorkName] = useState('');
   const [authorName, setAuthorName] = useState('');
-  
-  const [loadingStates, setLoadingStates] = useState({ summary: false, arc: false });
+  const [loadingStates, setLoadingStates] = useState({ summary: false, arc: false, training: false });
   const [progress, setProgress] = useState(0);
   const progressIntervalRef = useRef<number | null>(null);
-
-  const [notification, setNotification] = useState({ isOpen: false, title: '', messages: [''] });
   const [generatedResult, setGeneratedResult] = useState<{ name: string, content: string, type: 'txt' | 'json' } | null>(null);
   const [savedFiles, setSavedFiles] = useState<FandomFile[]>([]);
   const [renamingFileId, setRenamingFileId] = useState<number | null>(null);
   const [newFileName, setNewFileName] = useState('');
-  const fileUploadRef = useRef<HTMLInputElement>(null);
-
   const [isSummarySelectModalOpen, setIsSummarySelectModalOpen] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState<FandomFile | null>(null);
-  
   const [arcList, setArcList] = useState<string[]>([]);
   const [selectedArcs, setSelectedArcs] = useState<Set<string>>(new Set());
-
   const [arcProcessingProgress, setArcProcessingProgress] = useState({ current: 0, total: 0, status: 'idle' as 'idle' | 'extracting_arcs' | 'summarizing' | 'done', currentArcName: '' });
+
+  // --- State for Train Data ---
+  const [chunkSize, setChunkSize] = useState(1000);
+  const [overlap, setOverlap] = useState(100);
+  const [sourceTrainFile, setSourceTrainFile] = useState<{ name: string; content: string } | null>(null);
+  const [trainingProgress, setTrainingProgress] = useState({ current: 0, total: 0 });
+  const [trainedDataset, setTrainedDataset] = useState<FandomDataset | null>(null);
+  const [trainingStatusText, setTrainingStatusText] = useState('');
+  
+  // --- Common State ---
+  const [notification, setNotification] = useState({ isOpen: false, title: '', messages: [''] });
+  const fileUploadRef = useRef<HTMLInputElement>(null);
+  const trainFileUploadRef = useRef<HTMLInputElement>(null);
+
+  // --- Constants for Train Data ---
+  const TOKEN_PER_WORD = 1.5;
+  const MAX_CHUNK_TOKENS = 4096;
+  const estimatedTokens = Math.round(chunkSize * TOKEN_PER_WORD);
+  const isChunkSettingValid = estimatedTokens < MAX_CHUNK_TOKENS && chunkSize > 0 && overlap >= 0 && chunkSize > overlap;
 
 
   const refreshSavedFiles = async () => {
@@ -194,8 +209,17 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
     await refreshSavedFiles();
   };
 
-  const handleDownload = (name: string, content: string) => {
-    saveTextToFile(content, name);
+  const handleDownload = (name: string, content: string, type: 'txt' | 'json') => {
+    if (type === 'txt') {
+        saveTextToFile(content, name);
+    } else {
+        try {
+            const jsonData = JSON.parse(content);
+            saveJsonToFile(jsonData, name);
+        } catch (e) {
+             setNotification({ isOpen: true, title: 'Lỗi', messages: ['Nội dung không phải là JSON hợp lệ để tải xuống.'] });
+        }
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -243,6 +267,106 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
         event.target.value = '';
     }
   };
+  
+  // --- Train Data Logic ---
+
+  const handleTrainFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && (file.type === 'text/plain' || file.name.endsWith('.txt'))) {
+        const content = await file.text();
+        setSourceTrainFile({ name: file.name, content });
+        setTrainedDataset(null);
+        setNotification({ isOpen: true, title: 'Tải tệp thành công', messages: [`Đã tải tệp "${file.name}". Giờ bạn có thể bắt đầu Train.`] });
+    } else if (file) {
+        setNotification({ isOpen: true, title: 'Lỗi', messages: ['Vui lòng chỉ chọn tệp .txt.'] });
+    }
+    if (event.target) event.target.value = '';
+  };
+
+  const performChunking = () => {
+    if (!sourceTrainFile) {
+        setNotification({ isOpen: true, title: 'Chưa có tệp', messages: ['Vui lòng nhập một tệp .txt trước khi Train.'] });
+        return;
+    }
+    if (!isChunkSettingValid) {
+        setNotification({ isOpen: true, title: 'Cài đặt không hợp lệ', messages: ['Vui lòng kiểm tra lại cài đặt Chunk. Số từ chồng lấn phải nhỏ hơn số từ mỗi chunk.'] });
+        return;
+    }
+    setLoadingStates(p => ({...p, training: true}));
+    setTrainedDataset(null);
+    setTrainingProgress({ current: 0, total: 0 });
+    
+    setTimeout(async () => {
+        try {
+            setTrainingStatusText('Đang cắt nhỏ tệp...');
+            const words = sourceTrainFile.content.split(/[\s\n\r]+/).filter(Boolean);
+            const textChunks: string[] = [];
+            const step = chunkSize - overlap > 0 ? chunkSize - overlap : chunkSize;
+            for (let i = 0; i < words.length; i += step) {
+                textChunks.push(words.slice(i, i + chunkSize).join(' '));
+            }
+
+            setTrainingStatusText(`Đang tạo embeddings cho ${textChunks.length} chunks...`);
+            const embeddings = await aiService.embedChunks(textChunks, (progress) => {
+                const currentChunk = Math.round(progress * textChunks.length);
+                setTrainingProgress({ current: currentChunk, total: textChunks.length });
+                setTrainingStatusText(`Đang tạo embedding cho chunk ${currentChunk}/${textChunks.length}...`);
+            });
+            
+            setTrainingStatusText('Đang đóng gói Dataset...');
+            const dataset: FandomDataset = {
+                metadata: {
+                    sourceName: sourceTrainFile.name,
+                    createdAt: new Date().toISOString(),
+                    totalChunks: textChunks.length,
+                    chunkSize,
+                    overlap,
+                    embeddingModel: 'text-embedding-004',
+                },
+                chunks: textChunks.map((chunkText, index) => ({
+                    id: `${sourceTrainFile.name.replace(/\.txt$/i, '')}-part-${index + 1}`,
+                    text: chunkText,
+                    embedding: embeddings[index],
+                }))
+            };
+
+            setTrainedDataset(dataset);
+            setNotification({
+                isOpen: true,
+                title: 'Hoàn thành!',
+                messages: [`Đã đóng gói và tạo vector thành công ${textChunks.length} chunks vào Dataset. Dữ liệu đã được chuẩn hóa để tối ưu cho bộ nhớ AI.`]
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định.';
+            setNotification({ isOpen: true, title: 'Lỗi khi xử lý tệp', messages: [errorMessage] });
+        } finally {
+            setLoadingStates(p => ({...p, training: false}));
+            setTrainingProgress({ current: 0, total: 0 });
+            setTrainingStatusText('');
+        }
+    }, 100);
+  };
+
+  const handleSaveDataset = async () => {
+    if (!trainedDataset) return;
+    setLoadingStates(p => ({...p, training: true}));
+    try {
+        const baseName = trainedDataset.metadata.sourceName.replace(/\.txt$/i, '');
+        const fileName = `[DATASET]_${baseName}.json`;
+        await fandomFileService.saveFandomFile(fileName, JSON.stringify(trainedDataset, null, 2));
+        
+        setNotification({ isOpen: true, title: 'Thành công!', messages: [`Đã lưu Dataset "${fileName}" vào Kho Nguyên Tác.`] });
+        await refreshSavedFiles();
+        setTrainedDataset(null);
+        setSourceTrainFile(null);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Lỗi không xác định.';
+        setNotification({ isOpen: true, title: 'Lỗi khi lưu tệp', messages: [errorMessage] });
+    } finally {
+        setLoadingStates(p => ({...p, training: false}));
+    }
+  };
 
 
   return (
@@ -269,6 +393,13 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
         accept=".txt,.json"
         multiple
       />
+       <input
+        type="file"
+        ref={trainFileUploadRef}
+        onChange={handleTrainFileChange}
+        className="hidden"
+        accept=".txt"
+      />
       <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8">
         <div className="flex justify-between items-center mb-8 mt-4">
             <h1 className="text-2xl md:text-3xl font-bold text-slate-100">Kiến Tạo từ Nguyên Tác</h1>
@@ -279,9 +410,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
         </div>
 
         <div className="space-y-8">
-            {/* --- Step 1: Summary --- */}
-            <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg p-6 border border-slate-700/50">
-                <h2 className="text-xl font-bold text-sky-400 mb-2">Bước 1: Tạo Tóm Tắt Tổng Quan (.txt)</h2>
+            <Accordion title="Bước 1: Tạo Tóm Tắt Tổng Quan (.txt)" icon={<Icon name="magic"/>} borderColorClass='border-sky-500' titleClassName='text-sky-400' startOpen={true}>
                 <p className="text-slate-400 mb-4 text-sm">Cung cấp cho AI cái nhìn tổng quan về tác phẩm. Tệp tóm tắt này là **đầu vào bắt buộc** cho Bước 2.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -298,14 +427,10 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                         {loadingStates.summary ? 'Đang tóm tắt...' : <><Icon name="magic" className="w-5 h-5 mr-2" />Tạo Tóm Tắt</>}
                     </Button>
                 </div>
-            </div>
-
-            {/* --- Step 2: Arc Analysis --- */}
-            <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg p-6 border border-slate-700/50">
-                <h2 className="text-xl font-bold text-special-400 mb-2">Bước 2: Tóm Tắt Chi Tiết Tự Động Theo Arc (.txt)</h2>
+            </Accordion>
+            
+            <Accordion title="Bước 2: Phân Tích Chi Tiết theo Arc (.txt)" icon={<Icon name="news"/>} borderColorClass='border-fuchsia-500' titleClassName='text-fuchsia-400'>
                 <p className="text-slate-400 mb-4 text-sm">Chọn tệp tóm tắt (`tom_tat_...`) từ kho, sau đó quét để lấy danh sách các Arc. Cuối cùng, chọn các Arc bạn muốn AI tóm tắt chi tiết.</p>
-                
-                {/* Step 2A: Select summary and Scan */}
                 <div className="bg-slate-900/30 p-4 rounded-md border border-slate-700">
                     <h3 className="text-lg font-semibold text-slate-200 mb-3">Giai đoạn 2A: Quét danh sách Arc</h3>
                     <div className="flex flex-col sm:flex-row gap-4 items-center mb-4">
@@ -323,7 +448,6 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                     </div>
                 </div>
 
-                {/* Step 2B: Select Arcs and Generate */}
                 {arcList.length > 0 && (
                 <div className="mt-6 bg-slate-900/30 p-4 rounded-md border border-slate-700 animate-fade-in">
                     <h3 className="text-lg font-semibold text-slate-200 mb-3">Giai đoạn 2B: Chọn lọc & Tạo tóm tắt</h3>
@@ -355,35 +479,97 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                     </div>
                 </div>
                 )}
-            </div>
+            </Accordion>
+
+            <Accordion title="Train Data File TXT (Công cụ xử lý dữ liệu)" icon={<Icon name="settings"/>} borderColorClass='border-yellow-500' titleClassName='text-yellow-400'>
+                <p className="text-slate-400 mb-4 text-sm">Công cụ này giúp bạn xử lý một tệp .txt lớn (nguyên tác), cắt nhỏ (chunking), tạo vector và đóng gói thành một tệp Dataset (.json). Tệp .json này được tối ưu hóa để làm 'Kiến thức nền', giúp AI truy xuất thông tin hiệu quả và chính xác hơn.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Settings Panel */}
+                    <div className="bg-slate-900/30 p-4 rounded-md border border-slate-700 space-y-4">
+                        <h3 className="text-lg font-semibold text-slate-200">Cài đặt</h3>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-1">Số từ mỗi chunk (đoạn):</label>
+                            <StyledInput type="number" value={chunkSize} onChange={e => setChunkSize(parseInt(e.target.value, 10) || 0)} min="100"/>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-1">Số từ chồng lấn (overlap):</label>
+                            <StyledInput type="number" value={overlap} onChange={e => setOverlap(parseInt(e.target.value, 10) || 0)} min="0" max={chunkSize > 0 ? chunkSize -1 : 0}/>
+                        </div>
+                        <div className="bg-slate-800 p-3 rounded-md">
+                            <p className="text-sm font-semibold text-slate-300">Ước tính Token:</p>
+                            <div className="w-full bg-slate-700 rounded-full h-2.5 my-2">
+                                <div className={`h-2.5 rounded-full ${isChunkSettingValid ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min(100, (estimatedTokens / MAX_CHUNK_TOKENS) * 100)}%` }}></div>
+                            </div>
+                            <div className={`flex items-center gap-2 text-xs font-bold ${isChunkSettingValid ? 'text-green-400' : 'text-red-400'}`}>
+                                <Icon name={isChunkSettingValid ? 'checkCircle' : 'xCircle'} className="w-4 h-4" />
+                                <span>{estimatedTokens} / {MAX_CHUNK_TOKENS} tokens. {isChunkSettingValid ? 'Cài đặt hợp lệ.' : 'Vượt giới hạn!'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {/* Action Panel */}
+                    <div className="bg-slate-900/30 p-4 rounded-md border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-200 mb-3">Thao tác</h3>
+                            <Button onClick={() => trainFileUploadRef.current?.click()} variant="secondary" className="!w-full !text-sm !py-2 mb-4">
+                                <Icon name="upload" className="w-4 h-4 mr-2" /> {sourceTrainFile ? `Đã chọn: ${sourceTrainFile.name}` : 'Nhập file .TXT cần xử lý'}
+                            </Button>
+                        </div>
+                        <Button onClick={performChunking} variant="warning" disabled={!sourceTrainFile || !isChunkSettingValid || loadingStates.training} className="!w-full !text-base !py-2 !px-6 mt-auto">
+                            {loadingStates.training ? 'Đang xử lý...' : <><Icon name="magic" className="w-5 h-5 mr-2" />Train Data</>}
+                        </Button>
+                    </div>
+                </div>
+                {trainingProgress.total > 0 && (
+                    <div className="mt-4">
+                        <p className="text-sm text-center text-slate-300">{trainingStatusText || `Đang xử lý...`}</p>
+                        <div className="w-full bg-slate-700 rounded-full h-2.5 mt-2">
+                            <div className="bg-yellow-400 h-2.5 rounded-full" style={{ width: `${(trainingProgress.current / trainingProgress.total) * 100}%` }}></div>
+                        </div>
+                    </div>
+                )}
+            </Accordion>
         </div>
 
-        {generatedResult && (
+        {(generatedResult || trainedDataset) && (
           <div className="bg-green-900/20 border border-green-700 rounded-lg p-4 my-8 animate-fade-in">
-              <h3 className="text-lg font-semibold text-green-300">Phân tích hoàn tất!</h3>
-              <p className="text-sm text-slate-300 mt-1">AI đã tạo xong tệp <span className="font-mono bg-slate-700 px-1 rounded">{generatedResult.name}</span>.</p>
-               <p className="text-sm text-amber-300 mt-2 flex items-start">
-                <Icon name="info" className="w-4 h-4 inline mr-2 mt-0.5 flex-shrink-0"/>
-                <span>Lưu ý: Tên tệp đã được chuẩn hóa thành <span className="font-mono bg-slate-700 px-1 rounded">tom_tat_...</span>. Vui lòng không đổi tên tệp này để AI có thể nhận diện và ưu tiên xử lý chính xác.</span>
-              </p>
-              <div className="flex gap-4 mt-4">
-                  <Button onClick={handleSaveToBrowser} variant="success" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="save" className="w-4 h-4 mr-2"/>Lưu vào trình duyệt</Button>
-                  <Button onClick={() => handleDownload(generatedResult.name, generatedResult.content)} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="download" className="w-4 h-4 mr-2"/>Tải về máy</Button>
-                   <button onClick={() => setGeneratedResult(null)} className="text-slate-400 hover:text-white transition text-sm font-medium px-4 py-2">Đóng</button>
-              </div>
+              {generatedResult && (
+                  <>
+                      <h3 className="text-lg font-semibold text-green-300">Phân tích hoàn tất!</h3>
+                      <p className="text-sm text-slate-300 mt-1">AI đã tạo xong tệp <span className="font-mono bg-slate-700 px-1 rounded">{generatedResult.name}</span>.</p>
+                      <p className="text-sm text-amber-300 mt-2 flex items-start">
+                          <Icon name="info" className="w-4 h-4 inline mr-2 mt-0.5 flex-shrink-0"/>
+                          <span>Lưu ý: Tên tệp đã được chuẩn hóa thành <span className="font-mono bg-slate-700 px-1 rounded">tom_tat_...</span>. Vui lòng không đổi tên tệp này để AI có thể nhận diện và ưu tiên xử lý chính xác.</span>
+                      </p>
+                      <div className="flex gap-4 mt-4">
+                          <Button onClick={handleSaveToBrowser} variant="success" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="save" className="w-4 h-4 mr-2"/>Lưu vào kho</Button>
+                          <Button onClick={() => handleDownload(generatedResult.name, generatedResult.content, generatedResult.type)} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="download" className="w-4 h-4 mr-2"/>Tải về máy</Button>
+                          <button onClick={() => setGeneratedResult(null)} className="text-slate-400 hover:text-white transition text-sm font-medium px-4 py-2">Đóng</button>
+                      </div>
+                  </>
+              )}
+              {trainedDataset && (
+                  <>
+                      <h3 className="text-lg font-semibold text-green-300">Xử lý hoàn tất!</h3>
+                      <p className="text-sm text-slate-300 mt-1">Đã đóng gói tệp nguồn thành <span className="font-bold">{trainedDataset.metadata.totalChunks}</span> chunks trong một Dataset.</p>
+                      <p className="text-sm text-amber-300 mt-2 flex items-start">
+                          <Icon name="info" className="w-4 h-4 inline mr-2 mt-0.5 flex-shrink-0"/>
+                          <span>Lưu Dataset này vào kho để sử dụng làm "Kiến thức nền" trong màn hình "Kiến tạo Thế giới".</span>
+                      </p>
+                      <div className="flex gap-4 mt-4">
+                          <Button onClick={handleSaveDataset} variant="success" disabled={loadingStates.training} className="!w-auto !py-2 !px-4 !text-sm"><Icon name="save" className="w-4 h-4 mr-2"/>Lưu Dataset vào kho</Button>
+                           <Button onClick={() => saveJsonToFile(trainedDataset, `[DATASET]_${trainedDataset.metadata.sourceName.replace(/\.txt$/i, '')}.json`)} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="download" className="w-4 h-4 mr-2"/>Tải Dataset (.json)</Button>
+                          <button onClick={() => setTrainedDataset(null)} className="text-slate-400 hover:text-white transition text-sm font-medium px-4 py-2">Hủy</button>
+                      </div>
+                  </>
+              )}
           </div>
         )}
 
         <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg p-6 border border-slate-700/50 mt-8">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-slate-100">Kho Nguyên Tác Đã Lưu</h2>
-                <Button
-                    onClick={() => fileUploadRef.current?.click()}
-                    variant="secondary"
-                    className="!w-auto !py-2 !px-4 !text-sm"
-                >
-                    <Icon name="upload" className="w-4 h-4 mr-2"/>
-                    Tải lên từ máy
+                <Button onClick={() => fileUploadRef.current?.click()} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm">
+                    <Icon name="upload" className="w-4 h-4 mr-2"/> Tải lên từ máy
                 </Button>
             </div>
             {savedFiles.length > 0 ? (
@@ -410,7 +596,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                                 <button onClick={() => handleStartRename(file)} className="p-2 text-yellow-400 hover:bg-yellow-500/20 rounded-full transition" title="Đổi tên">
                                     <Icon name="pencil" className="w-5 h-5"/>
                                 </button>
-                                <button onClick={() => handleDownload(file.name, file.content)} className="p-2 text-sky-400 hover:bg-sky-500/20 rounded-full transition" title="Tải xuống tệp">
+                                <button onClick={() => handleDownload(file.name, file.content, file.name.endsWith('.json') ? 'json' : 'txt')} className="p-2 text-sky-400 hover:bg-sky-500/20 rounded-full transition" title="Tải xuống tệp">
                                     <Icon name="download" className="w-5 h-5"/>
                                 </button>
                                 <button onClick={() => handleDelete(file.id)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-full transition" title="Xóa tệp">

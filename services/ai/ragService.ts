@@ -1,13 +1,17 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { GameState, GameTurn } from '../../types';
+import { GameState, GameTurn, FandomDataset } from '../../types';
 import { 
     getGenerateSummaryPrompt,
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
-    getRelevantContextEntitiesPrompt,
     getDistillKnowledgePrompt
 } from '../../prompts/analysisPrompts';
 import { buildBackgroundKnowledgePrompt } from '../../prompts/worldCreationPrompts';
+import { isFandomDataset, extractCleanTextFromDataset } from '../../utils/datasetUtils';
+import * as embeddingService from './embeddingService';
+import * as fandomFileService from '../fandomFileService';
+import { cosineSimilarity } from '../../utils/vectorUtils';
+import { generateEmbedding } from '../core/geminiClient';
 
 export async function generateSummary(turns: GameTurn[]): Promise<string> {
     if (turns.length === 0) return "";
@@ -28,92 +32,135 @@ export async function retrieveRelevantKnowledge(context: string, allKnowledge: {
     if (!allKnowledge || allKnowledge.length === 0) return "";
 
     const summaries = allKnowledge.filter(k => k.name.startsWith('tom_tat_'));
-    const detailFiles = allKnowledge.filter(k => !k.name.startsWith('tom_tat_'));
+    const datasetFiles = allKnowledge.filter(k => k.name.startsWith('[DATASET]'));
     
-    let selectedKnowledgeFiles = [...summaries];
+    let relevantChunks: { text: string; score: number }[] = [];
 
-    if (detailFiles.length > 0) {
-        const { prompt, schema, smallAnalyticalConfig } = getRetrieveRelevantKnowledgePrompt(context, detailFiles, topK);
+    if (datasetFiles.length > 0 && context) {
         try {
-            const result = await generateJson<{ relevant_files: string[] }>(prompt, schema, undefined, 'gemini-2.5-flash', smallAnalyticalConfig);
-            if (result && result.relevant_files) {
-                const relevantFileNames = new Set(result.relevant_files);
-                const relevantDetailFiles = detailFiles.filter(f => relevantFileNames.has(f.name));
-                selectedKnowledgeFiles.push(...relevantDetailFiles);
+            const queryEmbedding = await generateEmbedding(context);
+            
+            for (const file of datasetFiles) {
+                try {
+                    const dataset: FandomDataset = JSON.parse(file.content);
+                    if (dataset.metadata?.embeddingModel && dataset.chunks?.every(c => Array.isArray(c.embedding))) {
+                        for (const chunk of dataset.chunks) {
+                            const score = cosineSimilarity(queryEmbedding, chunk.embedding!);
+                            if (score > 0.7) { 
+                                relevantChunks.push({ text: chunk.text, score });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Could not parse or process dataset file for vector search: ${file.name}`, e);
+                }
             }
         } catch (error) {
-            console.error("Error retrieving relevant knowledge, using summaries only:", error);
+            console.error("Error during vector search in RAG:", error);
         }
     }
+
+    relevantChunks.sort((a, b) => b.score - a.score);
+    const topKChunks = relevantChunks.slice(0, topK);
+
+    const selectedKnowledgeFiles = [
+        ...summaries,
+        ...topKChunks.map((chunk, i) => ({
+            name: `Chi_tiet_lien_quan_${i + 1}`,
+            content: chunk.text
+        }))
+    ];
     
     if (selectedKnowledgeFiles.length === 0) return "";
     
-    const hasDetailFiles = selectedKnowledgeFiles.some(f => !f.name.startsWith('tom_tat_'));
+    const hasDetailFiles = topKChunks.length > 0;
     return buildBackgroundKnowledgePrompt(selectedKnowledgeFiles, hasDetailFiles);
 }
 
-interface RelevantEntities {
-    relevantNPCs: string[]; relevantItems: string[]; relevantQuests: string[];
-    relevantFactions: string[]; relevantCompanions: string[]; relevantSkills: string[];
-    relevantPlayerStatus: string[];
-}
-
-export async function getRelevantContextEntities(gameState: GameState, playerAction: string): Promise<RelevantEntities> {
-    const promptData = getRelevantContextEntitiesPrompt(gameState, playerAction);
-
-    if (!promptData) {
-        return { relevantNPCs: [], relevantItems: [], relevantQuests: [], relevantFactions: [], relevantCompanions: [], relevantSkills: [], relevantPlayerStatus: [] };
-    }
-    
-    const { prompt, schema, systemInstruction, smallAnalyticalConfig } = promptData;
-
-    try {
-        const result = await generateJson<Partial<RelevantEntities>>(prompt, schema, systemInstruction, 'gemini-2.5-flash', smallAnalyticalConfig);
-        return {
-            relevantNPCs: result.relevantNPCs || [], relevantItems: result.relevantItems || [],
-            relevantQuests: result.relevantQuests || [], relevantFactions: result.relevantFactions || [],
-            relevantCompanions: result.relevantCompanions || [], relevantSkills: result.relevantSkills || [],
-            relevantPlayerStatus: result.relevantPlayerStatus || [],
-        };
-    } catch (error) {
-        console.error("Error in getRelevantContextEntities (Phase 0). Returning empty context.", error);
-        return { relevantNPCs: [], relevantItems: [], relevantQuests: [], relevantFactions: [], relevantCompanions: [], relevantSkills: [], relevantPlayerStatus: [] };
-    }
-}
-
-const CHUNK_SIZE = 15000; // Character limit for each chunk
+const CHUNK_SIZE_DISTILL = 15000;
+const BATCH_SIZE_DISTILL = 3;
+const DELAY_BETWEEN_BATCHES_DISTILL = 2000;
 
 export async function distillKnowledgeForWorldCreation(
     idea: string,
     knowledge: { name: string; content: string }[]
 ): Promise<{ name: string; content: string }[]> {
-    const fullContent = knowledge.map(k => k.content).join('\n\n');
+    const fullContent = knowledge.map(k => {
+        return isFandomDataset(k.content) ? extractCleanTextFromDataset(k.content) : k.content;
+    }).join('\n\n');
     
-    // Split into chunks
-    const chunks: string[] = [];
-    for (let i = 0; i < fullContent.length; i += CHUNK_SIZE) {
-        chunks.push(fullContent.substring(i, i + CHUNK_SIZE));
+    const textChunks: string[] = [];
+    for (let i = 0; i < fullContent.length; i += CHUNK_SIZE_DISTILL) {
+        textChunks.push(fullContent.substring(i, i + CHUNK_SIZE_DISTILL));
     }
 
-    if (chunks.length <= 1) { // If it's not actually that big, just return it
+    const createAndSaveEmbeddedDataset = async () => {
+        try {
+            console.log("Starting background task: Create and save embedded dataset...");
+            const embeddings = await embeddingService.embedChunks(textChunks, (p) => console.log(`Background embedding progress: ${Math.round(p*100)}%`));
+            
+            if (embeddings.length !== textChunks.length) {
+                throw new Error('Mismatch between number of chunks and embeddings returned.');
+            }
+
+            const dataset: FandomDataset = {
+                metadata: {
+                    sourceName: knowledge[0]?.name || 'tổng_hợp',
+                    createdAt: new Date().toISOString(),
+                    totalChunks: textChunks.length,
+                    chunkSize: CHUNK_SIZE_DISTILL,
+                    overlap: 0, 
+                    embeddingModel: 'text-embedding-004',
+                },
+                chunks: textChunks.map((text, index) => ({
+                    id: `${(knowledge[0]?.name || 'chunk').replace(/\.\w+$/, '')}-part-${index}`,
+                    text: text,
+                    embedding: embeddings[index],
+                }))
+            };
+
+            const baseName = dataset.metadata.sourceName.replace(/\.txt$/i, '').replace(/[\s/\\?%*:|"<>]/g, '_');
+            const fileName = `[DATASET]_${baseName}.json`;
+            await fandomFileService.saveFandomFile(fileName, JSON.stringify(dataset, null, 2));
+            console.log(`Successfully created and saved embedded dataset in background: ${fileName}`);
+        } catch (error) {
+            console.error("Failed to create and save embedded dataset in the background:", error);
+        }
+    };
+    
+    createAndSaveEmbeddedDataset();
+
+    if (textChunks.length <= 1) {
         return knowledge;
     }
 
-    // Map step: Summarize each chunk in parallel
-    const mapPromises = chunks.map(chunk => {
-        const prompt = getDistillKnowledgePrompt(idea, chunk);
-        return generate(prompt);
-    });
-    
-    const chunkSummaries = await Promise.all(mapPromises);
+    const chunkSummaries: string[] = [];
+    for (let i = 0; i < textChunks.length; i += BATCH_SIZE_DISTILL) {
+        const batch = textChunks.slice(i, i + BATCH_SIZE_DISTILL);
+        const batchPromises = batch.map(chunk => {
+            const prompt = getDistillKnowledgePrompt(idea, chunk);
+            return generate(prompt);
+        });
 
-    // Reduce step: Create a final summary from the chunk summaries
+        try {
+            const summaries = await Promise.all(batchPromises);
+            chunkSummaries.push(...summaries);
+        } catch (error) {
+            console.error(`Error processing batch starting at chunk ${i}:`, error);
+            throw new Error(`Lỗi khi đang chắt lọc kiến thức nền. Vui lòng thử lại. Lỗi chi tiết: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        
+        if (i + BATCH_SIZE_DISTILL < textChunks.length) {
+            await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_DISTILL));
+        }
+    }
+
     const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
     const finalReducePrompt = getDistillKnowledgePrompt(idea, combinedSummaries, true);
     const finalSummary = await generate(finalReducePrompt);
     
     return [{
-        name: `tom_tat_chiet_loc_tu_${knowledge.length}_tep.txt`,
+        name: `tom_tat_dai_cuong_tu_${knowledge.length}_tep.txt`,
         content: finalSummary
     }];
 }

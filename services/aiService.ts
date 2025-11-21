@@ -8,3 +8,4 @@ export * from './ai/gameLoopService';
 export * from './ai/stateUpdateService';
 export * from './ai/ragService';
 export * from './ai/apiKeyService';
+export * from './ai/embeddingService';

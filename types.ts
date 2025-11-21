@@ -299,3 +299,21 @@ export interface StyleGuideVector {
     pronoun_rules: string;
     exclusion_list: string[];
 }
+
+export interface FandomDatasetChunk {
+  id: string;
+  text: string;
+  embedding?: number[];
+}
+
+export interface FandomDataset {
+  metadata: {
+    sourceName: string;
+    createdAt: string;
+    totalChunks: number;
+    chunkSize: number;
+    overlap: number;
+    embeddingModel?: string;
+  };
+  chunks: FandomDatasetChunk[];
+}
