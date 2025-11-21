@@ -410,21 +410,15 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     }
     const task = async () => {
       setLoadingStates(prev => ({...prev, worldIdea: true, distilling: false}));
-      let knowledgeForGeneration = config.backgroundKnowledge;
-      
       try {
         const totalKnowledgeSize = (config.backgroundKnowledge || []).reduce((acc, file) => acc + (file.content?.length || 0), 0);
-        const KNOWLEDGE_SIZE_THRESHOLD = 500 * 1024; // 500 KB
+        const KNOWLEDGE_SIZE_THRESHOLD = 50000;
 
         if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
             setLoadingStates(prev => ({...prev, worldIdea: true, distilling: true}));
-            
-            knowledgeForGeneration = await aiService.distillKnowledgeForWorldCreation(storyIdea, config.backgroundKnowledge || []);
-            
-            setLoadingStates(prev => ({...prev, worldIdea: true, distilling: false}));
         }
 
-        const newConfig = await aiService.generateWorldFromIdea(storyIdea, knowledgeForGeneration);
+        const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
         setLoadingStates(prev => ({...prev, worldIdea: false, distilling: false}));
@@ -440,12 +434,19 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       return;
     }
     const task = async () => {
-      setLoadingStates(prev => ({...prev, worldFanfictionIdea: true}));
+      setLoadingStates(prev => ({...prev, worldFanfictionIdea: true, distilling: false}));
       try {
+        const totalKnowledgeSize = (config.backgroundKnowledge || []).reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        const KNOWLEDGE_SIZE_THRESHOLD = 50000;
+
+        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            setLoadingStates(prev => ({...prev, worldFanfictionIdea: true, distilling: true}));
+        }
+        
         const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
-        setLoadingStates(prev => ({...prev, worldFanfictionIdea: false}));
+        setLoadingStates(prev => ({...prev, worldFanfictionIdea: false, distilling: false}));
       }
     };
     executeAiTask(task);
@@ -698,7 +699,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                     {loadingStates['distilling'] ? 'Đang chắt lọc...' : 'Kiến Tạo Nhanh'}
                 </AiAssistButton>
             </div>
-            {loadingStates['distilling'] && (
+            {(loadingStates['worldIdea'] && loadingStates['distilling']) && (
                 <p className="text-xs text-amber-300 mt-2 animate-pulse text-center sm:text-left">
                     AI đang phân tích và tóm tắt tệp kiến thức nền lớn. Quá trình này có thể mất vài phút...
                 </p>
@@ -723,9 +724,14 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                     isFullWidth
                     className="sm:!w-auto"
                 >
-                    Kiến Tạo Đồng Nhân
+                    {loadingStates['distilling'] ? 'Đang chắt lọc...' : 'Kiến Tạo Đồng Nhân'}
                 </AiAssistButton>
             </div>
+            {(loadingStates['worldFanfictionIdea'] && loadingStates['distilling']) && (
+                 <p className="text-xs text-amber-300 mt-2 animate-pulse text-center sm:text-left">
+                    AI đang phân tích và tóm tắt tệp kiến thức nền lớn. Quá trình này có thể mất vài phút...
+                </p>
+            )}
             <div className='flex flex-col sm:flex-row items-center gap-2'>
                 <Button onClick={handleLoadFanficFileClick} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
                     <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy (.txt)

@@ -4,6 +4,18 @@ import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OP
 import { getSettings } from "../services/settingsService";
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from "../constants";
 
+const buildWorldCreationKnowledgePrompt = (knowledge?: {name: string, content: string}[]): string => {
+    if (!knowledge || knowledge.length === 0) return '';
+
+    let prompt = '\n\n--- KIẾN THỨC NỀN (TÀI LIỆU THAM KHẢO) ---\n';
+    prompt += 'Đây là toàn bộ tài liệu tham khảo bạn có. Hãy đọc kỹ và sử dụng chúng làm cơ sở cốt lõi để kiến tạo thế giới.\n\n';
+
+    prompt += knowledge.map(file => `--- NGUỒN TÀI LIỆU: ${file.name} ---\n${file.content}\n--- KẾT THÚC NGUỒN: ${file.name} ---`).join('\n\n');
+
+    prompt += '\n\n--- KẾT THÚC KIẾN THỨC NỀN ---';
+    return prompt;
+};
+
 export const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, content: string}[], hasDetailFiles: boolean = false): string => {
     if (!knowledge || knowledge.length === 0) return '';
     
@@ -124,12 +136,12 @@ const getWorldCreationSchema = () => {
 };
 
 export const getGenerateWorldFromIdeaPrompt = (idea: string, backgroundKnowledge?: {name: string, content: string}[]) => {
-    const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
+    const backgroundKnowledgePrompt = buildWorldCreationKnowledgePrompt(backgroundKnowledge);
     const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là tiểu thuyết, đồng nhân (fan fiction) và văn học mạng. Dựa trên ý tưởng ban đầu sau: "${idea}", hãy dành thời gian suy nghĩ kỹ lưỡng để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
 ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
-1.  **HIỂU SÂU Ý TƯỞNG:** Nếu ý tưởng nhắc đến một tác phẩm đã có (ví dụ: "đồng nhân truyện X"), hãy dựa trên kiến thức của bạn về tác phẩm đó để xây dựng thế giới, nhưng đồng thời phải tạo ra các yếu-tố-mới và độc-đáo để câu chuyện có hướng đi riêng.
+1.  **HIỂU SÂU Ý TƯỞNG VÀ TÀI LIỆU:** Phân tích kỹ ý tưởng chính. Nếu "KIẾN THỨC NỀN" được cung cấp, bạn BẮT BUỘC phải coi đó là nguồn thông tin chính. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập.
 2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
 3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
 4.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
@@ -151,12 +163,12 @@ YÊU CẦU BẮT BUỘC:
 };
 
 export const getGenerateFanfictionWorldPrompt = (idea: string, backgroundKnowledge?: {name: string, content: string}[]) => {
-    const backgroundKnowledgePrompt = buildBackgroundKnowledgePrompt(backgroundKnowledge);
+    const backgroundKnowledgePrompt = buildWorldCreationKnowledgePrompt(backgroundKnowledge);
     const prompt = `Bạn là một Quản trò game nhập vai (GM) bậc thầy, một người kể chuyện sáng tạo với kiến thức uyên bác về văn học, đặc biệt là các tác phẩm gốc (tiểu thuyết, truyện tranh, game) và văn học mạng (đồng nhân, fan fiction). Dựa trên ý tưởng đồng nhân/fanfiction sau: "${idea}", hãy sử dụng kiến thức sâu rộng của bạn về tác phẩm gốc được đề cập để kiến tạo một cấu hình thế giới game hoàn chỉnh, CỰC KỲ chi tiết và có chiều sâu bằng tiếng Việt.
 ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
-1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Vận dụng toàn bộ kiến thức của bạn về thế giới, nhân vật, hệ thống sức mạnh và cốt truyện của tác phẩm đó làm nền tảng. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI.
+1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập. Nếu không có kiến thức nền, hãy vận dụng kiến thức của bạn về tác phẩm gốc làm nền tảng.
 2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
 3.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
 4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.

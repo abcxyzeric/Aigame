@@ -183,12 +183,25 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     if (narrationTurns.length === 0) return gameState.history;
     const narrationIndicesInHistory = gameState.history.map((turn, index) => (turn.type === 'narration' ? index : -1)).filter(index => index !== -1);
     const startNarrationIndex = currentPage * turnsPerPage;
+    
     if (startNarrationIndex >= narrationIndicesInHistory.length) return [];
+
     const endNarrationIndex = Math.min(startNarrationIndex + turnsPerPage, narrationIndicesInHistory.length);
     const historyStartIndex = narrationIndicesInHistory[startNarrationIndex];
-    const sliceStart = historyStartIndex > 0 ? historyStartIndex -1 : 0;
+    const sliceStart = historyStartIndex > 0 ? historyStartIndex - 1 : 0;
+    
     const historyEndIndex = narrationIndicesInHistory[endNarrationIndex - 1];
-    const sliceEnd = historyEndIndex + 1;
+    let sliceEnd = historyEndIndex + 1;
+
+    // Sửa lỗi Cập nhật Lạc quan: Nếu đang ở trang cuối và lượt cuối cùng là hành động,
+    // đảm bảo hành động đó được hiển thị ngay lập tức bằng cách cắt đến cuối mảng lịch sử.
+    const isLastPage = currentPage === totalPages - 1;
+    const lastHistoryTurn = gameState.history[gameState.history.length - 1];
+
+    if (isLastPage && lastHistoryTurn?.type === 'action') {
+        sliceEnd = gameState.history.length;
+    }
+    
     return gameState.history.slice(sliceStart, sliceEnd);
   };
   const currentTurns = getTurnsForCurrentPage();
@@ -250,13 +263,16 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     
-    // Update UI immediately with the action, keep old suggestions during loading for context
+    // Optimistic UI Update: Add action to history immediately
     setGameState(prev => ({ ...prev, history: [...prev.history, newAction] }));
+
+    // Now clear input and show loading state
     setPlayerInput('');
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
 
     try {
+        // The `gameState` for the API call needs to include the new action.
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
         const rawResponse = await aiService.getNextTurn(tempGameState);
         const parsedResponse = parseAiResponse(rawResponse);
@@ -271,14 +287,14 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             }
         };
         
+        // Update state with AI response. `prev` already contains the optimistic action.
         setGameState(prev => {
             const newStateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
             const finalState = JSON.parse(JSON.stringify(newStateWithNarration)); // Deep copy for safety
 
             // Apply all other updates from the parsed response
-            if (parsedResponse.suggestions && parsedResponse.suggestions.length > 0) {
-                finalState.suggestions = parsedResponse.suggestions;
-            }
+            // Unconditionally update suggestions. If the AI provides none, the old ones should be cleared.
+            finalState.suggestions = parsedResponse.suggestions;
 
             finalState.inventory = updateInventory(finalState.inventory, parsedResponse.updatedInventory);
             
@@ -343,7 +359,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
               title: 'Nội dung bị chặn',
               messages: [
                   'Phản hồi từ AI đã bị chặn vì có thể vi phạm chính sách nội dung.',
-                  'Nếu bạn đã bật tùy chọn 18+ và tắt bộ lọc an toàn trong Cài đặt, hãy thử diễn đạt lại hành động của bạn.',
+                  'Nếu bạn đã bật tùy chọn 18+ và tắt bộ lọc an toàn trong Cài Đặt, hãy thử diễn đạt lại hành động của bạn.',
                   'Chi tiết lỗi: ' + errorMessage
               ]
           });

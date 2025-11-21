@@ -46,8 +46,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
               const estimation = await navigator.storage.estimate();
               if (estimation.usage !== undefined && estimation.quota !== undefined) {
                   const usageMB = (estimation.usage / 1024 / 1024).toFixed(2);
-                  const quotaMB = (estimation.quota / 1024 / 1024).toFixed(2);
-                  setStorageUsage(`${usageMB} MB / ${quotaMB} MB`);
+                  const quotaGB = (estimation.quota / 1024 / 1024 / 1024).toFixed(2);
+                  setStorageUsage(`${usageMB} MB / ${quotaGB} GB`);
               }
           } catch (error) {
               console.error("Could not estimate storage:", error);
@@ -158,14 +158,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
           </Button>
         </div>
 
-        <div className="mt-10 text-center text-slate-500 text-sm">
-          <p>Đang dùng Gemini AI Mặc Định. Không cần API Key.</p>
+        <div className="mt-4 text-center text-slate-500 text-sm">
           {storageUsage && (
             <div className="flex items-center justify-center gap-2 mt-2 text-slate-400">
                 <Icon name="save" className="w-4 h-4" />
                 <span>Dung lượng lưu trữ: {storageUsage}</span>
             </div>
           )}
+          <div className="flex items-center justify-center gap-2 mt-2 text-slate-400">
+            <Icon name="hub" className="w-4 h-4" />
+            <span>Cơ sở dữ liệu: IndexedDB</span>
+          </div>
         </div>
       </div>
     </>

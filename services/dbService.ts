@@ -27,13 +27,24 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const dbInstance = (event.target as IDBOpenDBRequest).result;
-      if (!dbInstance.objectStoreNames.contains(SAVES_STORE_NAME)) {
-        dbInstance.createObjectStore(SAVES_STORE_NAME, { keyPath: 'saveId' });
-      }
-      if (event.oldVersion < 2) {
-        if (!dbInstance.objectStoreNames.contains(FANDOM_STORE_NAME)) {
-          dbInstance.createObjectStore(FANDOM_STORE_NAME, { keyPath: 'id' });
-        }
+
+      // Use a switch statement with fall-through for robust, sequential upgrades.
+      // This is the standard best practice for IndexedDB migrations and prevents data loss.
+      switch (event.oldVersion) {
+        case 0:
+          // Version 0 means the database is being created for the first time.
+          // Create the initial 'saves' store.
+          if (!dbInstance.objectStoreNames.contains(SAVES_STORE_NAME)) {
+            dbInstance.createObjectStore(SAVES_STORE_NAME, { keyPath: 'saveId' });
+          }
+        // FALL THROUGH to apply subsequent version changes
+        case 1:
+          // Upgrading from version 1 to 2 (or a fresh install falling through).
+          // Version 2 introduced the 'fandom_files' store.
+          if (!dbInstance.objectStoreNames.contains(FANDOM_STORE_NAME)) {
+            dbInstance.createObjectStore(FANDOM_STORE_NAME, { keyPath: 'id' });
+          }
+          break; // Stop here for version 2. Add more cases for future versions.
       }
     };
   });

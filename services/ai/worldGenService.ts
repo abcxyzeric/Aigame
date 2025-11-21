@@ -17,6 +17,7 @@ import {
     getExtractArcListFromSummaryPrompt,
     getGenerateFandomGenesisPrompt
 } from '../../prompts/fandomPrompts';
+import { distillKnowledgeForWorldCreation } from './ragService';
 
 // --- World Creation Screen AI Helpers ---
 
@@ -31,12 +32,32 @@ export const generateSetting = (config: WorldConfig): Promise<string> => {
 };
 
 export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, backgroundKnowledge);
+    const KNOWLEDGE_SIZE_THRESHOLD = 50000;
+    let knowledgeForGeneration = backgroundKnowledge;
+
+    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
+        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            knowledgeForGeneration = await distillKnowledgeForWorldCreation(idea, backgroundKnowledge);
+        }
+    }
+    
+    const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
 export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, backgroundKnowledge);
+    const KNOWLEDGE_SIZE_THRESHOLD = 50000;
+    let knowledgeForGeneration = backgroundKnowledge;
+
+    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
+        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            knowledgeForGeneration = await distillKnowledgeForWorldCreation(idea, backgroundKnowledge);
+        }
+    }
+
+    const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
@@ -74,10 +95,10 @@ export async function extractArcListFromSummary(summaryContent: string): Promise
     return result.arcs || [];
 }
 
-export async function generateFandomGenesis(summaryContent: string, arcName: string, workName: string, authorName?: string): Promise<any> {
-    const { prompt, schema, systemInstruction, creativeCallConfig } = getGenerateFandomGenesisPrompt(summaryContent, arcName, workName, authorName);
-    const result = await generateJson<any>(prompt, schema, systemInstruction, 'gemini-2.5-pro', creativeCallConfig);
-    if (result.arc_name === 'ARC_NOT_FOUND') {
+export async function generateFandomGenesis(summaryContent: string, arcName: string, workName: string, authorName?: string): Promise<string> {
+    const { prompt, systemInstruction, creativeCallConfig } = getGenerateFandomGenesisPrompt(summaryContent, arcName, workName, authorName);
+    const result = await generate(prompt, systemInstruction);
+    if (result.trim() === 'ARC_NOT_FOUND') {
         throw new Error(`Không tìm thấy thông tin về Arc "${arcName}" trong bản tóm tắt được cung cấp.`);
     }
     return result;

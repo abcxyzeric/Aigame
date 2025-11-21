@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
 import { WorldConfig, GameState } from "../types";
-import { getGameMasterSystemInstruction, getAdultContentDirectives, getResponseLengthDirective } from './systemInstructions';
+import { getGameMasterSystemInstruction, getResponseLengthDirective } from './systemInstructions';
 import { obfuscateText } from '../utils/aiResponseProcessor';
 import { getSettings } from "../services/settingsService";
 import { buildNsfwPayload, buildPronounPayload, buildTimePayload, buildReputationPayload } from '../utils/promptBuilders';
@@ -58,7 +58,6 @@ export const getStartGamePrompt = (config: WorldConfig) => {
     ${getGameMasterSystemInstruction(config)}`;
     const pronounPayload = buildPronounPayload(config.storyContext.genre);
     const timePayload = buildTimePayload(config.storyContext.genre);
-    const adultContentDirectives = getAdultContentDirectives(config);
     const nsfwPayload = buildNsfwPayload(config);
     const lengthDirective = getResponseLengthDirective(config.aiResponseLength);
 
@@ -70,8 +69,6 @@ ${JSON.stringify(config, null, 2)}
 ${nsfwPayload}
 
 ${pronounPayload}
-
-${adultContentDirectives}
 
 ${timePayload}
 
@@ -98,7 +95,6 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     ${getGameMasterSystemInstruction(worldConfig)}`;
     const pronounPayload = buildPronounPayload(worldConfig.storyContext.genre);
     const reputationPayload = buildReputationPayload();
-    const adultContentDirectives = getAdultContentDirectives(worldConfig);
     const nsfwPayload = buildNsfwPayload(worldConfig);
     const lastPlayerAction = history[history.length - 1];
     
@@ -131,7 +127,6 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
 ${nsfwPayload}
 ${reputationPayload}
 ${pronounPayload}
-${adultContentDirectives}
 --- KẾT THÚC QUY TẮC BỔ SUNG ---
 
 

@@ -1,12 +1,31 @@
 import { GoogleGenAI } from "@google/genai";
 import { getSettings } from '../settingsService';
-import { SafetySetting, SafetySettingsConfig, AiPerformanceSettings } from '../../types';
+import { SafetySetting, SafetySettingsConfig, AiPerformanceSettings, HarmCategory, HarmBlockThreshold } from '../../types';
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
 import { processNarration } from '../../utils/aiResponseProcessor';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
 let keyIndex = 0;
+
+const UNRESTRICTED_SAFETY_SETTINGS: SafetySetting[] = [
+    {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+    },
+    {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+    },
+];
 
 function getAiInstance(): GoogleGenAI {
   const { apiKeyConfig } = getSettings();
@@ -103,7 +122,7 @@ function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetyS
 
 export async function generate(prompt: string, systemInstruction?: string): Promise<string> {
     const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
-    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
     const keys = apiKeyConfig.keys.filter(Boolean);
@@ -157,7 +176,7 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
 
 export async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>): Promise<T> {
     const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
-    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : [];
+    const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   
     const keys = apiKeyConfig.keys.filter(Boolean);

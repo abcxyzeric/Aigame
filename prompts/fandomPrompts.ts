@@ -45,72 +45,45 @@ ${summaryContent}
 export const getGenerateFandomGenesisPrompt = (summaryContent: string, arcName: string, workName: string, authorName?: string) => {
     const authorInfo = authorName ? ` (tác giả: ${authorName})` : '';
     
-    const fandomGenesisSchema = {
-        type: Type.OBJECT,
-        properties: {
-            arc_name: { type: Type.STRING, description: "Tên chính xác của Arc đang được tóm tắt." },
-            plot_and_events_summary: { 
-                type: Type.STRING, 
-                description: "Một đoạn văn tóm tắt TOÀN DIỆN và CỰC KỲ CHI TIẾT về diễn biến cốt truyện chính và các sự kiện quan trọng xảy ra trong Arc này. Bao gồm cả các sự kiện nhỏ, các chi tiết phụ và các tình tiết có vẻ không quan trọng nhưng góp phần xây dựng thế giới."
-            },
-            character_summary: {
-                type: Type.OBJECT,
-                properties: {
-                    detailed_characters: {
-                        type: Type.ARRAY,
-                        description: "Danh sách TOÀN BỘ các nhân vật có vai trò hoặc có lời thoại trong Arc này, kể cả những nhân vật chỉ xuất hiện thoáng qua. Cung cấp mô tả chi tiết cho tất cả họ.",
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                name: { type: Type.STRING },
-                                role_and_summary: { type: Type.STRING, description: "Mô tả chi tiết vai trò, tính cách, và tất cả hành động chính của nhân vật trong Arc này, dù là nhỏ nhất." }
-                            },
-                            required: ['name', 'role_and_summary']
-                        }
-                    },
-                    mentioned_characters: {
-                        type: Type.ARRAY,
-                        description: "Danh sách tên của các nhân vật được nhắc đến nhưng không xuất hiện trực tiếp trong Arc. CHỈ liệt kê tên, KHÔNG mô tả.",
-                        items: { type: Type.STRING }
-                    }
-                },
-                required: ['detailed_characters', 'mentioned_characters']
-            },
-            location_and_lore_summary: {
-                type: Type.STRING,
-                description: "Một đoạn văn tóm tắt chi tiết về tất cả các địa điểm, các khái niệm lore, hoặc các tổ chức được giới thiệu hoặc đóng vai trò quan trọng trong Arc này, bao gồm cả những chi tiết nhỏ nhất."
-            },
-            style_guide_vector: {
-                type: Type.OBJECT,
-                description: "Vector Hướng dẫn Văn phong. Phân tích văn phong của tác phẩm gốc để tạo ra các quy tắc này.",
-                properties: {
-                    pronoun_rules: { type: Type.STRING, description: "Quy tắc xưng hô chính trong tác phẩm. Ví dụ: 'Hiện đại: tôi-cậu, tớ-cậu', 'Cổ trang: tại hạ-công tử, ta-ngươi'." },
-                    exclusion_list: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Danh sách các từ khóa hoặc khái niệm TUYỆT ĐỐI KHÔNG được sử dụng vì không phù hợp với thế giới. Ví dụ trong thế giới kiếm hiệp: 'linh khí', 'tu vi', 'hệ thống'." }
-                },
-                required: ['pronoun_rules', 'exclusion_list']
-            }
-        },
-        required: ['arc_name', 'plot_and_events_summary', 'character_summary', 'location_and_lore_summary', 'style_guide_vector']
-    };
-    
-    const prompt = `Bạn là một chuyên gia phân tích văn học. Dưới đây là TÓM TẮT TỔNG QUAN về tác phẩm "${workName}"${authorInfo}.
+    const systemInstruction = "Bạn là một chuyên gia phân tích văn học và biên kịch chuyên nghiệp. Nhiệm vụ của bạn là phân tích sâu một phần của tác phẩm và trình bày nó một cách có cấu trúc, chi tiết và logic.";
+
+    const prompt = `Bạn là một biên kịch chuyên nghiệp đang phân tích kịch bản. Dưới đây là TÓM TẮT TỔNG QUAN về tác phẩm "${workName}"${authorInfo}.
 
 --- TÓM TẮT TỔNG QUAN ---
 ${summaryContent}
 --- KẾT THÚC TÓM TẮT ---
 
-Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản tóm tắt CHI TIẾT SÂU SẮC và TOÀN DIỆN, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
+Nhiệm vụ của bạn là đọc kỹ bản tóm tắt trên và tạo ra một bản phân tích CHI TIẾT SÂU SẮC và TOÀN DIỆN, tập trung DUY NHẤT vào phần truyện (Arc/Saga) có tên là: "${arcName}".
 
 QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
 1.  **PHẠM VI HẸP:** Chỉ trích xuất, tổng hợp và suy luận thông tin liên quan đến Arc "${arcName}".
-2.  **ĐỘ CHI TIẾT TỐI ĐA:** BẮT BUỘC phải tóm tắt đầy đủ tất cả các chi tiết. Không được bỏ sót bất kỳ sự kiện nào, dù là nhỏ nhất. Liệt kê TẤT CẢ các nhân vật xuất hiện, kể cả những nhân vật phụ chỉ có một vài lời thoại hoặc hành động nhỏ.
-3.  **TẠO VECTOR VĂN PHONG:** Phân tích kỹ lưỡng văn phong, cách xưng hô và các thuật ngữ đặc trưng của tác phẩm để tạo ra một "Vector Hướng dẫn Văn phong" (style_guide_vector) chi tiết. Đây là phần CỰC KỲ QUAN TRỌNG.
-    - **Quy tắc Xưng hô:** Ghi lại cách xưng hô phổ biến (VD: 'ta-ngươi', 'tôi-cậu').
-    - **Danh sách Loại trừ:** Liệt kê các thuật ngữ từ các thể loại khác không nên xuất hiện (VD: trong truyện kiếm hiệp thì không có 'linh khí', 'hệ thống').
-4.  **CẤU TRÚC JSON BẮT BUỘC:** Trả về MỘT đối tượng JSON duy nhất, tuân thủ nghiêm ngặt schema đã cho, bao gồm cả style_guide_vector.
-5.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một đối tượng JSON với trường "arc_name" chứa chuỗi "ARC_NOT_FOUND".
+2.  **ĐỘ CHI TIẾT TỐI ĐA:** BẮT BUỘC phải phân tích đầy đủ tất cả các chi tiết. Không được bỏ sót bất kỳ sự kiện nào, dù là nhỏ nhất. Liệt kê TẤT CẢ các nhân vật xuất hiện, kể cả những nhân vật phụ chỉ có một vài lời thoại hoặc hành động nhỏ. Tập trung vào chiều sâu và sự liên kết logic.
+3.  **CẤU TRÚC MARKDOWN BẮT BUỘC:** Trả về một bài văn bản thuần túy (plain text) tuân thủ nghiêm ngặt cấu trúc Markdown sau:
+
+# ARC: ${arcName}
+
+## 1. Tóm Tắt Cốt Truyện
+(Viết một đoạn văn xuôi chi tiết, đầy đủ diễn biến, các tình tiết chính và phụ trong Arc này.)
+
+## 2. Sự Kiện Quan Trọng
+(Liệt kê các sự kiện then chốt dưới dạng gạch đầu dòng)
+- [Tên Sự kiện 1]: Mô tả chi tiết về sự kiện và tầm ảnh hưởng của nó.
+- [Tên Sự kiện 2]: Mô tả chi tiết về sự kiện và tầm ảnh hưởng của nó.
+
+## 3. Nhân Vật & Chuyển Biến
+(Liệt kê các nhân vật quan trọng trong Arc và phân tích sự phát triển của họ)
+- **[Tên Nhân Vật 1]**: Phân tích chi tiết vai trò, hành động, thay đổi tâm lý, sức mạnh và mối quan hệ của nhân vật trong suốt Arc.
+- **[Tên Nhân Vật 2]**: Phân tích chi tiết vai trò, hành động, thay đổi tâm lý, sức mạnh và mối quan hệ của nhân vật trong suốt Arc.
+
+## 4. Thế Lực & Bối Cảnh Mới
+(Mô tả các địa điểm, phe phái, tổ chức mới xuất hiện hoặc đóng vai trò quan trọng trong Arc này.)
+
+## 5. Hệ Thống Sức Mạnh / Vật Phẩm (Nếu có)
+(Phân tích các chiêu thức, cấp độ, bảo vật, hoặc công nghệ mới được giới thiệu hoặc sử dụng nhiều trong Arc này.)
+
+4.  **KHÔNG TÌM THẤY:** Nếu Arc "${arcName}" không được đề cập trong bản tóm tắt, hãy trả về một chuỗi duy nhất: "ARC_NOT_FOUND".
 `;
-    const systemInstruction = "Bạn là một chuyên gia phân tích văn học.";
+    
     const { aiPerformanceSettings } = getSettings();
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
@@ -118,5 +91,5 @@ QUY TẮC PHÂN TÍCH (CỰC KỲ QUAN TRỌNG):
         thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
     };
     
-    return { prompt, schema: fandomGenesisSchema, systemInstruction, creativeCallConfig };
+    return { prompt, systemInstruction, creativeCallConfig };
 };
