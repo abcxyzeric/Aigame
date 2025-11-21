@@ -206,20 +206,42 @@ export const getOptimizeEncyclopediaPrompt = (dataToOptimize: EncyclopediaData) 
             optimizedSkills: { type: Type.ARRAY, description: "Danh sách kỹ năng đã được tối ưu hóa.", items: skillSchema },
         }, required: ['optimizedNPCs', 'optimizedFactions', 'optimizedDiscoveredEntities', 'optimizedInventory', 'optimizedCompanions', 'optimizedQuests', 'optimizedSkills']
     };
-    const prompt = `Bạn là một AI quản lý dữ liệu thông minh. Nhiệm vụ của bạn là phân tích, dọn dẹp và tối ưu hóa toàn bộ dữ liệu Bách Khoa Toàn Thư của một game nhập vai.
+    const prompt = `Bạn là một Biên tập viên Dữ liệu AI chuyên nghiệp, có khả năng suy luận và phân tích sâu. Nhiệm vụ của bạn là "dọn dẹp", "hợp nhất" và "chuẩn hóa" toàn bộ dữ liệu Bách Khoa Toàn Thư của một game nhập vai để đảm bảo tính chính xác và nhất quán.
 
-Dữ liệu đầu vào:
+Dữ liệu đầu vào (có thể chứa lỗi, trùng lặp và rác):
 ${JSON.stringify(dataToOptimize, null, 2)}
 
-YÊU CẦU TỐI ƯU HÓA (BẮT BUỘC):
-1.  **Hợp nhất trùng lặp:** Tìm kiếm các mục có tên giống nhau hoặc rất giống nhau trong mỗi danh sách (ví dụ: "Lão Già" và "lão già bí ẩn") và hợp nhất chúng thành một mục duy nhất. Mô tả của mục mới phải là sự kết hợp thông tin từ cả hai mục gốc.
-2.  **Chuẩn hóa tên:** Viết hoa chữ cái đầu của tất cả các tên một cách nhất quán.
-3.  **Làm giàu mô tả:** Dựa vào thông tin tổng thể, hãy viết lại các mô tả một cách súc tích hơn nhưng vẫn giữ đầy đủ ý, hoặc bổ sung thêm chi tiết nếu cần để làm rõ vai trò của thực thể.
-4.  **Phân loại Tags:** Xem xét lại và chuẩn hóa các 'tags' cho mỗi mục. Xóa các tags không liên quan và thêm các tags phù hợp nếu thiếu.
-5.  **Giữ nguyên số lượng:** Nếu một vật phẩm trong \`inventory\` có số lượng (quantity) lớn hơn 1, hãy giữ nguyên số lượng đó.
-6.  **GIỮ LẠI TẤT CẢ:** TUYỆT ĐỐI KHÔNG được xóa bất kỳ mục nào không bị trùng lặp. Toàn bộ các mục trong dữ liệu gốc phải có mặt trong dữ liệu đã tối ưu hóa, chỉ khác là chúng đã được hợp nhất và làm sạch.
+--- QUY TRÌNH XỬ LÝ BẮT BUỘC ---
 
-Trả về một đối tượng JSON duy nhất chứa toàn bộ dữ liệu đã được tối ưu hóa, tuân thủ nghiêm ngặt schema đã cho.`;
+**GIAI ĐOẠN 1: HỢP NHẤT VÀ LÀM SẠCH (MERGE & CLEANUP PHASE)**
+
+1.  **Quét trùng lặp mờ (Fuzzy Deduplication - CỰC KỲ QUAN TRỌNG):**
+    *   **Mục tiêu:** Tìm và hợp nhất các mục đang nói về CÙNG MỘT thực thể nhưng có tên khác nhau.
+    *   **Quy trình:** Quét qua TẤT CẢ các mục trong mỗi danh sách (NPCs, Factions, v.v.).
+    *   **Điều kiện hợp nhất:**
+        a.  Tên của mục A là một phần của tên mục B (hoặc ngược lại). Ví dụ: "Lộ Na" và "Huấn luyện viên Lộ Na", "Đức" và "HLV Đức", "Thanh kiếm" và "Thanh kiếm Cổ".
+        b.  **VÀ** mô tả, vai trò, hoặc bối cảnh của chúng cho thấy rõ ràng chúng là cùng một thực thể.
+    *   **Hành động:** Nếu cả hai điều kiện trên đều đúng, bạn BẮT BUỘC phải hợp nhất chúng thành MỘT mục duy nhất.
+    *   **Luật hợp nhất:**
+        *   **Giữ lại tên đầy đủ nhất:** Luôn giữ lại cái tên có nhiều thông tin hơn (VD: giữ "Huấn luyện viên Lộ Na", bỏ "Lộ Na").
+        *   **Tổng hợp thông tin:** Kết hợp mô tả, tính cách, và các thông tin khác từ tất cả các mục bị trùng lặp để tạo ra một mô tả đầy đủ và chi tiết nhất cho mục đã hợp nhất.
+
+2.  **Lọc rác (Sanitization):**
+    *   **Mục tiêu:** Loại bỏ các mục không hợp lệ.
+    *   **Quy trình:** Sau khi đã hợp nhất, hãy rà soát lại toàn bộ danh sách một lần nữa.
+    *   **Điều kiện xóa:** Nếu bạn phát hiện bất kỳ mục nào rõ ràng KHÔNG phải là một thực thể trong game (ví dụ: tên là một động từ như 'Chạy trốn', một cảm xúc như 'Buồn bã', một bộ phận cơ thể như 'Cánh tay', hoặc một danh từ chung không có định danh cụ thể như 'Cái cây', 'Viên đá').
+    *   **Hành động:** BẠN BẮT BUỘC phải **XÓA BỎ HOÀN TOÀN** mục đó khỏi danh sách kết quả cuối cùng.
+
+**GIAI ĐOẠN 2: CHUẨN HÓA VÀ LÀM GIÀU (STANDARDIZE & ENRICH PHASE)**
+
+Sau khi đã làm sạch, hãy xử lý các mục còn lại:
+1.  **Chuẩn hóa tên:** Viết hoa chữ cái đầu của tất cả các tên một cách nhất quán.
+2.  **Làm giàu mô tả:** Dựa vào thông tin tổng thể, hãy viết lại các mô tả một cách súc tích hơn nhưng vẫn giữ đầy đủ ý, hoặc bổ sung thêm chi tiết nếu cần để làm rõ vai trò của thực thể.
+3.  **Phân loại Tags:** Xem xét lại và chuẩn hóa các 'tags' cho mỗi mục. Xóa các tags không liên quan và thêm các tags phù hợp nếu thiếu.
+4.  **Giữ nguyên số lượng:** Nếu một vật phẩm trong \`inventory\` có số lượng (quantity), hãy giữ nguyên số lượng đó.
+
+--- KẾT QUẢ ĐẦU RA ---
+Trả về một đối tượng JSON duy nhất chứa toàn bộ dữ liệu đã được tối ưu hóa, tuân thủ nghiêm ngặt schema đã cho. Danh sách cuối cùng phải sạch, gọn, không trùng lặp và không chứa rác.`;
     return { prompt, schema };
 };
 

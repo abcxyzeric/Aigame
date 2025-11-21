@@ -14,6 +14,16 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.5.0 (Đại tu Trí tuệ & Logic Cốt lõi)",
+      notes: [
+        "**Hệ thống Xưng hô Thông minh:** Đại tu hoàn toàn logic xưng hô. AI giờ đây sẽ tuân thủ các quy tắc nghiêm ngặt về tuổi tác, vai vế và bối cảnh (Hiện đại, Cổ trang, Fantasy), khắc phục triệt để lỗi gọi 'Ông/Cháu' cho người trẻ.",
+        "**Đại tu Hệ thống Danh vọng:** Danh vọng giờ đây khó kiếm và thực tế hơn. Các hành động nhỏ sẽ không còn được cộng điểm, trong khi tiếng xấu sẽ đồn xa (điểm trừ nặng hơn). Danh tiếng chỉ tăng khi có hành động ảnh hưởng đến cộng đồng hoặc nhân vật quan trọng.",
+        "**Hệ thống Thời gian Logic:** AI giờ sẽ tự động quyết định mốc thời gian bắt đầu game (năm, tháng, ngày) một cách hợp lý, phù hợp với từng thể loại (VD: Cyberpunk năm 2077, Cổ trang năm 1024).",
+        "**Nâng cấp Trí tuệ 'Chuẩn hóa Bách khoa':** Tính năng 'Chuẩn hóa' giờ đây có khả năng tự động nhận diện và hợp nhất các mục bị trùng lặp (VD: 'Lộ Na' và 'HLV Lộ Na'), đồng thời lọc bỏ các mục rác, giữ cho dữ liệu luôn sạch sẽ.",
+        "**Cải tiến Văn phong & Chống lỗi 'Prohibited':** Hệ thống Prompt giờ đây có khả năng nhận diện thể loại (Genre-Aware), tự động điều chỉnh văn phong (từ vựng, cấu trúc câu) cho nội dung 18+ và bạo lực, giúp câu chuyện chân thực hơn và giảm thiểu lỗi bị chặn."
+      ]
+    },
+    {
       version: "1.4.5 (Quản lý Thông Minh)",
       notes: [
         "**Nâng cấp Hệ thống Thời gian:** AI giờ đây sẽ hoạt động như một 'Người giữ thời gian' nghiêm ngặt, tự động tính toán và cập nhật thời gian (phút, giờ, ngày, tháng, năm) một cách logic sau MỖI hành động của người chơi, giúp thế giới vận hành chân thực hơn.",

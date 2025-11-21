@@ -35,3 +35,26 @@ export const getTimeOfDay = (hour: number): string => {
     if (hour >= 18 && hour < 22) return 'Tối';
     return 'Đêm';
 };
+
+export const extractTimePassedFromText = (text: string): TimePassed => {
+    const timePassed: TimePassed = {};
+    const patterns = [
+        { regex: /(\d+)\s+nghìn\s+năm/i, unit: 'years', multiplier: 1000 },
+        { regex: /(\d+)\s+năm/i, unit: 'years', multiplier: 1 },
+        { regex: /(\d+)\s+tháng/i, unit: 'months', multiplier: 1 },
+        { regex: /(\d+)\s+ngày/i, unit: 'days', multiplier: 1 },
+        { regex: /(\d+)\s+giờ/i, unit: 'hours', multiplier: 1 },
+        { regex: /(\d+)\s+phút/i, unit: 'minutes', multiplier: 1 },
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern.regex);
+        if (match) {
+            const value = parseInt(match[1], 10) * pattern.multiplier;
+            const unitKey = pattern.unit as keyof TimePassed;
+            (timePassed[unitKey] as number) = ((timePassed[unitKey] as number) || 0) + value;
+        }
+    }
+
+    return timePassed;
+};

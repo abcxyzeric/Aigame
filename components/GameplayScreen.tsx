@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, TimePassed } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
 import { parseAiResponse } from '../utils/aiResponseProcessor';
-import { advanceTime, getTimeOfDay } from '../utils/timeUtils';
+import { advanceTime, getTimeOfDay, extractTimePassedFromText } from '../utils/timeUtils';
 import { updateInventory } from '../utils/inventoryUtils';
 import Button from './common/Button';
 import Icon from './common/Icon';
@@ -379,7 +379,18 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       const narrationTurn: GameTurn = { type: 'narration', content: parsedResponse.narration };
       
       const baseTime = parsedResponse.initialWorldTime ? parsedResponse.initialWorldTime : (gameState.worldTime || { year: 1, month: 1, day: 1, hour: 8 });
-      const newWorldTime = advanceTime(baseTime, parsedResponse.timePassed || {});
+      
+      // Combine time from tags and from narration context
+      const timePassedFromNarration = extractTimePassedFromText(parsedResponse.narration);
+      const combinedTimePassed: TimePassed = {
+          years: (parsedResponse.timePassed?.years || 0) + (timePassedFromNarration.years || 0),
+          months: (parsedResponse.timePassed?.months || 0) + (timePassedFromNarration.months || 0),
+          days: (parsedResponse.timePassed?.days || 0) + (timePassedFromNarration.days || 0),
+          hours: (parsedResponse.timePassed?.hours || 0) + (timePassedFromNarration.hours || 0),
+          minutes: (parsedResponse.timePassed?.minutes || 0) + (timePassedFromNarration.minutes || 0),
+      };
+
+      const newWorldTime = advanceTime(baseTime, combinedTimePassed);
       
       let newReputation = gameState.reputation;
       const newTiers = parsedResponse.reputationTiers || [];

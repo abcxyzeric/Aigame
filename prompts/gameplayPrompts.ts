@@ -3,6 +3,8 @@ import { WorldConfig, GameState } from "../types";
 import { getGameMasterSystemInstruction, getAdultContentDirectives, getResponseLengthDirective } from './systemInstructions';
 import { obfuscateText } from '../utils/aiResponseProcessor';
 import { getSettings } from "../services/settingsService";
+import { buildNsfwPayload, buildPronounPayload, buildTimePayload, buildReputationPayload } from '../utils/promptBuilders';
+
 
 const getTagInstructions = () => `
 --- QUY TẮC ĐỊNH DẠNG DỮ LIỆU (BẮT BUỘC TUÂN THỦ - CÚ PHÁP KEY-VALUE) ---
@@ -54,14 +56,24 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 export const getStartGamePrompt = (config: WorldConfig) => {
     const systemInstruction = `Bạn là một tiểu thuyết gia AI bậc thầy, một Quản trò (Game Master - GM) cho một game nhập vai text-based. Nhiệm vụ của bạn là viết chương mở đầu thật chi tiết, sống động, dài tối thiểu 1000 từ và tuyệt đối không tóm tắt.
     ${getGameMasterSystemInstruction(config)}`;
+    const pronounPayload = buildPronounPayload(config.storyContext.genre);
+    const timePayload = buildTimePayload(config.storyContext.genre);
     const adultContentDirectives = getAdultContentDirectives(config);
+    const nsfwPayload = buildNsfwPayload(config);
     const lengthDirective = getResponseLengthDirective(config.aiResponseLength);
 
     const prompt = `Hãy bắt đầu cuộc phiêu lưu!
 
 Đây là toàn bộ thông tin về thế giới và nhân vật chính mà bạn sẽ quản lý:
 ${JSON.stringify(config, null, 2)}
+
+${nsfwPayload}
+
+${pronounPayload}
+
 ${adultContentDirectives}
+
+${timePayload}
 
 **YÊU CẦU CỦA BẠN:**
 
@@ -71,7 +83,7 @@ ${adultContentDirectives}
 2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc trong ${getTagInstructions()}
     *   BẮT BUỘC khởi tạo TOÀN BỘ chỉ số của nhân vật bằng các thẻ \`PLAYER_STATS_INIT\`.
     *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
-    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`).
+    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`SUGGESTION\`) đa dạng.
     *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`ITEM_DEFINED\`, \`NPC_NEW\`...) VÀ thẻ sở hữu (\`ITEM_ADD\`).
 
@@ -84,7 +96,10 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     const { worldConfig, history, worldTime, reputation, reputationTiers, character } = gameState;
     const systemInstruction = `Bạn là một tiểu thuyết gia AI bậc thầy, một Quản trò (Game Master - GM). Nhiệm vụ của bạn là viết tiếp câu chuyện một cách chi tiết, sống động, dài tối thiểu 1000 từ và tuyệt đối không tóm tắt, dựa trên hành động mới nhất của người chơi.
     ${getGameMasterSystemInstruction(worldConfig)}`;
+    const pronounPayload = buildPronounPayload(worldConfig.storyContext.genre);
+    const reputationPayload = buildReputationPayload();
     const adultContentDirectives = getAdultContentDirectives(worldConfig);
+    const nsfwPayload = buildNsfwPayload(worldConfig);
     const lastPlayerAction = history[history.length - 1];
     
     const recentHistoryForPrompt = history.slice(0, -1).slice(-4).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
@@ -112,7 +127,13 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     ${recentHistoryForPrompt}
 --- KẾT THÚC BỐI CẢNH ---
 
+--- CÁC QUY TẮC BỔ SUNG (BẮT BUỘC) ---
+${nsfwPayload}
+${reputationPayload}
+${pronounPayload}
 ${adultContentDirectives}
+--- KẾT THÚC QUY TẮC BỔ SUNG ---
+
 
 --- HÀNH ĐỘNG MỚI CỦA NGƯỜI CHƠI ---
 "${playerActionContent}"
@@ -137,16 +158,28 @@ ${adultContentDirectives}
 export const getGenerateReputationTiersPrompt = (genre: string) => {
     const schema = {
         type: Type.OBJECT, properties: {
-            tiers: { type: Type.ARRAY, description: "Một danh sách gồm ĐÚNG 5 chuỗi (string), là tên các cấp bậc danh vọng.", items: { type: Type.STRING } }
+            tiers: { 
+                type: Type.ARRAY, 
+                description: "Một danh sách gồm ĐÚNG 7 đến 9 chuỗi (string), là tên các cấp bậc danh vọng.", 
+                items: { type: Type.STRING } 
+            }
         }, required: ['tiers']
     };
 
-    const prompt = `Dựa trên thể loại game là "${genre}", hãy tạo ra ĐÚNG 5 cấp bậc danh vọng bằng tiếng Việt, sắp xếp theo thứ tự từ tai tiếng nhất đến danh giá nhất.
-Các cấp bậc này tương ứng với các mức điểm: -100, -50, 0, +50, +100.
+    const prompt = `Dựa trên thể loại game là "${genre}", hãy tạo ra từ 7 đến 9 cấp bậc danh vọng bằng tiếng Việt, sắp xếp theo thứ tự từ tai tiếng nhất đến danh giá nhất.
+Các cấp bậc này phải có sự phân hóa rõ rệt, thể hiện một hành trình dài để đạt được danh tiếng.
 
-Ví dụ:
-- Nếu thể loại là "Tu tiên", có thể là: ["Ma Đầu Huyết Sát", "Kẻ Bị Truy Nã", "Vô Danh Tiểu Tốt", "Đại Thiện Nhân", "Chính Đạo Minh Chủ"]
-- Nếu thể loại là "Hiện đại / One Piece", có thể là: ["Tội Phạm Toàn Cầu", "Mối Đe Dọa", "Người Bình Thường", "Người Nổi Tiếng", "Anh Hùng Dân Tộc"]
+Ví dụ về các mốc điểm (để bạn tham khảo, không cần đưa vào output):
+- Cấp 1 (thấp nhất): Điểm < -100 (Đại Ác Nhân)
+- Cấp 2: Điểm < -10 (Kẻ Xấu)
+- Cấp 3: Điểm ~ 0 (Vô Danh)
+- Cấp 4: Điểm > 10 (Có Chút Tiếng Tăm)
+- Cấp 5: ...
+- Cấp 6: ...
+- Cấp 7 (cao nhất): Điểm > 100 (Anh Hùng Huyền Thoại)
+
+Ví dụ output cho thể loại "Tu tiên": 
+["Ma Đầu Diệt Thế", "Tà Tu Khét Tiếng", "Kẻ Bị Truy Nã", "Vô Danh Tiểu Tốt", "Thiện Nhân", "Tuấn Kiệt Nổi Danh", "Chính Đạo Minh Chủ"]
 
 Hãy sáng tạo các tên gọi thật độc đáo và phù hợp với thể loại "${genre}". Chỉ trả về một đối tượng JSON chứa một mảng chuỗi có tên là "tiers".`;
 

@@ -154,7 +154,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
             setArcProcessingProgress(prev => ({ ...prev, current: i + 1, currentArcName: arcName }));
             
             const jsonContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
-            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.json`;
+            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${(arcName as string).replace(/[\s/\\?%*:|"<>]/g, '_')}.json`;
             await fandomFileService.saveFandomFile(fileName, JSON.stringify(jsonContent, null, 2));
             await refreshSavedFiles();
         }
