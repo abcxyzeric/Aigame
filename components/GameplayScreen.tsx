@@ -751,10 +751,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 </div>
                 {currentTurns.map((turn, index) => (
                   <div key={index}>
-                    {turn.type === 'narration' ? <FormattedNarration content={turn.content} statuses={gameState.playerStatus} onEntityClick={handleEntityClick} /> : <div className="bg-blue-900/20 border-l-4 border-blue-500 rounded-r-lg p-4"> <p className="text-blue-300 font-semibold mb-1">Hành động của bạn:</p> <p className="text-slate-200 italic whitespace-pre-wrap leading-relaxed">{turn.content}</p> </div>}
+                    {turn.type === 'narration' ? <FormattedNarration content={turn.content} statuses={gameState.playerStatus} onEntityClick={handleEntityClick} /> : <div className="bg-blue-900/20 border-l-4 border-blue-500 rounded-r-lg p-4"> <p className="text-blue-300 font-semibold mb-1">Hành động của ngươi:</p> <p className="text-slate-200 italic whitespace-pre-wrap leading-relaxed">{turn.content}</p> </div>}
                   </div>
                 ))}
-                {isTurnLoading && ( <div className="mt-6 flex flex-col items-center p-4"> <div className="w-8 h-8 border-4 border-fuchsia-400 border-t-transparent rounded-full animate-spin"></div> <p className="mt-3 text-slate-300 font-semibold">AI đang suy nghĩ...</p> <p className="mt-1 text-slate-400 text-sm">Đang tạo ra diễn biến tiếp theo cho câu chuyện của bạn.</p> </div> )}
+                {isTurnLoading && ( <div className="mt-6 flex flex-col items-center p-4"> <div className="w-8 h-8 border-4 border-fuchsia-400 border-t-transparent rounded-full animate-spin"></div> <p className="mt-3 text-slate-300 font-semibold">AI đang suy nghĩ...</p> <p className="mt-1 text-slate-400 text-sm">Đang tạo ra diễn biến tiếp theo cho câu chuyện của ngươi.</p> </div> )}
                 <div ref={logEndRef} />
               </div>
               <div className="absolute bottom-24 right-4 z-20 flex flex-col gap-2">
