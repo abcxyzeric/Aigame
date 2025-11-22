@@ -16,7 +16,6 @@ interface EncyclopediaModalProps {
 }
 
 type KnowledgeFile = { name: string, content: string };
-type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
 type AllEntities = (EncounteredNPC | Companion | GameItem | {name: string, description: string, tags?: string[]} | EncounteredFaction | InitialEntity | Quest | KnowledgeFile);
 
 const isKnowledgeItem = (item: AllEntities): item is KnowledgeFile => 'content' in item && !('description' in item);
@@ -35,6 +34,8 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     </button>
 );
 
+// FIX: Define the 'Tab' type to resolve the "Cannot find name 'Tab'" error.
+type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts';
 
 // FIX: Changed to a named export to resolve module resolution issues.
 export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState, onDeleteEntity }) => {
@@ -133,7 +134,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         if (!editFormData) return;
         const updatedItem = {
             ...editFormData,
-            tags: editFormData.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
+            tags: (editFormData.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
         };
         
         setGameState(prev => {
@@ -319,7 +320,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
 
         const totalDescLength = allItems.reduce((acc, item) => {
             // FIX: Use type-safe access to description/content properties.
-            const desc = isKnowledgeItem(item) ? item.content : item.description;
+            const desc = isKnowledgeItem(item) ? item.content : (item as any).description;
             return acc + (desc ? desc.length : 0);
         }, 0);
         const avgDescLength = totalItems > 0 ? Math.round(totalDescLength / totalItems) : 0;
@@ -473,16 +474,32 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                         </div>
                                     )}
 
-                                    {'tags' in activeItem && activeItem.tags && activeItem.tags.length > 0 && (
-                                        <div className="mt-4">
-                                            <strong className="text-slate-400 block mb-2">Tags:</strong>
-                                            <div className="flex flex-wrap gap-2">
-                                                {(activeItem.tags as string[]).map((tag, i) => (
-                                                    <span key={i} className="bg-slate-700 text-slate-300 text-xs font-medium px-2.5 py-1 rounded-full">{tag}</span>
-                                                ))}
+                                    {('tags' in activeItem && activeItem.tags) && (() => {
+                                        // FIX: Safely handle tags that might be a string or an array.
+                                        // The original code produced a 'never' type error because TypeScript correctly
+                                        // inferred that `activeItem.tags` couldn't be a string based on the defined types.
+                                        // This implementation handles both cases gracefully at runtime.
+                                        const tagsSource = (activeItem as any).tags;
+                                        let tagsToDisplay: string[] = [];
+                                        if (Array.isArray(tagsSource)) {
+                                            tagsToDisplay = tagsSource;
+                                        } else if (typeof tagsSource === 'string') {
+                                            tagsToDisplay = tagsSource.split(',').map((t: string) => t.trim()).filter(Boolean);
+                                        }
+                                        
+                                        if (tagsToDisplay.length === 0) return null;
+
+                                        return (
+                                            <div className="mt-4">
+                                                <strong className="text-slate-400 block mb-2">Tags:</strong>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {tagsToDisplay.map((tag, i) => (
+                                                        <span key={i} className="bg-slate-700 text-slate-300 text-xs font-medium px-2.5 py-1 rounded-full">{tag}</span>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             ) : activeItem && isEditing ? (
                                 <div>
