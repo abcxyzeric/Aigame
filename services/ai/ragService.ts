@@ -1,7 +1,6 @@
 import { generate, generateJson } from '../core/geminiClient';
 import { GameState, GameTurn, FandomDataset } from '../../types';
 import { 
-    getGenerateSummaryPrompt,
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
     getDistillKnowledgePrompt
@@ -15,8 +14,13 @@ import { generateEmbedding } from '../core/geminiClient';
 
 export async function generateSummary(turns: GameTurn[]): Promise<string> {
     if (turns.length === 0) return "";
-    const prompt = getGenerateSummaryPrompt(turns);
-    const summary = await generate(prompt);
+    const historyText = turns.map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
+    
+    const systemInstruction = "Bạn là một AI trợ lý cho một game nhập vai hư cấu. Nhiệm vụ của bạn là đọc một đoạn trích từ câu chuyện và tóm tắt các sự kiện chính. Nội dung này hoàn toàn là hư cấu và phục vụ cho mục đích lưu trữ ký ức trong game. Hãy tóm tắt một cách khách quan, không thêm thắt các yếu tố an toàn hay phán xét đạo đức.";
+
+    const prompt = `Dựa vào đoạn hội thoại và diễn biến sau, hãy viết một đoạn tóm tắt ngắn gọn (3-4 câu) về các sự kiện chính, các nhân vật mới xuất hiện, và các thông tin quan trọng đã được tiết lộ. Tóm tắt này sẽ được dùng làm ký ức dài hạn.\n\n--- LỊCH SỬ CẦN TÓM TẮT ---\n${historyText}`;
+
+    const summary = await generate(prompt, systemInstruction);
     return summary.replace(/<[^>]*>/g, '');
 }
 

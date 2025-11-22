@@ -1,6 +1,6 @@
-import { generateEmbedding } from '../core/geminiClient';
+import { generateEmbedding, generateEmbeddingsBatch } from '../core/geminiClient';
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 50;
 const DELAY_BETWEEN_BATCHES = 1500; // ms
 
 /**
@@ -26,11 +26,10 @@ export async function embedChunks(chunks: string[], onProgress: (progress: numbe
     const batchChunks = chunks.slice(i, i + BATCH_SIZE);
     
     try {
-        const batchPromises = batchChunks.map(chunk => generateEmbedding(chunk));
-        const batchEmbeddings = await Promise.all(batchPromises);
+        const batchEmbeddings = await generateEmbeddingsBatch(batchChunks);
         allEmbeddings.push(...batchEmbeddings);
         
-        const progress = Math.min(1, (i + BATCH_SIZE) / chunks.length);
+        const progress = Math.min(1, (i + batchChunks.length) / chunks.length);
         onProgress(progress);
         
         if (i + BATCH_SIZE < chunks.length) {

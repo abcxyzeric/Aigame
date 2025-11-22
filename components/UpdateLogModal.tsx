@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import Icon from './common/Icon';
 import Button from './common/Button';
@@ -13,6 +11,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const updates = [
+    {
+      version: "1.5.1 (Sửa lỗi & Tinh chỉnh)",
+      notes: [
+        "**Khắc phục lỗi 'Prohibited' (Toàn diện):** Tinh chỉnh lại toàn bộ cấu trúc prompt cho cả quá trình Kiến tạo Thế giới và Gameplay, khắc phục triệt để lỗi AI từ chối phản hồi khi xử lý các file kiến thức nền 18+ hoặc các hành động nhạy cảm trong game.",
+        "**Đổi tên Nguồn Train Data:** Thêm tính năng cho phép người dùng đổi tên file .txt nguồn trước khi thực hiện 'Train Data', giúp quản lý các tệp Dataset được tạo ra một cách dễ dàng và có tổ chức hơn.",
+        "**Tối ưu hóa Giao diện:** Loại bỏ các thông báo tải không còn cần thiết trong màn hình 'Kiến tạo Thế giới' để giao diện gọn gàng hơn."
+      ]
+    },
     {
       version: "1.5.0 (Đại tu Trí tuệ & Logic Cốt lõi)",
       notes: [

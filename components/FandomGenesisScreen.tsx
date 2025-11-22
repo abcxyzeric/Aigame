@@ -162,12 +162,15 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
     try {
         const workNameFromSummary = selectedSummary.name.replace(/^tom_tat_|\.txt$/gi, '').replace(/_/g, ' ');
 
-        for (let i = 0; i < arcsToProcess.length; i++) {
-            const arcName = arcsToProcess[i];
-            setArcProcessingProgress(prev => ({ ...prev, current: i + 1, currentArcName: arcName }));
+        // FIX: Replaced the standard for loop with a for...of loop for better type inference,
+        // which resolves the TypeScript error where `arcName` was incorrectly inferred as `unknown`.
+        let processedCount = 0;
+        for (const arcName of arcsToProcess) {
+            processedCount++;
+            setArcProcessingProgress(prev => ({ ...prev, current: processedCount, currentArcName: arcName }));
             
             const textContent = await aiService.generateFandomGenesis(selectedSummary.content, arcName, workNameFromSummary, authorName);
-            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${(arcName as string).replace(/[\s/\\?%*:|"<>]/g, '_')}.txt`;
+            const fileName = `${workNameFromSummary.replace(/[\s/\\?%*:|"<>]/g, '_')}_${arcName.replace(/[\s/\\?%*:|"<>]/g, '_')}.txt`;
             await fandomFileService.saveFandomFile(fileName, textContent);
             await refreshSavedFiles();
         }
@@ -271,16 +274,46 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
   // --- Train Data Logic ---
 
   const handleTrainFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && (file.type === 'text/plain' || file.name.endsWith('.txt'))) {
-        const content = await file.text();
-        setSourceTrainFile({ name: file.name, content });
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setLoadingStates(p => ({ ...p, training: true }));
+    setTrainingStatusText(`Đang đọc ${files.length} tệp...`);
+
+    try {
+        const validFiles: { name: string, content: string }[] = [];
+        for (const file of Array.from(files)) {
+            if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+                const content = await file.text();
+                validFiles.push({ name: file.name, content });
+            }
+        }
+
+        if (validFiles.length === 0) {
+            setNotification({ isOpen: true, title: 'Lỗi', messages: ['Không có tệp .txt hợp lệ nào được chọn.'] });
+            return;
+        }
+
+        const combinedContent = validFiles.map(f => f.content).join('\n\n');
+        const combinedName = validFiles.length > 1
+            ? `Tong_hop_${validFiles.length}_tep.txt`
+            : validFiles[0].name;
+        
+        setSourceTrainFile({ name: combinedName, content: combinedContent });
         setTrainedDataset(null);
-        setNotification({ isOpen: true, title: 'Tải tệp thành công', messages: [`Đã tải tệp "${file.name}". Giờ bạn có thể bắt đầu Train.`] });
-    } else if (file) {
-        setNotification({ isOpen: true, title: 'Lỗi', messages: ['Vui lòng chỉ chọn tệp .txt.'] });
+        setNotification({
+            isOpen: true,
+            title: 'Tải tệp thành công',
+            messages: [`Đã tải và gộp thành công ${validFiles.length} tệp .txt. Giờ bạn có thể bắt đầu Train.`]
+        });
+
+    } catch (error) {
+        setNotification({ isOpen: true, title: 'Lỗi đọc tệp', messages: ['Đã xảy ra lỗi khi đọc tệp từ máy của bạn.'] });
+    } finally {
+        setLoadingStates(p => ({ ...p, training: false }));
+        setTrainingStatusText('');
+        if (event.target) event.target.value = '';
     }
-    if (event.target) event.target.value = '';
   };
 
   const performChunking = () => {
@@ -399,6 +432,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
         onChange={handleTrainFileChange}
         className="hidden"
         accept=".txt"
+        multiple
       />
       <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8">
         <div className="flex justify-between items-center mb-8 mt-4">
@@ -510,9 +544,20 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
                     <div className="bg-slate-900/30 p-4 rounded-md border border-slate-700 flex flex-col justify-between">
                         <div>
                             <h3 className="text-lg font-semibold text-slate-200 mb-3">Thao tác</h3>
-                            <Button onClick={() => trainFileUploadRef.current?.click()} variant="secondary" className="!w-full !text-sm !py-2 mb-4">
-                                <Icon name="upload" className="w-4 h-4 mr-2" /> {sourceTrainFile ? `Đã chọn: ${sourceTrainFile.name}` : 'Nhập file .TXT cần xử lý'}
+                            <Button onClick={() => trainFileUploadRef.current?.click()} variant="secondary" className="!w-full !text-sm !py-2 mb-2">
+                                <Icon name="upload" className="w-4 h-4 mr-2" /> 
+                                {sourceTrainFile ? 'Chọn (các) file .TXT khác' : 'Nhập (các) file .TXT cần xử lý'}
                             </Button>
+                            {sourceTrainFile && (
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">Tên nguồn (sẽ dùng cho Dataset):</label>
+                                    <StyledInput 
+                                        type="text" 
+                                        value={sourceTrainFile.name.replace(/\.txt$/i, '')} 
+                                        onChange={e => setSourceTrainFile(prev => prev ? {...prev, name: `${e.target.value}.txt`} : null)}
+                                    />
+                                </div>
+                            )}
                         </div>
                         <Button onClick={performChunking} variant="warning" disabled={!sourceTrainFile || !isChunkSettingValid || loadingStates.training} className="!w-full !text-base !py-2 !px-6 mt-auto">
                             {loadingStates.training ? 'Đang xử lý...' : <><Icon name="magic" className="w-5 h-5 mr-2" />Train Data</>}

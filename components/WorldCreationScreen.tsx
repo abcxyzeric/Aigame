@@ -18,7 +18,7 @@ import { getSettings, saveSettings } from '../services/settingsService';
 import Accordion from './common/Accordion';
 import Icon from './common/Icon';
 import Button from './common/Button';
-import { saveWorldConfigToFile, loadWorldConfigFromFile, loadTextFromFile } from '../services/fileService';
+import { saveWorldConfigToFile, loadWorldConfigFromFile } from '../services/fileService';
 import AiAssistButton from './common/AiAssistButton';
 import ApiKeyModal from './common/ApiKeyModal';
 import NotificationModal from './common/NotificationModal';
@@ -409,19 +409,12 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       return;
     }
     const task = async () => {
-      setLoadingStates(prev => ({...prev, worldIdea: true, distilling: false}));
+      setLoadingStates(prev => ({...prev, worldIdea: true }));
       try {
-        const totalKnowledgeSize = (config.backgroundKnowledge || []).reduce((acc, file) => acc + (file.content?.length || 0), 0);
-        const KNOWLEDGE_SIZE_THRESHOLD = 50000;
-
-        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            setLoadingStates(prev => ({...prev, worldIdea: true, distilling: true}));
-        }
-
         const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
-        setLoadingStates(prev => ({...prev, worldIdea: false, distilling: false}));
+        setLoadingStates(prev => ({...prev, worldIdea: false }));
       }
     };
     executeAiTask(task);
@@ -434,19 +427,12 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       return;
     }
     const task = async () => {
-      setLoadingStates(prev => ({...prev, worldFanfictionIdea: true, distilling: false}));
+      setLoadingStates(prev => ({...prev, worldFanfictionIdea: true }));
       try {
-        const totalKnowledgeSize = (config.backgroundKnowledge || []).reduce((acc, file) => acc + (file.content?.length || 0), 0);
-        const KNOWLEDGE_SIZE_THRESHOLD = 50000;
-
-        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            setLoadingStates(prev => ({...prev, worldFanfictionIdea: true, distilling: true}));
-        }
-        
         const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
-        setLoadingStates(prev => ({...prev, worldFanfictionIdea: false, distilling: false}));
+        setLoadingStates(prev => ({...prev, worldFanfictionIdea: false }));
       }
     };
     executeAiTask(task);
@@ -495,9 +481,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     if (files && files.length > 0) {
         try {
             const newKnowledgeFiles: { name: string; content: string }[] = [];
-            // FIX: Iterate directly over the FileList to ensure correct typing.
             for (const file of files) {
-                const content = await loadTextFromFile(file);
+                const content = await file.text();
                 newKnowledgeFiles.push({ name: file.name, content });
             }
             
@@ -576,9 +561,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
     try {
         const newKnowledgeFiles: { name: string; content: string }[] = [];
-        // FIX: Iterate directly over the FileList to ensure correct typing.
         for (const file of files) {
-            const content = await loadTextFromFile(file);
+            const content = await file.text();
             newKnowledgeFiles.push({ name: file.name, content });
         }
         
@@ -696,14 +680,9 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                     isFullWidth
                     className="sm:!w-auto"
                 >
-                    {loadingStates['distilling'] ? 'Đang chắt lọc...' : 'Kiến Tạo Nhanh'}
+                    Kiến Tạo Nhanh
                 </AiAssistButton>
             </div>
-            {(loadingStates['worldIdea'] && loadingStates['distilling']) && (
-                <p className="text-xs text-amber-300 mt-2 animate-pulse text-center sm:text-left">
-                    AI đang phân tích và tóm tắt tệp kiến thức nền lớn. Quá trình này có thể mất vài phút...
-                </p>
-            )}
         </div>
         
         <div className="bg-slate-800/60 backdrop-blur-sm rounded-lg mb-8 border-l-4 border-violet-500 p-4">
@@ -724,14 +703,9 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                     isFullWidth
                     className="sm:!w-auto"
                 >
-                    {loadingStates['distilling'] ? 'Đang chắt lọc...' : 'Kiến Tạo Đồng Nhân'}
+                    Kiến Tạo Đồng Nhân
                 </AiAssistButton>
             </div>
-            {(loadingStates['worldFanfictionIdea'] && loadingStates['distilling']) && (
-                 <p className="text-xs text-amber-300 mt-2 animate-pulse text-center sm:text-left">
-                    AI đang phân tích và tóm tắt tệp kiến thức nền lớn. Quá trình này có thể mất vài phút...
-                </p>
-            )}
             <div className='flex flex-col sm:flex-row items-center gap-2'>
                 <Button onClick={handleLoadFanficFileClick} variant="secondary" className="!w-full sm:!w-auto !text-sm !py-2">
                     <Icon name="upload" className="w-4 h-4 mr-2" /> Tải từ máy (.txt)
@@ -806,7 +780,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
 
                         <div className="mt-4 border-t border-slate-700 pt-4">
                             <FormRow label="Kiến thức nền AI (Tùy chọn)" labelClassName="text-lime-300">
-                                <p className="text-xs text-slate-400 mb-2">Chọn các tệp nguyên tác (.txt) từ kho hoặc tải lên từ máy để AI sử dụng làm kiến thức nền khi tạo thế giới và dẫn truyện.</p>
+                                <p className="text-xs text-slate-400 mb-2">Chọn các tệp nguyên tác (.txt) hoặc dataset (.json) từ kho hoặc tải lên từ máy để AI sử dụng làm kiến thức nền khi tạo thế giới và dẫn truyện.</p>
                                 <div className="flex flex-wrap gap-2">
                                     <Button onClick={() => setIsKnowledgeSelectModalOpen(true)} variant="secondary" className="!w-auto !text-sm !py-2">
                                         <Icon name="save" className="w-4 h-4 mr-2" /> Chọn từ Kho

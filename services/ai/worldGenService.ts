@@ -32,30 +32,16 @@ export const generateSetting = (config: WorldConfig): Promise<string> => {
 };
 
 export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    const KNOWLEDGE_SIZE_THRESHOLD = 50000;
-    let knowledgeForGeneration = backgroundKnowledge;
-
-    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
-        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
-        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            knowledgeForGeneration = await distillKnowledgeForWorldCreation(idea, backgroundKnowledge);
-        }
-    }
+    // Bỏ qua bước chắt lọc. Sử dụng trực tiếp kiến thức nền được cung cấp.
+    const knowledgeForGeneration = backgroundKnowledge;
     
     const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
 export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    const KNOWLEDGE_SIZE_THRESHOLD = 50000;
-    let knowledgeForGeneration = backgroundKnowledge;
-
-    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
-        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
-        if (totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            knowledgeForGeneration = await distillKnowledgeForWorldCreation(idea, backgroundKnowledge);
-        }
-    }
+    // Bỏ qua bước chắt lọc. Sử dụng trực tiếp kiến thức nền được cung cấp.
+    const knowledgeForGeneration = backgroundKnowledge;
 
     const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
