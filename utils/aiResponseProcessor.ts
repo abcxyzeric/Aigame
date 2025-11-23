@@ -41,9 +41,21 @@ export const OBFUSCATION_MAP: Record<string, string> = {
 export function obfuscateText(text: string): string {
     let obfuscated = text;
     const sortedKeys = Object.keys(OBFUSCATION_MAP).sort((a, b) => b.length - a.length);
+    // Vietnamese characters set for word boundary detection.
+    const vietnameseChars = 'a-zA-Zàáạảãăằắặẳẵâầấậẩẫđèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹ';
+
     for (const key of sortedKeys) {
-        const regex = new RegExp(key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi');
-        obfuscated = obfuscated.replace(regex, OBFUSCATION_MAP[key]);
+        // Escape any special regex characters in the keyword.
+        const escapedKey = key.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        
+        // This regex looks for the keyword as a whole word, using custom Vietnamese-aware word boundaries.
+        // It ensures that the characters immediately before and after the keyword are not Vietnamese letters.
+        // (^|[^...]) matches the start of the string or any character that is NOT a Vietnamese letter (the preceding boundary).
+        // ([^...]|$) matches the end of the string or any character that is NOT a Vietnamese letter (the following boundary).
+        const regex = new RegExp(`(^|[^${vietnameseChars}])(${escapedKey})([^${vietnameseChars}]|$)`, 'gi');
+        
+        // The replacement function ensures that the boundary characters ($1 and $3) are preserved around the obfuscated word.
+        obfuscated = obfuscated.replace(regex, `$1${OBFUSCATION_MAP[key]}$3`);
     }
     return obfuscated;
 }
