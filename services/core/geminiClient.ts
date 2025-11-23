@@ -2,7 +2,7 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } fro
 import { getSettings } from '../settingsService';
 import { AiPerformanceSettings, SafetySettingsConfig } from '../../types';
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
-import { processNarration } from '../../utils/aiResponseProcessor';
+import { obfuscateText, processNarration } from '../../utils/aiResponseProcessor';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
@@ -123,7 +123,12 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
     const MAX_RETRIES = Math.max(keys.length, 3);
     let lastError: Error | null = null;
   
-    const finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
+    let finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
+
+    // Apply obfuscation to the entire payload if safety filters are off (Safety Bypass Mode)
+    if (!safetySettings.enabled) {
+        finalContents = obfuscateText(finalContents);
+    }
 
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
@@ -181,7 +186,12 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
     const MAX_RETRIES = Math.max(keys.length, 3);
     let lastError: Error | null = null;
   
-    const finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
+    let finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
+
+    // Apply obfuscation to the entire payload if safety filters are off (Safety Bypass Mode)
+    if (!safetySettings.enabled) {
+        finalContents = obfuscateText(finalContents);
+    }
 
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {

@@ -317,3 +317,19 @@ export interface FandomDataset {
   };
   chunks: FandomDatasetChunk[];
 }
+
+// For storing vectors of individual game turns
+export interface TurnVector {
+  turnId: number; // Could be Date.now() or an incrementing number
+  turnIndex: number; // The index of the turn in the history array
+  content: string; // The text content of the turn
+  embedding: number[];
+}
+
+// For storing vectors of summaries
+export interface SummaryVector {
+  summaryId: number; // Could be Date.now()
+  summaryIndex: number; // The index of the summary in the summaries array
+  content: string; // The text content of the summary
+  embedding: number[];
+}

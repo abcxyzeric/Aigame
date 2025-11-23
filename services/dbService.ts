@@ -1,9 +1,11 @@
-import { SaveSlot, FandomFile } from '../types';
+import { SaveSlot, FandomFile, TurnVector, SummaryVector } from '../types';
 
 const DB_NAME = 'ai-rpg-simulator-db';
 const SAVES_STORE_NAME = 'saves';
 const FANDOM_STORE_NAME = 'fandom_files';
-const DB_VERSION = 2;
+const TURN_VECTORS_STORE_NAME = 'turn_vectors';
+const SUMMARY_VECTORS_STORE_NAME = 'summary_vectors';
+const DB_VERSION = 3;
 
 let db: IDBDatabase;
 
@@ -44,7 +46,19 @@ function openDB(): Promise<IDBDatabase> {
           if (!dbInstance.objectStoreNames.contains(FANDOM_STORE_NAME)) {
             dbInstance.createObjectStore(FANDOM_STORE_NAME, { keyPath: 'id' });
           }
-          break; // Stop here for version 2. Add more cases for future versions.
+        // FALL THROUGH
+        case 2:
+          // Upgrading from version 2 to 3.
+          // Version 3 introduces vector stores for RAG.
+          if (!dbInstance.objectStoreNames.contains(TURN_VECTORS_STORE_NAME)) {
+            const store = dbInstance.createObjectStore(TURN_VECTORS_STORE_NAME, { keyPath: 'turnId' });
+            store.createIndex('turnIndex', 'turnIndex', { unique: false });
+          }
+          if (!dbInstance.objectStoreNames.contains(SUMMARY_VECTORS_STORE_NAME)) {
+            const store = dbInstance.createObjectStore(SUMMARY_VECTORS_STORE_NAME, { keyPath: 'summaryId' });
+            store.createIndex('summaryIndex', 'summaryIndex', { unique: false });
+          }
+          break; // Stop here for version 3. Add more cases for future versions.
       }
     };
   });
@@ -144,5 +158,53 @@ export async function deleteFandomFile(id: number): Promise<void> {
     const request = store.delete(id);
     request.onsuccess = () => resolve();
     request.onerror = () => reject('Không thể xóa tệp nguyên tác.');
+  });
+}
+
+// --- Vector Store Functions ---
+
+// Turn Vectors
+export async function addTurnVector(vector: TurnVector): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(TURN_VECTORS_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(TURN_VECTORS_STORE_NAME);
+    const request = store.put(vector);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject('Không thể lưu vector lượt chơi.');
+  });
+}
+
+export async function getAllTurnVectors(): Promise<TurnVector[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(TURN_VECTORS_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(TURN_VECTORS_STORE_NAME);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject('Không thể tải vector lượt chơi.');
+  });
+}
+
+// Summary Vectors
+export async function addSummaryVector(vector: SummaryVector): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SUMMARY_VECTORS_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(SUMMARY_VECTORS_STORE_NAME);
+    const request = store.put(vector);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject('Không thể lưu vector tóm tắt.');
+  });
+}
+
+export async function getAllSummaryVectors(): Promise<SummaryVector[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SUMMARY_VECTORS_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(SUMMARY_VECTORS_STORE_NAME);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject('Không thể tải vector tóm tắt.');
   });
 }

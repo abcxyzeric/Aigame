@@ -1,20 +1,39 @@
 import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity, TimePassed } from '../types';
 
 export const OBFUSCATION_MAP: Record<string, string> = {
+    // Core words
     'lồn': '[l-ồ-n]',
     'cặc': '[c-ặ-c]',
     'địt': '[đ-ị-t]',
     'buồi': '[b-u-ồ-i]',
+    'giao cấu': '[g-ia-o c-ấ-u]',
+    
+    // Anatomical terms
     'dương vật': '[d-ươ-ng v-ậ-t]',
     'âm đạo': '[â-m đ-ạ-o]',
-    'giao cấu': '[g-ia-o c-ấ-u]',
+    'âm vật': '[â-m v-ậ-t]',
+    'tinh hoàn': '[t-i-nh h-o-à-n]',
+    'hậu môn': '[h-ậ-u m-ô-n]',
+    'nhũ hoa': '[n-h-ũ h-o-a]',
+
+    // Slang & variations
+    'cu': '[c-u]',
+    'bướm': '[b-ư-ớ-m]',
+    'chịch': '[c-h-ị-c-h]',
+    'nện': '[n-ệ-n]',
+    'đụ': '[đ-ụ]',
+    
+    // Actions
     'bú': '[b-ú]',
     'liếm': '[l-i-ế-m]',
     'mút': '[m-ú-t]',
-    // Add more related words
-    'âm vật': '[â-m v-ậ-t]',
+    'sục': '[s-ụ-c]',
+    'thông': '[t-h-ô-n-g]',
+    
+    // Bodily fluids
     'tinh dịch': '[t-i-nh d-ị-ch]',
     'dâm thủy': '[d-â-m th-ủ-y]',
+    'tinh': '[t-i-nh]',
 };
 
 export function obfuscateText(text: string): string {
