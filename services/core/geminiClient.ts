@@ -4,6 +4,8 @@ import { AiPerformanceSettings, SafetySettingsConfig } from '../../types';
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
 import { obfuscateText, processNarration } from '../../utils/aiResponseProcessor';
 
+const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
+
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
 let keyIndex = 0;
@@ -130,6 +132,21 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         finalContents = obfuscateText(finalContents);
     }
 
+    if (DEBUG_MODE) {
+        console.groupCollapsed('🚀 [DEBUG] Gemini Request (generate)');
+        console.log('%c[PAYLOAD]', 'color: cyan; font-weight: bold;', {
+            model: 'gemini-2.5-flash',
+            contents: '...', // Omitted for brevity, see preview
+            config: {
+                safetySettings: activeSafetySettings,
+                maxOutputTokens: perfSettings.maxOutputTokens,
+                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
+            }
+        });
+        console.log('%c[PROMPT PREVIEW]', 'color: lightblue;', finalContents);
+        console.groupEnd();
+    }
+
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
         const aiInstance = getAiInstance();
@@ -145,6 +162,15 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         });
         
         const candidate = response.candidates?.[0];
+
+        if (DEBUG_MODE) {
+            console.groupCollapsed('✅ [DEBUG] Gemini Response (generate)');
+            console.log('%c[TOKEN USAGE]', 'color: yellow;', response.usageMetadata);
+            console.log('%c[FINISH REASON]', 'color: yellow;', candidate?.finishReason);
+            console.log('%c[SAFETY RATINGS]', 'color: orange;', candidate?.safetyRatings);
+            console.log('%c[RAW TEXT]', 'color: lightgreen;', response.text);
+            console.groupEnd();
+        }
   
         if (!response.text) {
             lastError = createDetailedErrorFromResponse(candidate, safetySettings, false);
@@ -193,6 +219,23 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         finalContents = obfuscateText(finalContents);
     }
 
+    if (DEBUG_MODE) {
+        console.groupCollapsed('🚀 [DEBUG] Gemini Request (generateJson)');
+        console.log('%c[PAYLOAD]', 'color: cyan; font-weight: bold;', {
+            model: model,
+            contents: '...', // Omitted for brevity, see preview
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: schema,
+                safetySettings: activeSafetySettings,
+                maxOutputTokens: overrideConfig?.maxOutputTokens ?? perfSettings.maxOutputTokens,
+                thinkingConfig: { thinkingBudget: overrideConfig?.thinkingBudget ?? perfSettings.thinkingBudget }
+            }
+        });
+        console.log('%c[PROMPT PREVIEW]', 'color: lightblue;', finalContents);
+        console.groupEnd();
+    }
+
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
         const aiInstance = getAiInstance();
@@ -211,6 +254,15 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
   
         const candidate = response.candidates?.[0];
         const jsonString = response.text;
+
+        if (DEBUG_MODE) {
+            console.groupCollapsed('✅ [DEBUG] Gemini Response (generateJson)');
+            console.log('%c[TOKEN USAGE]', 'color: yellow;', response.usageMetadata);
+            console.log('%c[FINISH REASON]', 'color: yellow;', candidate?.finishReason);
+            console.log('%c[SAFETY RATINGS]', 'color: orange;', candidate?.safetyRatings);
+            console.log('%c[RAW JSON TEXT]', 'color: lightgreen;', jsonString);
+            console.groupEnd();
+        }
   
         if (!jsonString) {
             lastError = createDetailedErrorFromResponse(candidate, safetySettings, true);

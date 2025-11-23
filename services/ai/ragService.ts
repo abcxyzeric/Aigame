@@ -3,7 +3,8 @@ import { GameState, GameTurn, FandomDataset, WorldConfig } from '../../types';
 import { 
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
-    getDistillKnowledgePrompt
+    getDistillKnowledgePrompt,
+    getContextualizePrompt
 } from '../../prompts/analysisPrompts';
 import { buildBackgroundKnowledgePrompt } from '../../prompts/worldCreationPrompts';
 import { isFandomDataset, extractCleanTextFromDataset } from '../../utils/datasetUtils';
@@ -35,6 +36,22 @@ export async function generateSummary(turns: GameTurn[], worldConfig: WorldConfi
     const summary = await generate(prompt, systemInstruction);
     return summary.replace(/<[^>]*>/g, '');
 }
+
+/**
+ * Enriches a given text snippet with surrounding context to make it self-contained.
+ * @param text The text to contextualize.
+ * @param context The surrounding context (e.g., previous turns, location).
+ * @returns The context-enriched text.
+ */
+export async function contextualizeText(text: string, context: string): Promise<string> {
+    if (!text.trim() || !context.trim()) {
+        return text;
+    }
+    const { prompt, systemInstruction } = getContextualizePrompt(text, context);
+    // Use a lighter model for this processing task
+    return await generate(prompt, systemInstruction);
+}
+
 
 export async function generateRagQueryFromTurns(turns: GameTurn[]): Promise<string> {
     if (turns.length === 0) return "";

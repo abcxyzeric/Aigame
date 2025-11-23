@@ -1,6 +1,8 @@
 import { GameState, SaveSlot, TurnVector, SummaryVector } from '../types';
 import * as dbService from './dbService';
 import * as embeddingService from './ai/embeddingService';
+import * as ragService from './ai/ragService';
+import { getSettings } from './settingsService';
 
 const LEGACY_SAVES_STORAGE_KEY = 'ai_rpg_all_saves';
 const MAX_MANUAL_SAVES = 5;
@@ -86,22 +88,33 @@ export const loadAllSaves = async (): Promise<SaveSlot[]> => {
 };
 
 async function updateVectorsInBackground(gameState: GameState): Promise<void> {
+    const { ragSettings } = getSettings();
     try {
-        // Update Turn Vectors
+        // --- Contextualize and Update Turn Vectors ---
         const allTurnVectors = await dbService.getAllTurnVectors();
         const vectorizedTurnIndices = new Set(allTurnVectors.map(v => v.turnIndex));
         const turnsToVectorize = gameState.history.map((turn, index) => ({ turn, index }))
             .filter(item => !vectorizedTurnIndices.has(item.index));
 
         if (turnsToVectorize.length > 0) {
-            const turnContents = turnsToVectorize.map(item => item.turn.content.replace(/<[^>]*>/g, ''));
-            const embeddings = await embeddingService.embedChunks(turnContents, () => {}); // No progress needed for background task
+            const contextualizedTurnContents: string[] = [];
+            for (const item of turnsToVectorize) {
+                // Create context from the previous turn, if it exists.
+                const contextTurn = item.index > 0 ? gameState.history[item.index - 1] : null;
+                const contextString = contextTurn
+                    ? `Bối cảnh diễn ra ngay sau: "${contextTurn.type === 'action' ? 'Người chơi' : 'AI'}: ${contextTurn.content.substring(0, 200)}..."`
+                    : `Bối cảnh: Lượt chơi đầu tiên.`;
+                const contextualized = await ragService.contextualizeText(item.turn.content, contextString);
+                contextualizedTurnContents.push(contextualized);
+            }
+
+            const embeddings = await embeddingService.embedChunks(contextualizedTurnContents, () => {});
 
             if (embeddings.length === turnsToVectorize.length) {
                 const newTurnVectors: TurnVector[] = turnsToVectorize.map((item, i) => ({
-                    turnId: Date.now() + i, // Simple unique ID
+                    turnId: Date.now() + i,
                     turnIndex: item.index,
-                    content: item.turn.content,
+                    content: contextualizedTurnContents[i], // Store the contextualized content
                     embedding: embeddings[i],
                 }));
 
@@ -111,21 +124,31 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
             }
         }
 
-        // Update Summary Vectors
+        // --- Contextualize and Update Summary Vectors ---
         const allSummaryVectors = await dbService.getAllSummaryVectors();
         const vectorizedSummaryIndices = new Set(allSummaryVectors.map(v => v.summaryIndex));
         const summariesToVectorize = gameState.summaries.map((summary, index) => ({ summary, index }))
             .filter(item => !vectorizedSummaryIndices.has(item.index));
 
         if (summariesToVectorize.length > 0) {
-            const summaryContents = summariesToVectorize.map(item => item.summary);
-            const embeddings = await embeddingService.embedChunks(summaryContents, () => {});
+            const contextualizedSummaryContents: string[] = [];
+            for (const item of summariesToVectorize) {
+                 // Create context from the turns that were used to generate this summary.
+                const historyIndexForSummary = (item.index + 1) * (ragSettings.summaryFrequency * 2);
+                const startIndex = Math.max(0, historyIndexForSummary - (ragSettings.summaryFrequency * 2));
+                const relevantTurns = gameState.history.slice(startIndex, historyIndexForSummary);
+                const contextString = relevantTurns.map(t => t.content.substring(0, 150)).join(' ... ');
+                const contextualized = await ragService.contextualizeText(item.summary, `Bối cảnh được tóm tắt từ: "${contextString}..."`);
+                contextualizedSummaryContents.push(contextualized);
+            }
+            
+            const embeddings = await embeddingService.embedChunks(contextualizedSummaryContents, () => {});
 
             if (embeddings.length === summariesToVectorize.length) {
                 const newSummaryVectors: SummaryVector[] = summariesToVectorize.map((item, i) => ({
                     summaryId: Date.now() + (turnsToVectorize?.length || 0) + i,
                     summaryIndex: item.index,
-                    content: item.summary,
+                    content: contextualizedSummaryContents[i], // Store the contextualized content
                     embedding: embeddings[i],
                 }));
                 

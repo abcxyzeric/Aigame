@@ -9,6 +9,24 @@ export const getGenerateSummaryPrompt = (turns: GameTurn[]): string => {
     return `Bạn là một AI trợ lý ghi chép. Dựa vào đoạn hội thoại và diễn biến sau, hãy viết một đoạn tóm tắt ngắn gọn (3-4 câu) về các sự kiện chính, các nhân vật mới xuất hiện, và các thông tin quan trọng đã được tiết lộ. Tóm tắt này sẽ được dùng làm ký ức dài hạn.\n\n--- LỊCH SỬ CẦN TÓM TẮT ---\n${historyText}`;
 };
 
+export const getContextualizePrompt = (textToContextualize: string, surroundingContext: string) => {
+    const systemInstruction = "Bạn là một AI xử lý văn bản. Nhiệm vụ của bạn là viết lại một đoạn văn bản để nó trở nên độc lập, dễ hiểu bằng cách tích hợp ngữ cảnh liên quan vào bên trong nó. Không thêm thông tin mới, chỉ tích hợp bối cảnh đã cho. Chỉ trả lời bằng văn bản đã được viết lại, không thêm lời dẫn.";
+    const prompt = `
+--- BỐI CẢNH XUNG QUANH ---
+${surroundingContext}
+
+--- VĂN BẢN GỐC CẦN VIẾT LẠI ---
+"${textToContextualize}"
+
+--- YÊU CẦU ---
+Dựa vào "BỐI CẢNH XUNG QUANH", hãy viết lại "VĂN BẢN GỐC" để nó trở nên hoàn chỉnh và dễ hiểu khi đọc một mình. Thay thế các đại từ không rõ ràng (anh ấy, nó, họ...) bằng tên riêng cụ thể từ bối cảnh.
+
+--- VĂN BẢN ĐÃ VIẾT LẠI ---
+`;
+    return { prompt, systemInstruction };
+};
+
+
 export const getRetrieveRelevantSummariesPrompt = (context: string, allSummaries: string[], topK: number) => {
     const schema = {
         type: Type.OBJECT, properties: {

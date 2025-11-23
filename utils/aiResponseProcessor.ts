@@ -1,5 +1,7 @@
 import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity, TimePassed } from '../types';
 
+const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
+
 export const OBFUSCATION_MAP: Record<string, string> = {
     // Core words
     'lồn': '[l-ồ-n]',
@@ -47,28 +49,88 @@ export function obfuscateText(text: string): string {
 }
 
 export function processNarration(text: string): string {
-    // De-obfuscate words like [â-m-đ-ạ-o] back to 'âm đạo'
-    let processedText = text.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
-    
-    // Normalize smart quotes to straight quotes BEFORE stripping tags
-    processedText = processedText.replace(/[“”]/g, '"');
+    if (DEBUG_MODE) {
+        console.groupCollapsed('🛠 [DEBUG] Text Processing');
+        console.log('%c[RAW INPUT]', 'color: lightcoral;', text);
+    }
 
-    // Strip tags inside <thought> tags to prevent rendering issues
+    let processedText = text;
+    let before: string;
+
+    // Remove leaked JSON/Tag blocks
+    before = processedText;
+    processedText = processedText.replace(/```(json)?\s*[\s\S]*?\s*```/g, '');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern khối mã JSON (```json...```).');
+    }
+    
+    before = processedText;
+    processedText = processedText.replace(/\[(\w+):\s*([\s\S]*?)\]/g, '');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ dữ liệu game ([TAG:...]).');
+    }
+
+    // De-obfuscate words
+    before = processedText;
+    processedText = processedText.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã giải mã pattern từ bị làm mờ ([x-y-z]).');
+    }
+    
+    // Normalize smart quotes
+    before = processedText;
+    processedText = processedText.replace(/[“”]/g, '"');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã chuẩn hóa pattern dấu ngoặc kép thông minh (“”).');
+    }
+
+    // Strip tags inside <thought>
+    before = processedText;
     processedText = processedText.replace(/<thought>(.*?)<\/thought>/gs, (match, innerContent) => {
         const strippedInnerContent = innerContent.replace(/<\/?(entity|important|status|exp)>/g, '');
         return `<thought>${strippedInnerContent}</thought>`;
     });
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ lồng nhau bên trong <thought>.');
+    }
 
     // Strip tags inside quoted text ""
+    before = processedText;
     processedText = processedText.replace(/"(.*?)"/gs, (match, innerContent) => {
         const strippedInnerContent = innerContent.replace(/<[^>]*>/g, '');
         return `"${strippedInnerContent}"`;
     });
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ bên trong dấu ngoặc kép ("...").');
+    }
 
-    // Replace <br> tags with newlines
+    // Replace <br> tags
+    before = processedText;
     processedText = processedText.replace(/<br\s*\/?>/gi, '\n');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã thay thế pattern thẻ <br> bằng ký tự xuống dòng.');
+    }
 
-    return processedText;
+    // Clean up any remaining asterisks from markdown bold/italics
+    before = processedText;
+    processedText = processedText.replace(/\*/g, '');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern ký tự dấu sao (*).');
+    }
+    
+    // Remove any stray closing tags
+    before = processedText;
+    processedText = processedText.replace(/<\/\s*(exp|thought|status|important|entity)\s*>/g, '');
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ đóng bị thừa (</tag>).');
+    }
+
+    if (DEBUG_MODE) {
+        console.log('%c[FINAL OUTPUT]', 'color: lightgreen;', processedText.trim());
+        console.groupEnd();
+    }
+
+    return processedText.trim();
 }
 
 export interface ParsedAiResponse {
