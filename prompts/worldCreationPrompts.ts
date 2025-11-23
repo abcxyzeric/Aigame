@@ -52,15 +52,15 @@ export const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, conten
 export const getGenerateGenrePrompt = (config: WorldConfig): string => {
   const currentGenre = config.storyContext.genre.trim();
   return currentGenre
-    ? `Dựa trên thể loại ban đầu là "${currentGenre}" và bối cảnh "${config.storyContext.setting}", hãy phát triển hoặc bổ sung thêm để thể loại này trở nên chi tiết và độc đáo hơn. Chỉ trả lời bằng tên thể loại đã được tinh chỉnh.`
-    : `Dựa vào bối cảnh sau đây (nếu có): "${config.storyContext.setting}", hãy gợi ý một thể loại truyện độc đáo. Chỉ trả lời bằng tên thể loại.`;
+    ? `Dựa trên thể loại ban đầu là "${currentGenre}" và bối cảnh "${config.storyContext.setting}", hãy phát triển hoặc bổ sung thêm để thể loại này trở nên chi tiết và độc đáo hơn. Chỉ trả về tên thể loại đã được tinh chỉnh, không thêm lời dẫn.`
+    : `Dựa vào bối cảnh sau đây (nếu có): "${config.storyContext.setting}", hãy gợi ý một thể loại truyện độc đáo. Chỉ trả về bằng tên thể loại, không thêm lời dẫn.`;
 };
 
 export const getGenerateSettingPrompt = (config: WorldConfig): string => {
   const currentSetting = config.storyContext.setting.trim();
   return currentSetting
-    ? `Đây là bối cảnh ban đầu: "${currentSetting}". Dựa trên bối cảnh này và thể loại "${config.storyContext.genre}", hãy viết lại một phiên bản đầy đủ và chi tiết hơn, tích hợp và mở rộng ý tưởng gốc.`
-    : `Dựa vào thể loại sau đây: "${config.storyContext.genre}", hãy gợi ý một bối cảnh thế giới chi tiết và hấp dẫn. Trả lời bằng một đoạn văn ngắn (2-3 câu).`;
+    ? `Đây là bối cảnh ban đầu: "${currentSetting}". Dựa trên bối cảnh này và thể loại "${config.storyContext.genre}", hãy viết lại một phiên bản đầy đủ và chi tiết hơn, tích hợp và mở rộng ý tưởng gốc. Chỉ trả về đoạn văn mô tả bối cảnh, không thêm lời dẫn.`
+    : `Dựa vào thể loại sau đây: "${config.storyContext.genre}", hãy gợi ý một bối cảnh thế giới chi tiết và hấp dẫn. Trả lời bằng một đoạn văn ngắn (2-3 câu), không thêm lời dẫn.`;
 };
 
 const getWorldCreationSchema = () => {
@@ -103,7 +103,8 @@ const getWorldCreationSchema = () => {
                 type: Type.OBJECT,
                 properties: {
                     name: { type: Type.STRING, description: "Tên nhân vật chính." },
-                    personality: { type: Type.STRING, enum: PERSONALITY_OPTIONS.slice(1), description: "Tính cách của nhân vật (không chọn 'Tuỳ chỉnh')." },
+                    personality: { type: Type.STRING, description: "Luôn đặt giá trị này là 'Tuỳ chỉnh'." },
+                    customPersonality: { type: Type.STRING, description: "Một đoạn văn mô tả chi tiết, có chiều sâu về tính cách nhân vật." },
                     gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
                     bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật." },
                     skills: { 
@@ -125,7 +126,7 @@ const getWorldCreationSchema = () => {
                     },
                     motivation: { type: Type.STRING, description: "Mục tiêu hoặc động lực chính của nhân vật." },
                 },
-                required: ['name', 'personality', 'gender', 'bio', 'skills', 'stats', 'motivation']
+                required: ['name', 'personality', 'customPersonality', 'gender', 'bio', 'skills', 'stats', 'motivation']
             },
             difficulty: { type: Type.STRING, enum: DIFFICULTY_OPTIONS, description: "Độ khó của game." },
             allowAdultContent: { type: Type.BOOLEAN, description: "Cho phép nội dung người lớn hay không." },
@@ -148,12 +149,13 @@ ${backgroundKnowledgePrompt}
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG VÀ TÀI LIỆU:** Phân tích kỹ ý tưởng chính. Nếu "KIẾN THỨC NỀN" được cung cấp, bạn BẮT BUỘC phải coi đó là nguồn thông tin chính. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập.
 2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
-3.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
-4.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
-5.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-6.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại (VD: 'Linh Lực' cho tiên hiệp, 'Năng Lượng' cho sci-fi).
-7.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-8.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
+4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
+5.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
+6.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+7.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại (VD: 'Linh Lực' cho tiên hiệp, 'Năng Lượng' cho sci-fi).
+8.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+9.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
 
     const schema = getWorldCreationSchema();
 
@@ -174,14 +176,15 @@ ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập. Nếu không có kiến thức nền, hãy vận dụng kiến thức của bạn về tác phẩm gốc làm nền tảng.
-2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
-3.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
-4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
-5.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
-6.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
-7.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại của tác phẩm gốc.
-8.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
-9.  **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
+2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của tác phẩm gốc, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung.
+3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
+4.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
+5.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
+6.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.
+7.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Vật phẩm', 'Cổ đại', 'Học thuật', 'Vũ khí', 'NPC quan trọng', 'Linh dược') để phân loại chúng một cách chi tiết.
+8.  **HỆ THỐNG CHỈ SỐ:** BẮT BUỘC phải bật \`enableStatsSystem: true\`. BẮT BUỘC tạo một bộ chỉ số (\`stats\`) cho nhân vật. Bộ chỉ số này LUÔN phải bao gồm 'Sinh Lực' (100/100, isPercentage: true) và 'Thể Lực' (100/100, isPercentage: true), cộng thêm 1-3 chỉ số khác phù hợp với thể loại của tác phẩm gốc.
+9.  **KHÔNG TẠO LUẬT:** Không tạo ra luật lệ cốt lõi (coreRules) hoặc luật tạm thời (temporaryRules).
+10. **KHÔNG SỬ DỤNG TAG HTML:** TUYỆT ĐỐI không sử dụng các thẻ định dạng như <entity> hoặc <important> trong bất kỳ trường nào của JSON output.`;
 
     const schema = getWorldCreationSchema();
     

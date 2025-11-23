@@ -35,7 +35,8 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 );
 
 // FIX: Define the 'Tab' type to resolve the "Cannot find name 'Tab'" error.
-type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts';
+// FIX: Added 'knowledge' to Tab type to allow viewing background knowledge files and fix type error.
+type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
 
 // FIX: Changed to a named export to resolve module resolution issues.
 export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState, onDeleteEntity }) => {
@@ -390,6 +391,8 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                     <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
                                     <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
                                     <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Hệ thống sức mạnh / Lore</TabButton>
+                                    {/* FIX: Added tab button for background knowledge files. */}
+                                    <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến thức nền AI</TabButton>
                                 </div>
                             </div>
                         </div>

@@ -24,27 +24,16 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         throw new Error("Lỗi logic: Lượt đi cuối cùng phải là hành động của người chơi.");
     }
     
-    let newSummary: string | undefined = undefined;
-    const narrationTurnsCount = history.filter(t => t.type === 'narration').length;
-    const shouldSummarize = narrationTurnsCount > 0 && narrationTurnsCount % ragSettings.summaryFrequency === 0;
-
-    if (shouldSummarize) {
-        const lastSummaryTurnIndex = history.length - (ragSettings.summaryFrequency * 2);
-        const turnsToSummarize = history.slice(lastSummaryTurnIndex > 0 ? lastSummaryTurnIndex : 0);
-        newSummary = await ragService.generateSummary(turnsToSummarize);
-    }
-    
     let relevantMemories = '';
     const combinedMemories = [
         ...memories.map(m => `[Ký ức cốt lõi]: ${m}`), 
-        ...summaries.map(s => `[Tóm tắt]: ${s}`),
-        ...(newSummary ? [`[Tóm tắt mới]: ${newSummary}`] : [])
+        ...summaries.map(s => `[Tóm tắt]: ${s}`)
     ];
 
     if (combinedMemories.length > 0) {
         let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
         if (ragSettings.summarizeBeforeRag) {
-            ragQuery = await ragService.generateSummary(history.slice(-4));
+            ragQuery = await ragService.generateRagQueryFromTurns(history.slice(-4));
         }
         relevantMemories = await ragService.retrieveRelevantSummaries(ragQuery, combinedMemories, ragSettings.topK);
     }
@@ -52,7 +41,9 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
     let relevantKnowledge = '';
     if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
         let ragQuery = `Hành động của người chơi: ${lastPlayerAction.content}\nDiễn biến trước đó:\n${history.slice(-3, -1).map(t => t.content).join('\n')}`;
-        if (ragSettings.summarizeBeforeRag) { ragQuery = await ragService.generateSummary(history.slice(-4)); }
+        if (ragSettings.summarizeBeforeRag) { 
+            ragQuery = await ragService.generateRagQueryFromTurns(history.slice(-4));
+        }
         relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQuery, worldConfig.backgroundKnowledge, 3);
     }
     
@@ -77,6 +68,6 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
 
     const { prompt, systemInstruction } = getNextTurnPrompt(gameState, fullContext, relevantKnowledge, relevantMemories);
     
-    // The raw string response will contain narration and tags, including a potential new summary tag.
+    // The raw string response will contain narration and tags.
     return generate(prompt, systemInstruction);
 };

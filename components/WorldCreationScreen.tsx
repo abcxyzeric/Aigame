@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 // FIX: The FandomFile type should be imported from the central types definition file, not from a service file.
 import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile } from '../types';
 import { 
@@ -82,7 +82,22 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   const fanficFileInputRef = useRef<HTMLInputElement>(null);
   const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
 
+  // State for entity filtering
+  const [entitySearchTerm, setEntitySearchTerm] = useState('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState('Tất cả');
+
   const isSafetyFilterEnabled = getSettings().safetySettings.enabled;
+
+  const filteredEntities = useMemo(() => {
+    return config.initialEntities
+        .map((entity, originalIndex) => ({ entity, originalIndex }))
+        .filter(({ entity }) => {
+            const matchesFilter = entityTypeFilter === 'Tất cả' || entity.type === entityTypeFilter;
+            const matchesSearch = entity.name.toLowerCase().includes(entitySearchTerm.toLowerCase());
+            return matchesFilter && matchesSearch;
+        });
+  }, [config.initialEntities, entityTypeFilter, entitySearchTerm]);
+
 
   useEffect(() => {
     if (initialConfig) {
@@ -301,9 +316,18 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     executeAiTask(task);
   };
   
+  const handleGenerateSetting = () => {
+      if (!config.storyContext.genre.trim()) {
+        setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thể loại" trước khi AI có thể hỗ trợ tạo bối cảnh.'] });
+        setIsNotificationOpen(true);
+        return;
+      }
+      runAiAssist('setting', () => aiService.generateSetting(config), res => handleNestedChange('storyContext', 'setting', res));
+  };
+
   const handleGenerateBio = () => {
-    if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim() || !config.character.name.trim()) {
-        setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thế loại", "Bối Cảnh" và "Tên nhân vật" trước khi AI có thể hỗ trợ tạo tiểu sử.'] });
+    if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim() || !config.character.name.trim() || !config.character.gender.trim() || config.character.gender === GENDER_OPTIONS[0]) {
+        setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thế loại", "Bối Cảnh", "Tên nhân vật" và chọn "Giới tính" trước khi AI có thể hỗ trợ tạo tiểu sử.'] });
         setIsNotificationOpen(true);
         return;
     }
@@ -749,7 +773,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                         <div>
                             <div className="flex items-center justify-between mb-1">
                                 <label className="block text-sm font-medium text-sky-300">Thế Giới/Bối Cảnh Cụ Thể:</label>
-                                <AiAssistButton isLoading={loadingStates['setting']} onClick={() => runAiAssist('setting', () => aiService.generateSetting(config), res => handleNestedChange('storyContext', 'setting', res))} />
+                                <AiAssistButton isLoading={loadingStates['setting']} onClick={handleGenerateSetting} />
                             </div>
                             <StyledTextArea 
                                 value={config.storyContext.setting} 
@@ -855,25 +879,40 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 {/* Kiến Tạo Thực Thể Ban Đầu */}
                 <div className="order-6">
                     <Accordion title="Kiến Tạo Thực Thể Ban Đầu (Tùy chọn)" icon={<Icon name="entity" />} titleClassName='text-green-400' borderColorClass='border-green-500'>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <StyledInput
+                                placeholder="Tìm kiếm theo tên thực thể..."
+                                value={entitySearchTerm}
+                                onChange={(e) => setEntitySearchTerm(e.target.value)}
+                            />
+                            <StyledSelect
+                                value={entityTypeFilter}
+                                onChange={(e) => setEntityTypeFilter(e.target.value)}
+                            >
+                                <option value="Tất cả">Tất cả các loại</option>
+                                {ENTITY_TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </StyledSelect>
+                        </div>
                          <div className="max-h-96 overflow-y-auto pr-2 space-y-4">
-                            {config.initialEntities.map((entity, index) => (
-                                <div key={index} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
+                            {filteredEntities.length > 0 ? (
+                                filteredEntities.map(({ entity, originalIndex }) => (
+                                <div key={originalIndex} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                        <div className="mb-4 sm:mb-0">
                                            <div className="flex items-center justify-between mb-1">
                                                <label className="block text-sm font-medium text-green-300">Tên Thực Thể:</label>
-                                               <AiAssistButton isLoading={loadingStates[`entity_name_${index}`]} onClick={() => runAiAssist(`entity_name_${index}`, () => aiService.generateEntityName(config, entity), res => handleEntityChange(index, 'name', res))} />
+                                               <AiAssistButton isLoading={loadingStates[`entity_name_${originalIndex}`]} onClick={() => runAiAssist(`entity_name_${originalIndex}`, () => aiService.generateEntityName(config, entity), res => handleEntityChange(originalIndex, 'name', res))} />
                                            </div>
                                            <StyledInput 
                                                value={entity.name} 
-                                               onChange={e => handleEntityChange(index, 'name', e.target.value)}
+                                               onChange={e => handleEntityChange(originalIndex, 'name', e.target.value)}
                                                placeholder="VD: Lão Ma Đầu, Thanh Cổ Kiếm..."
                                            />
                                        </div>
                                        <FormRow label="Loại Thực Thể:" labelClassName="text-green-300">
                                            <StyledSelect 
                                                value={entity.type} 
-                                               onChange={e => handleEntityChange(index, 'type', e.target.value)}
+                                               onChange={e => handleEntityChange(originalIndex, 'type', e.target.value)}
                                            >
                                                {ENTITY_TYPE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
                                            </StyledSelect>
@@ -884,11 +923,11 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                         <div className="my-4">
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="block text-sm font-medium text-green-300">Tính Cách (Nếu là NPC):</label>
-                                                <AiAssistButton isLoading={loadingStates[`entity_personality_${index}`]} onClick={() => runAiAssist(`entity_personality_${index}`, () => aiService.generateEntityPersonality(config, entity), res => handleEntityChange(index, 'personality', res))} />
+                                                <AiAssistButton isLoading={loadingStates[`entity_personality_${originalIndex}`]} onClick={() => runAiAssist(`entity_personality_${originalIndex}`, () => aiService.generateEntityPersonality(config, entity), res => handleEntityChange(originalIndex, 'personality', res))} />
                                             </div>
                                             <StyledTextArea 
                                                 value={entity.personality} 
-                                                onChange={e => handleEntityChange(index, 'personality', e.target.value)}
+                                                onChange={e => handleEntityChange(originalIndex, 'personality', e.target.value)}
                                                 rows={2}
                                                 placeholder="VD: Lạnh lùng, đa nghi..."
                                             />
@@ -898,24 +937,27 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-sm font-medium text-green-300">Mô Tả Thực Thể:</label>
-                                            <AiAssistButton isLoading={loadingStates[`entity_description_${index}`]} onClick={() => runAiAssist(`entity_description_${index}`, () => aiService.generateEntityDescription(config, entity), res => handleEntityChange(index, 'description', res))} />
+                                            <AiAssistButton isLoading={loadingStates[`entity_description_${originalIndex}`]} onClick={() => runAiAssist(`entity_description_${originalIndex}`, () => aiService.generateEntityDescription(config, entity), res => handleEntityChange(originalIndex, 'description', res))} />
                                         </div>
                                         <StyledTextArea 
                                             value={entity.description} 
-                                            onChange={e => handleEntityChange(index, 'description', e.target.value)}
+                                            onChange={e => handleEntityChange(originalIndex, 'description', e.target.value)}
                                             rows={3}
                                             placeholder="VD: Một thanh kiếm cổ..."
                                         />
                                     </div>
                                     
                                     <div className="flex justify-end mt-2">
-                                        <button onClick={() => removeEntity(index)} className="flex items-center text-sm text-red-400 hover:text-red-300 transition">
+                                        <button onClick={() => removeEntity(originalIndex)} className="flex items-center text-sm text-red-400 hover:text-red-300 transition">
                                             <Icon name="trash" className="w-4 h-4 mr-1"/>
                                             Xóa thực thể này
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                            ))
+                            ) : (
+                                <p className="text-slate-500 text-center py-4">Không tìm thấy thực thể nào phù hợp.</p>
+                            )}
                             <Button onClick={addEntity} variant="success" className="!w-full !text-base !py-2"><Icon name="plus" className="w-5 h-5 mr-2"/>Thêm Thực Thể</Button>
                         </div>
                     </Accordion>

@@ -2,7 +2,8 @@ import { GameState, SaveSlot } from '../types';
 import * as dbService from './dbService';
 
 const LEGACY_SAVES_STORAGE_KEY = 'ai_rpg_all_saves';
-const MAX_SAVES = 15;
+const MAX_MANUAL_SAVES = 5;
+const MAX_AUTO_SAVES = 10;
 
 // --- Legacy localStorage functions for migration ---
 const loadAllSavesFromLocalStorage = (): SaveSlot[] => {
@@ -57,6 +58,28 @@ export const migrateSaves = (): Promise<void> => {
 
 // --- New IndexedDB-based functions ---
 
+const trimSaves = async (): Promise<void> => {
+    const allSaves = await dbService.getAllSaves(); // Assumes saves are sorted newest to oldest
+    const manualSaves = allSaves.filter(s => s.saveType === 'manual');
+    const autoSaves = allSaves.filter(s => s.saveType === 'auto');
+
+    const savesToDelete: number[] = [];
+
+    if (manualSaves.length > MAX_MANUAL_SAVES) {
+        const oldestManualSaves = manualSaves.slice(MAX_MANUAL_SAVES);
+        savesToDelete.push(...oldestManualSaves.map(s => s.saveId));
+    }
+
+    if (autoSaves.length > MAX_AUTO_SAVES) {
+        const oldestAutoSaves = autoSaves.slice(MAX_AUTO_SAVES);
+        savesToDelete.push(...oldestAutoSaves.map(s => s.saveId));
+    }
+
+    if (savesToDelete.length > 0) {
+        await Promise.all(savesToDelete.map(id => dbService.deleteSave(id)));
+    }
+};
+
 export const loadAllSaves = async (): Promise<SaveSlot[]> => {
     return dbService.getAllSaves();
 };
@@ -81,7 +104,7 @@ export const saveGame = async (gameState: GameState, saveType: 'manual' | 'auto'
     };
 
     await dbService.addSave(newSave);
-    await dbService.trimSaves(MAX_SAVES);
+    await trimSaves();
 
   } catch (error) {
     console.error('Error saving game state:', error);

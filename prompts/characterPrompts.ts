@@ -5,8 +5,8 @@ export const getGenerateCharacterBioPrompt = (config: WorldConfig): string => {
     const { storyContext, character } = config;
     const currentBio = character.bio.trim();
     return currentBio
-        ? `Một nhân vật tên là "${character.name}" trong thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}) có tiểu sử/ngoại hình ban đầu là: "${currentBio}". Hãy dựa vào đó và viết lại một phiên bản chi tiết, hấp dẫn và có chiều sâu hơn.`
-        : `Dựa trên bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}), hãy viết một đoạn tiểu sử/ngoại hình ngắn (2-4 câu) cho nhân vật có tên "${character.name}".`;
+        ? `Một nhân vật tên là "${character.name}" trong thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}) có tiểu sử/ngoại hình ban đầu là: "${currentBio}". Hãy dựa vào đó và viết lại một phiên bản chi tiết hơn, làm giàu thêm ý tưởng gốc nhưng vẫn giữ sự súc tích. Chỉ trả về nội dung tiểu sử/ngoại hình, không thêm lời dẫn.`
+        : `Dựa trên bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}), hãy viết một đoạn tiểu sử/ngoại hình ngắn (2-3 câu) cho nhân vật có tên "${character.name}" và giới tính "${character.gender}". Chỉ trả về nội dung tiểu sử/ngoại hình, không thêm lời dẫn.`;
 };
 
 export const getGenerateCharacterSkillsPrompt = (config: WorldConfig) => {
@@ -27,7 +27,7 @@ export const getGenerateCharacterSkillsPrompt = (config: WorldConfig) => {
         items: skillSchema
     };
 
-    const prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}), hãy tạo ra một danh sách từ 1 đến 3 kỹ năng khởi đầu độc đáo và phù hợp cho nhân vật này, bao gồm cả tên và mô tả cho mỗi kỹ năng.`;
+    const prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}), hãy tạo ra một danh sách ngắn gọn từ 1 đến 2 kỹ năng khởi đầu độc đáo và phù hợp cho nhân vật này, bao gồm cả tên và mô tả cho mỗi kỹ năng.`;
 
     return { prompt, schema };
 };
@@ -106,9 +106,9 @@ export const getGenerateSingleSkillPrompt = (config: WorldConfig, existingName?:
     
     let prompt: string;
     if (existingName && existingName.trim()) {
-        prompt = `Một nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) trong thế giới (Thể loại: ${storyContext.genre}) có một kỹ năng tên là "${existingName}". Hãy viết một mô tả ngắn gọn và hấp dẫn cho kỹ năng này.`;
+        prompt = `Một nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) trong thế giới (Thể loại: ${storyContext.genre}) có một kỹ năng tên là "${existingName}". Hãy viết một mô tả ngắn gọn và hấp dẫn cho kỹ năng này. Chỉ trả về JSON, không thêm lời dẫn.`;
     } else {
-        prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra MỘT kỹ năng khởi đầu độc đáo và phù hợp, bao gồm cả tên và mô tả.`;
+        prompt = `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy tạo ra MỘT kỹ năng khởi đầu độc đáo và phù hợp, bao gồm cả tên và mô tả. Chỉ trả về JSON, không thêm lời dẫn.`;
     }
 
     return { prompt, schema };
@@ -119,6 +119,6 @@ export const getGenerateCharacterMotivationPrompt = (config: WorldConfig): strin
     const currentMotivation = character.motivation.trim();
     const skillsString = character.skills.map(s => s.name).filter(Boolean).join(', ') || 'Chưa có';
     return currentMotivation
-        ? `Nhân vật "${character.name}" (Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) hiện có động lực là: "${currentMotivation}". Dựa vào toàn bộ thông tin về nhân vật và thế giới, hãy phát triển động lực này để nó trở nên cụ thể, có chiều sâu và tạo ra một mục tiêu rõ ràng hơn cho cuộc phiêu lưu.`
-        : `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy đề xuất một mục tiêu hoặc động lực hấp dẫn để bắt đầu cuộc phiêu lưu của họ. Trả lời bằng một câu ngắn gọn.`;
+        ? `Nhân vật "${character.name}" (Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) hiện có động lực là: "${currentMotivation}". Dựa vào toàn bộ thông tin về nhân vật và thế giới, hãy phát triển động lực này để nó trở nên cụ thể, có chiều sâu và tạo ra một mục tiêu rõ ràng hơn cho cuộc phiêu lưu. Chỉ trả về nội dung động lực, không thêm lời dẫn.`
+        : `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy đề xuất một mục tiêu hoặc động lực hấp dẫn để bắt đầu cuộc phiêu lưu của họ. Trả lời bằng một câu ngắn gọn, không thêm lời dẫn.`;
 };

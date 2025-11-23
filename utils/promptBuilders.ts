@@ -41,7 +41,7 @@ export const buildNsfwPayload = (config: WorldConfig): string => {
     
     payload.push(DEOBFUSCATION_PROMPT);
 
-    if (payload.length > 1) {
+    if (payload.length > 0) {
         return `
 --- HƯỚNG DẪN NỘI DUNG NHẠY CẢM (PAYLOAD) ---
 ${payload.join('\n\n')}

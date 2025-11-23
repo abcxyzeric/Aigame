@@ -16,6 +16,7 @@ import EntityInfoModal from './common/EntityInfoModal';
 import { EncyclopediaModal } from './EncyclopediaModal';
 import StatusHubModal from './StatusHubModal';
 import NotificationModal from './common/NotificationModal';
+import { getSettings } from '../services/settingsService';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -266,6 +267,24 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     // Optimistic UI Update: Add action to history immediately
     setGameState(prev => ({ ...prev, history: [...prev.history, newAction] }));
 
+    // --- LOGIC TÓM TẮT RIÊNG BIỆT ---
+    const { ragSettings } = getSettings();
+    const narrationTurnsCount = gameState.history.filter(t => t.type === 'narration').length;
+    const shouldSummarize = narrationTurnsCount > 0 && narrationTurnsCount % ragSettings.summaryFrequency === 0;
+    let newSummary: string | undefined = undefined;
+
+    if (shouldSummarize) {
+      try {
+        const lastSummaryTurnIndex = gameState.history.length - (ragSettings.summaryFrequency * 2);
+        const turnsToSummarize = gameState.history.slice(lastSummaryTurnIndex > 0 ? lastSummaryTurnIndex : 0);
+        newSummary = await aiService.generateSummary(turnsToSummarize, gameState.worldConfig);
+      } catch (e) {
+        console.error("Lỗi khi tạo tóm tắt:", e);
+        // Không chặn game nếu tóm tắt thất bại, chỉ ghi log.
+      }
+    }
+    // --- KẾT THÚC LOGIC TÓM TẮT ---
+
     // Now clear input and show loading state
     setPlayerInput('');
     setIsLoading(true);
@@ -282,7 +301,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             type: 'narration', 
             content: parsedResponse.narration,
             metadata: {
-                isSummaryTurn: !!parsedResponse.newSummary,
+                isSummaryTurn: !!newSummary,
                 addedMemoryCount: parsedResponse.newMemories.length,
             }
         };
@@ -310,6 +329,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             if (parsedResponse.updatedStats.length > 0) {
                 finalState.character.stats = mergeAndDeduplicateByName(finalState.character.stats, parsedResponse.updatedStats);
             }
+            
+            if (parsedResponse.updatedSkills.length > 0) {
+                finalState.character.skills = mergeAndDeduplicateByName(finalState.character.skills, parsedResponse.updatedSkills);
+            }
 
             finalState.quests = mergeAndDeduplicateByName(finalState.quests, parsedResponse.updatedQuests);
             finalState.companions = mergeAndDeduplicateByName(finalState.companions, parsedResponse.addedCompanions);
@@ -335,8 +358,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             if (parsedResponse.newMemories.length > 0) {
                 finalState.memories.push(...parsedResponse.newMemories);
             }
-            if (parsedResponse.newSummary) {
-                finalState.summaries.push(parsedResponse.newSummary);
+            if (newSummary) { // Thêm tóm tắt mới nếu có
+                finalState.summaries.push(newSummary);
             }
 
             // Save the final state

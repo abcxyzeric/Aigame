@@ -17,7 +17,7 @@ import {
     getExtractArcListFromSummaryPrompt,
     getGenerateFandomGenesisPrompt
 } from '../../prompts/fandomPrompts';
-import { distillKnowledgeForWorldCreation } from './ragService';
+import { retrieveRelevantKnowledgeChunks } from './ragService';
 
 // --- World Creation Screen AI Helpers ---
 
@@ -32,16 +32,34 @@ export const generateSetting = (config: WorldConfig): Promise<string> => {
 };
 
 export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    // Bỏ qua bước chắt lọc. Sử dụng trực tiếp kiến thức nền được cung cấp.
-    const knowledgeForGeneration = backgroundKnowledge;
+    let knowledgeForGeneration = backgroundKnowledge;
+    const KNOWLEDGE_SIZE_THRESHOLD = 50000; // 50KB threshold
+
+    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
+        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
+
+        if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7);
+        }
+    }
     
     const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
 export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
-    // Bỏ qua bước chắt lọc. Sử dụng trực tiếp kiến thức nền được cung cấp.
-    const knowledgeForGeneration = backgroundKnowledge;
+    let knowledgeForGeneration = backgroundKnowledge;
+    const KNOWLEDGE_SIZE_THRESHOLD = 50000;
+
+    if (backgroundKnowledge && backgroundKnowledge.length > 0) {
+        const totalKnowledgeSize = backgroundKnowledge.reduce((acc, file) => acc + (file.content?.length || 0), 0);
+        const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
+        
+        if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
+            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7);
+        }
+    }
 
     const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);

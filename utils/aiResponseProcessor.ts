@@ -60,6 +60,7 @@ export interface ParsedAiResponse {
     removedStatuses: { name: string }[];
     updatedQuests: Quest[];
     updatedStats: CharacterStat[];
+    updatedSkills: { name: string; description: string; }[];
     addedCompanions: Companion[];
     removedCompanions: { name: string }[];
     updatedNPCs: EncounteredNPC[];
@@ -136,6 +137,7 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         removedStatuses: [],
         updatedQuests: [],
         updatedStats: [],
+        updatedSkills: [],
         addedCompanions: [],
         removedCompanions: [],
         updatedNPCs: [],
@@ -188,6 +190,11 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
                 case 'STATUS_REMOVED':
                     if (data.name) {
                         response.removedStatuses.push({ name: data.name as string });
+                    }
+                    break;
+                case 'SKILL_LEARNED':
+                    if (data.name && data.description) {
+                        response.updatedSkills.push({ name: data.name as string, description: data.description as string });
                     }
                     break;
                 case 'QUEST_NEW':

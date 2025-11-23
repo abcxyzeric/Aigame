@@ -11,23 +11,48 @@ interface LoadGameModalProps {
   onLoad: (gameState: GameState) => void;
 }
 
+const SaveItem: React.FC<{ save: SaveSlot; onLoad: (save: SaveSlot) => void; onDownload: (save: SaveSlot) => void; onDelete: (id: number) => void; }> = ({ save, onLoad, onDownload, onDelete }) => (
+    <div key={save.saveId} className="bg-slate-900/50 p-3 rounded-lg flex items-center justify-between gap-4">
+        <div className="flex-grow min-w-0">
+            <p className="font-bold text-slate-200 truncate">
+            {save.worldName || 'Cuộc phiêu lưu không tên'}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">Lưu lúc: {new Date(save.saveDate).toLocaleString('vi-VN')}</p>
+            <p className="text-sm text-slate-400 italic mt-1 truncate">{save.previewText}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+            <Button onClick={() => onLoad(save)} variant="success" className="!w-auto !py-2 !px-4 !text-sm">Tải</Button>
+            <button onClick={() => onDownload(save)} className="p-2 text-sky-400 hover:bg-sky-500/20 rounded-full transition" title="Tải xuống tệp lưu">
+                <Icon name="download" className="w-5 h-5"/>
+            </button>
+            <button onClick={() => onDelete(save.saveId)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-full transition" title="Xóa bản lưu">
+            <Icon name="trash" className="w-5 h-5"/>
+            </button>
+        </div>
+    </div>
+);
+
 const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }) => {
-  const [saves, setSaves] = useState<SaveSlot[]>([]);
+  const [manualSaves, setManualSaves] = useState<SaveSlot[]>([]);
+  const [autoSaves, setAutoSaves] = useState<SaveSlot[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const fetchSaves = async () => {
+    setIsLoading(true);
+    try {
+      const allSaves = await gameService.loadAllSaves();
+      setManualSaves(allSaves.filter(s => s.saveType === 'manual'));
+      setAutoSaves(allSaves.filter(s => s.saveType === 'auto'));
+    } catch (error) {
+      console.error('Failed to load saves:', error);
+      alert('Không thể tải danh sách game đã lưu.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
-      const fetchSaves = async () => {
-        setIsLoading(true);
-        try {
-          setSaves(await gameService.loadAllSaves());
-        } catch (error) {
-          console.error('Failed to load saves:', error);
-          alert('Không thể tải danh sách game đã lưu.');
-        } finally {
-          setIsLoading(false);
-        }
-      };
       fetchSaves();
     }
   }, [isOpen]);
@@ -35,7 +60,7 @@ const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }
   const handleDelete = async (saveId: number) => {
     if (confirm('Bạn có chắc muốn xóa bản lưu này không?')) {
       await gameService.deleteSave(saveId);
-      setSaves(await gameService.loadAllSaves()); // Refresh list
+      await fetchSaves(); // Refresh list
     }
   };
   
@@ -65,33 +90,28 @@ const LoadGameModal: React.FC<LoadGameModalProps> = ({ isOpen, onClose, onLoad }
              <div className="text-center py-10">
               <p className="text-slate-400">Đang tải danh sách...</p>
             </div>
-          ) : saves.length > 0 ? (
-            <div className="space-y-3">
-              {saves.map((save) => (
-                <div key={save.saveId} className="bg-slate-900/50 p-3 rounded-lg flex items-center justify-between gap-4">
-                  <div className="flex-grow min-w-0">
-                     <div className="flex items-center justify-between">
-                       <p className="font-bold text-slate-200 truncate">
-                        {save.worldName || 'Cuộc phiêu lưu không tên'}
-                       </p>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${save.saveType === 'manual' ? 'bg-blue-600/70 text-blue-100' : 'bg-slate-600 text-slate-200'}`}>
-                         {save.saveType === 'manual' ? 'Thủ công' : 'Tự động'}
-                        </span>
+          ) : (manualSaves.length > 0 || autoSaves.length > 0) ? (
+            <div className="space-y-6">
+                {manualSaves.length > 0 && (
+                    <div>
+                        <h3 className="text-lg font-semibold text-blue-300 mb-2 border-b-2 border-blue-500/50 pb-1">Lưu Thủ Công</h3>
+                        <div className="space-y-3">
+                            {manualSaves.map(save => (
+                                <SaveItem key={save.saveId} save={save} onLoad={handleLoad} onDownload={fileService.saveGameStateToFile} onDelete={handleDelete} />
+                            ))}
+                        </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Lưu lúc: {new Date(save.saveDate).toLocaleString('vi-VN')}</p>
-                    <p className="text-sm text-slate-400 italic mt-1 truncate">{save.previewText}</p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Button onClick={() => handleLoad(save)} variant="success" className="!w-auto !py-2 !px-4 !text-sm">Tải</Button>
-                    <button onClick={() => fileService.saveGameStateToFile(save)} className="p-2 text-sky-400 hover:bg-sky-500/20 rounded-full transition" title="Tải xuống tệp lưu">
-                        <Icon name="download" className="w-5 h-5"/>
-                    </button>
-                    <button onClick={() => handleDelete(save.saveId)} className="p-2 text-red-400 hover:bg-red-500/20 rounded-full transition" title="Xóa bản lưu">
-                      <Icon name="trash" className="w-5 h-5"/>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )}
+                 {autoSaves.length > 0 && (
+                    <div>
+                        <h3 className="text-lg font-semibold text-slate-300 mb-2 border-b-2 border-slate-600/50 pb-1">Lưu Tự Động</h3>
+                        <div className="space-y-3">
+                            {autoSaves.map(save => (
+                                <SaveItem key={save.saveId} save={save} onLoad={handleLoad} onDownload={fileService.saveGameStateToFile} onDelete={handleDelete} />
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
           ) : (
             <div className="text-center py-10">

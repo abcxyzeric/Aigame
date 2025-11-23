@@ -12,6 +12,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.5.4 (Nâng cấp Trải nghiệm Người dùng & AI)",
+      notes: [
+        "**Nâng cấp Tính cách Nhân vật do AI tạo:** AI giờ đây sẽ tạo ra các tính cách tùy chỉnh có chiều sâu, phức tạp và mâu thuẫn hơn, mang lại những nhân vật đáng nhớ và khó đoán hơn.",
+        "**Đại tu Màn hình Tải Game:** Giao diện tải game được thiết kế lại hoàn toàn, phân loại rõ ràng giữa file lưu 'Thủ công' và 'Tự động', giúp người chơi quản lý các bản lưu một cách trực quan và hiệu quả hơn.",
+        "**Thêm Bộ lọc Thông minh cho Kiến Tạo Thực Thể Ban Đầu:** Bổ sung bộ lọc và thanh tìm kiếm, cho phép người chơi dễ dàng tìm kiếm và quản lý danh sách các NPC, vật phẩm, địa điểm... khi kiến tạo thế giới, đặc biệt hữu ích với các thế giới có nhiều thực thể."
+      ]
+    },
+    {
       version: "1.5.1 (Sửa lỗi & Tinh chỉnh)",
       notes: [
         "**Khắc phục lỗi 'Prohibited' (Toàn diện):** Tinh chỉnh lại toàn bộ cấu trúc prompt cho cả quá trình Kiến tạo Thế giới và Gameplay, khắc phục triệt để lỗi AI từ chối phản hồi khi xử lý các file kiến thức nền 18+ hoặc các hành động nhạy cảm trong game.",

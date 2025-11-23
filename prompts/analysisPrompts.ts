@@ -213,6 +213,11 @@ ${JSON.stringify(dataToOptimize, null, 2)}
 
 --- QUY TRÌNH XỬ LÝ BẮT BUỘC ---
 
+**0. BẢO TOÀN DANH MỤC (CATEGORY PRESERVATION - TỐI QUAN TRỌNG):**
+    *   **Mục tiêu:** Đảm bảo mỗi thực thể được giữ nguyên trong danh mục gốc của nó.
+    *   **Quy tắc:** Một thực thể được cung cấp trong danh sách \`inventory\` (vật phẩm) thì sau khi xử lý, nó BẮT BUỘC phải nằm trong danh sách \`optimizedInventory\`. Tương tự, một \`quest\` phải nằm trong \`optimizedQuests\`, một \`encounteredNPC\` phải nằm trong \`optimizedNPCs\`.
+    *   **TUYỆT ĐỐI CẤM:** Bạn không được phép di chuyển một thực thể từ danh mục này sang danh mục khác. Ví dụ: không được biến một vật phẩm thành một nhiệm vụ.
+
 **GIAI ĐOẠN 1: HỢP NHẤT VÀ LÀM SẠCH (MERGE & CLEANUP PHASE)**
 
 1.  **Quét trùng lặp mờ (Fuzzy Deduplication - CỰC KỲ QUAN TRỌNG):**
