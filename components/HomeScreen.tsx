@@ -118,10 +118,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ onStartNew, onLoadGame, onNavig
       />
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <div className="text-center mb-10">
-          <h1 className="text-5xl md:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-500 to-purple-600 py-2">
+          <h1 className="text-5xl md:text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-lime-400 to-yellow-400 via-pink-500 to-violet-500 py-2 font-playfair animate-aurora-shimmer">
             Nhập Vai A.I Simulator
           </h1>
-          <p className="text-slate-400 mt-2 text-lg">Kiến tạo thế giới của riêng bạn</p>
+          <p className="text-slate-300 mt-4 text-xl font-marcellus animate-rainbow-text text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-teal-300 to-green-400 via-yellow-300 to-pink-400">Kiến tạo thế giới của riêng bạn</p>
         </div>
 
         <div className="w-full max-w-sm space-y-4">
