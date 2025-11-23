@@ -70,11 +70,27 @@ export function processNarration(text: string): string {
         console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ dữ liệu game ([TAG:...]).');
     }
 
-    // De-obfuscate words
+    // De-obfuscate words from user input format [x-y-z]
     before = processedText;
     processedText = processedText.replace(/\[([^\]]+)\]/g, (match, p1) => p1.replace(/-/g, ''));
     if (DEBUG_MODE && before !== processedText) {
         console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã giải mã pattern từ bị làm mờ ([x-y-z]).');
+    }
+
+    // [FIX] De-obfuscate words from AI's incorrect hyphenated output (e.g., t-h-ô-n-g)
+    before = processedText;
+    // This regex iteratively removes hyphens between Vietnamese characters.
+    const vietnameseChars = 'a-zA-Zàáạảãăằắặẳẵâầấậẩẫđèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹ';
+    const dehyphenateRegex = new RegExp(`([${vietnameseChars}])-+(?=[${vietnameseChars}])`, 'gi');
+    // Keep running replace until no more hyphens are found between letters
+    let previousText;
+    do {
+        previousText = processedText;
+        processedText = processedText.replace(dehyphenateRegex, '$1');
+    } while (previousText !== processedText);
+
+    if (DEBUG_MODE && before !== processedText) {
+        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã giải mã pattern từ bị làm mờ do AI (x-y-z).');
     }
     
     // Normalize smart quotes
@@ -118,12 +134,10 @@ export function processNarration(text: string): string {
         console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern ký tự dấu sao (*).');
     }
     
-    // Remove any stray closing tags
-    before = processedText;
-    processedText = processedText.replace(/<\/\s*(exp|thought|status|important|entity)\s*>/g, '');
-    if (DEBUG_MODE && before !== processedText) {
-        console.log('%c[CLEANED]', 'color: goldenrod;', 'Đã xóa pattern thẻ đóng bị thừa (</tag>).');
-    }
+    // [FIX REMOVED] The following line was removed as it incorrectly stripped valid closing tags,
+    // breaking the formatting component in the UI. A stray closing tag is not a critical issue
+    // and is handled gracefully by the renderer.
+    // processedText = processedText.replace(/<\/\s*(exp|thought|status|important|entity)\s*>/g, '');
 
     if (DEBUG_MODE) {
         console.log('%c[FINAL OUTPUT]', 'color: lightgreen;', processedText.trim());
