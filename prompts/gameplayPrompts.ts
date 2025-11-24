@@ -30,6 +30,7 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 [STATUS_ACQUIRED: name="Trúng Độc", description="Mất máu mỗi lượt", type="debuff"]
 [STATUS_REMOVED: name="Phấn Chấn"]
 [ITEM_ADD: name="Thanh Kiếm Gỉ Sét", quantity=1, description="Một thanh kiếm cũ."] (Dùng khi nhận được vật phẩm)
+**LƯU Ý: Chỉ sử dụng thẻ này cho vật phẩm thuộc sở hữu của NGƯỜI CHƠI. Không dùng cho vật phẩm của NPC.**
 [ITEM_REMOVE: name="Bánh Mì", quantity=1] (Dùng khi mất đi/sử dụng vật phẩm)
 [SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."] // Chỉ dùng khi **nhân vật chính** học được kỹ năng MỚI
 [QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]

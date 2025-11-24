@@ -103,6 +103,11 @@ function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetyS
         case 'RECITATION':
              return new Error("Phản hồi từ AI đã bị dừng vì có dấu hiệu lặp lại nội dung từ các nguồn khác. Vui lòng thử lại với một hành động khác để thay đổi hướng câu chuyện.");
 
+        case 'STOP':
+            // THÊM: Xử lý trường hợp "Từ chối im lặng" khi phản hồi trống nhưng lý do là STOP
+            console.error(`Gemini API returned no text but finish reason was STOP. This might be due to a malformed prompt (e.g., bad obfuscation).`, candidate);
+            return new Error(`Phản hồi từ AI trống không mong muốn. Điều này có thể do lỗi xử lý văn bản đầu vào. Vui lòng thử lại. Nếu sự cố vẫn tiếp diễn, hãy báo cáo lỗi.`);
+
         case 'OTHER':
         default:
             const reason = finishReason || 'Không rõ lý do';
@@ -117,12 +122,11 @@ function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetyS
 
 
 export async function generate(prompt: string, systemInstruction?: string): Promise<string> {
-    const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
+    const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
-    const keys = apiKeyConfig.keys.filter(Boolean);
-    const MAX_RETRIES = Math.max(keys.length, 3);
+    const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
     let lastError: Error | null = null;
   
     let finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
@@ -204,12 +208,11 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
 }
 
 export async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>): Promise<T> {
-    const { safetySettings, aiPerformanceSettings, apiKeyConfig } = getSettings();
+    const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   
-    const keys = apiKeyConfig.keys.filter(Boolean);
-    const MAX_RETRIES = Math.max(keys.length, 3);
+    const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
     let lastError: Error | null = null;
   
     let finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
@@ -317,7 +320,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     if (keys.length === 0) {
         throw new Error('Không có API Key nào được cấu hình để tạo embeddings.');
     }
-    const MAX_RETRIES = Math.max(keys.length, 3);
+    const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
     let lastError: Error | null = null;
     
     for (let i = 0; i < MAX_RETRIES; i++) {
@@ -329,6 +332,9 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
             });
             const embeddings = result.embeddings;
             if (embeddings && embeddings.length === texts.length && embeddings.every(e => e.values)) {
+                if (DEBUG_MODE) {
+                    console.log(`✅ [DEBUG] Successfully generated ${embeddings.length} embeddings.`);
+                }
                 return embeddings.map(e => e.values);
             }
             throw new Error("API không trả về embeddings hợp lệ cho batch.");

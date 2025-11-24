@@ -31,20 +31,23 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         throw new Error("Lỗi logic: Lượt đi cuối cùng phải là hành động của người chơi.");
     }
     
-    // Step 1: Generate Query Text
-    let ragQueryText = lastPlayerAction.content;
-    if (ragSettings.summarizeBeforeRag && history.length > 1) {
-        ragQueryText = await ragService.generateRagQueryFromTurns(history.slice(-NUM_RECENT_TURNS));
-    }
+    // Bước 1: Tạo Query Text (code thuần, không gọi AI)
+    const previousTurn = history.length > 1 ? history[history.length - 2] : null;
+    const previousContent = previousTurn ? `${previousTurn.type === 'action' ? 'Người chơi' : 'AI'}: ${previousTurn.content.replace(/<[^>]*>/g, '').substring(0, 200)}...` : '';
+    const ragQueryText = `${previousContent}\n\nHành động hiện tại: ${lastPlayerAction.content}`;
+
 
     if (DEBUG_MODE) {
         console.groupCollapsed('🧠 [DEBUG] RAG Context');
         console.log('%c[QUERY]', 'color: cyan; font-weight: bold;', ragQueryText);
     }
     
+    // GỌI API DUY NHẤT
+    const globalQueryEmbedding = await embeddingService.embedContent(ragQueryText);
+
     // --- HYBRID SEARCH IMPLEMENTATION ---
 
-    // Step 2: Hybrid Search for relevant past turns
+    // Bước 2: Hybrid Search cho các lượt chơi cũ liên quan
     let relevantPastTurns = '';
     let foundTurnsCount = 0;
     try {
@@ -53,10 +56,9 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
 
         if (searchableTurnVectors.length > 0) {
             // A. Vector Search
-            const queryEmbedding = await embeddingService.embedContent(ragQueryText);
             const vectorRankedTurns = searchableTurnVectors.map(vector => ({
                 id: vector.turnIndex,
-                score: cosineSimilarity(queryEmbedding, vector.embedding),
+                score: cosineSimilarity(globalQueryEmbedding, vector.embedding), // SỬ DỤNG VECTOR TOÀN CỤC
                 data: vector,
             })).sort((a, b) => b.score - a.score);
 
@@ -85,17 +87,16 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         console.log(`%c[FOUND TURNS: ${foundTurnsCount}]`, 'color: lightblue;', relevantPastTurns || "Không có.");
     }
 
-    // Step 3: Hybrid Search for relevant summaries
+    // Bước 3: Hybrid Search cho các tóm tắt liên quan
     let relevantMemories = '';
     let foundSummariesCount = 0;
      try {
         const allSummaryVectors = await dbService.getAllSummaryVectors();
         if (allSummaryVectors.length > 0) {
             // A. Vector Search
-            const queryEmbedding = await embeddingService.embedContent(ragQueryText); // Re-embedding for simplicity, could be optimized
             const vectorRankedSummaries = allSummaryVectors.map(vector => ({
                 id: vector.summaryIndex,
-                score: cosineSimilarity(queryEmbedding, vector.embedding),
+                score: cosineSimilarity(globalQueryEmbedding, vector.embedding), // SỬ DỤNG VECTOR TOÀN CỤC
                 data: vector,
             })).sort((a, b) => b.score - a.score);
             
@@ -123,13 +124,13 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         console.log(`%c[FOUND MEMORIES: ${foundSummariesCount}]`, 'color: lightblue;', relevantMemories || "Không có.");
     }
 
-    // Step 4: RAG - Retrieve relevant lore/knowledge (existing logic)
+    // Bước 4: RAG - Truy xuất lore/kiến thức liên quan
     let relevantKnowledge = '';
     if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
-        relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryText, worldConfig.backgroundKnowledge, 3);
+        relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryText, worldConfig.backgroundKnowledge, 3, globalQueryEmbedding); // TRUYỀN VECTOR VÀO
     }
     
-    // Step 5: Assemble the final prompt
+    // Bước 5: Lắp ráp prompt cuối cùng
     const fullContext = {
         inventory, playerStatus, companions,
         activeQuests: quests.filter(q => q.status !== 'hoàn thành'),

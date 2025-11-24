@@ -71,7 +71,7 @@ export async function retrieveRelevantSummaries(context: string, allSummaries: s
     return (result.relevant_summaries || []).join('\n\n');
 }
 
-export async function retrieveRelevantKnowledgeChunks(context: string, allKnowledge: {name: string, content: string}[], topK: number): Promise<{name: string, content: string}[]> {
+export async function retrieveRelevantKnowledgeChunks(context: string, allKnowledge: {name: string, content: string}[], topK: number, queryEmbedding: number[]): Promise<{name: string, content: string}[]> {
     if (!allKnowledge || allKnowledge.length === 0) return [];
 
     const summaries = allKnowledge.filter(k => k.name.startsWith('tom_tat_'));
@@ -81,7 +81,7 @@ export async function retrieveRelevantKnowledgeChunks(context: string, allKnowle
 
     if (datasetFiles.length > 0 && context) {
         try {
-            const queryEmbedding = await generateEmbedding(context);
+            // const queryEmbedding = await generateEmbedding(context); // ĐÃ XÓA
             
             for (const file of datasetFiles) {
                 try {
@@ -116,8 +116,8 @@ export async function retrieveRelevantKnowledgeChunks(context: string, allKnowle
 }
 
 
-export async function retrieveRelevantKnowledge(context: string, allKnowledge: {name: string, content: string}[], topK: number): Promise<string> {
-    const selectedKnowledgeFiles = await retrieveRelevantKnowledgeChunks(context, allKnowledge, topK);
+export async function retrieveRelevantKnowledge(context: string, allKnowledge: {name: string, content: string}[], topK: number, queryEmbedding: number[]): Promise<string> {
+    const selectedKnowledgeFiles = await retrieveRelevantKnowledgeChunks(context, allKnowledge, topK, queryEmbedding);
     
     if (selectedKnowledgeFiles.length === 0) return "";
     

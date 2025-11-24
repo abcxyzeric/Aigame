@@ -18,6 +18,8 @@ import {
     getGenerateFandomGenesisPrompt
 } from '../../prompts/fandomPrompts';
 import { retrieveRelevantKnowledgeChunks } from './ragService';
+// FIX: Import embedding service to generate embeddings for RAG queries.
+import * as embeddingService from './embeddingService';
 
 // --- World Creation Screen AI Helpers ---
 
@@ -40,7 +42,10 @@ export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: 
         const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
 
         if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7);
+            // FIX: Generate an embedding for the idea to use as a query vector for RAG.
+            const queryEmbedding = await embeddingService.embedContent(idea);
+            // FIX: Pass the generated queryEmbedding as the fourth argument to satisfy function signature.
+            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7, queryEmbedding);
         }
     }
     
@@ -57,7 +62,10 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
         const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
         
         if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7);
+            // FIX: Generate an embedding for the idea to use as a query vector for RAG.
+            const queryEmbedding = await embeddingService.embedContent(idea);
+            // FIX: Pass the generated queryEmbedding as the fourth argument to satisfy function signature.
+            knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7, queryEmbedding);
         }
     }
 
