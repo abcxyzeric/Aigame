@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
@@ -57,7 +56,7 @@ const App: React.FC = () => {
       companions: [],
       quests: [],
       suggestions: [],
-      worldTime: { year: 1, month: 1, day: 1, hour: 8 },
+      worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0, season: 'Mùa Xuân', weather: 'Trời quang đãng' },
       reputation: { score: 0, tier: 'Vô Danh' },
       reputationTiers: [],
     });
@@ -93,7 +92,7 @@ const App: React.FC = () => {
       companions: [], // For old saves
       quests: [], // For old saves
       suggestions: [], // Fallback for old saves
-      worldTime: { year: 1, month: 1, day: 1, hour: 8 }, // Fallback cho file lưu cũ
+      worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0, season: 'Mùa Xuân', weather: 'Trời quang đãng' }, // Fallback cho file lưu cũ
       reputation: { score: 0, tier: 'Vô Danh' }, // Fallback cho file lưu cũ
       reputationTiers: [], // Fallback cho file lưu cũ
       ...state,

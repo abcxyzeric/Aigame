@@ -1,4 +1,4 @@
-import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity, TimePassed } from '../types';
+import { ActionSuggestion, GameItem, StatusEffect, Companion, Quest, CharacterStat, WorldTime, EncounteredNPC, EncounteredFaction, InitialEntity, TimePassed, CharacterConfig } from '../types';
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
 
@@ -177,6 +177,7 @@ export interface ParsedAiResponse {
     newSummary?: string;
     timePassed?: TimePassed;
     reputationChange?: { score: number; reason: string };
+    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation' | 'realm' | 'root'>>;
     // Start game specific
     initialWorldTime?: WorldTime;
     reputationTiers?: string[];
@@ -251,6 +252,7 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
         updatedFactions: [],
         discoveredEntities: [],
         newMemories: [],
+        updatedCharacter: {},
         initialStats: [],
     };
 
@@ -370,6 +372,16 @@ export function parseAiResponse(rawText: string): ParsedAiResponse {
                 case 'REPUTATION_TIERS_SET':
                     if (typeof data.tiers === 'string') {
                         response.reputationTiers = data.tiers.split(',').filter(Boolean);
+                    }
+                    break;
+                case 'REALM_UPDATE':
+                    if (data.name) {
+                        response.updatedCharacter = { ...response.updatedCharacter, realm: data.name as string };
+                    }
+                    break;
+                case 'ROOT_UPDATE':
+                    if (data.name) {
+                        response.updatedCharacter = { ...response.updatedCharacter, root: data.name as string };
                     }
                     break;
             }

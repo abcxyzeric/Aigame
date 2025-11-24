@@ -1,4 +1,4 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat, PowerSystemConfig } from './types';
 
 export const GENDER_OPTIONS = ['Không xác định (Để AI quyết định)', 'Nam', 'Nữ', 'Khác'];
 export const PERSONALITY_OPTIONS = [
@@ -49,6 +49,12 @@ export const DEFAULT_STATS: CharacterStat[] = [
   { name: 'Thể Lực', value: 100, maxValue: 100, isPercentage: true, description: 'Đại diện cho sức bền. Bị trừ khi vận động mạnh. Hồi phục khi nghỉ.', hasLimit: true },
 ];
 
+export const DEFAULT_POWER_SYSTEM_CONFIG: PowerSystemConfig = {
+  enabled: false,
+  realms: [],
+  origins: [],
+};
+
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   storyContext: {
     worldName: '',
@@ -73,6 +79,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   violenceLevel: VIOLENCE_LEVEL_OPTIONS[0],
   storyTone: STORY_TONE_OPTIONS[1],
   enableStatsSystem: true,
+  powerSystem: DEFAULT_POWER_SYSTEM_CONFIG,
   coreRules: [],
   initialEntities: [],
   temporaryRules: [],

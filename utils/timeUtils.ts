@@ -5,13 +5,14 @@ export const advanceTime = (currentTime: WorldTime, timePassed: TimePassed | {})
 
     const { years = 0, months = 0, days = 0, hours = 0, minutes = 0 } = timePassed as TimePassed;
 
-    // Use JS Date for robust handling of rollovers (e.g., 25 hours -> +1 day, 1 hour)
-    // Month is 0-indexed in JS Date, so subtract 1 when setting and add 1 when getting.
+    // Sử dụng đối tượng Date của JS để xử lý các trường hợp vượt ngưỡng (vd: 25 giờ -> +1 ngày, 1 giờ)
+    // Tháng trong JS Date là 0-indexed, nên trừ 1 khi thiết lập và cộng 1 khi lấy ra.
     const newDate = new Date(Date.UTC(
         currentTime.year, 
         currentTime.month - 1, 
         currentTime.day, 
-        currentTime.hour
+        currentTime.hour,
+        currentTime.minute // Thêm phút
     ));
 
     if (years) newDate.setUTCFullYear(newDate.getUTCFullYear() + years);
@@ -24,7 +25,11 @@ export const advanceTime = (currentTime: WorldTime, timePassed: TimePassed | {})
         year: newDate.getUTCFullYear(), 
         month: newDate.getUTCMonth() + 1, 
         day: newDate.getUTCDate(), 
-        hour: newDate.getUTCHours() 
+        hour: newDate.getUTCHours(),
+        minute: newDate.getUTCMinutes(), // Lấy phút
+        // Giữ lại mùa và thời tiết từ thời gian cũ, chúng sẽ được tính toán lại sau
+        season: currentTime.season,
+        weather: currentTime.weather,
     };
 };
 
@@ -57,4 +62,18 @@ export const extractTimePassedFromText = (text: string): TimePassed => {
     }
 
     return timePassed;
+};
+
+export const shouldWeatherUpdate = (oldTime: WorldTime, newTime: WorldTime): boolean => {
+    // Nếu là ngày, tháng, hoặc năm mới, cập nhật thời tiết
+    if (newTime.day !== oldTime.day || newTime.month !== oldTime.month || newTime.year !== oldTime.year) {
+        return true;
+    }
+    // Nếu hơn một giờ đã trôi qua trong cùng một ngày, cập nhật thời tiết
+    const oldTimeInMinutes = oldTime.hour * 60 + oldTime.minute;
+    const newTimeInMinutes = newTime.hour * 60 + newTime.minute;
+    if (newTimeInMinutes - oldTimeInMinutes >= 60) {
+        return true;
+    }
+    return false;
 };

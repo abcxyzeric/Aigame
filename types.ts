@@ -1,5 +1,3 @@
-
-
 export interface CharacterStat {
   name: string;
   value: number;
@@ -35,6 +33,25 @@ export interface CharacterConfig {
   }[];
   stats: CharacterStat[];
   motivation: string;
+  realm?: string; // Cảnh giới: VD: "Luyện Khí - Tầng 3"
+  root?: string;  // Căn cơ: VD: "Hỏa Linh Căn - Thiên Phẩm"
+}
+
+export interface PowerSystemRealm {
+  name: string;
+  description: string;
+}
+
+export interface PowerSystemOrigin {
+  name: string;
+  quality: string;
+  description: string;
+}
+
+export interface PowerSystemConfig {
+  enabled: boolean;
+  realms: PowerSystemRealm[];
+  origins: PowerSystemOrigin[];
 }
 
 export interface TemporaryRule {
@@ -57,6 +74,7 @@ export interface WorldConfig {
   violenceLevel?: string;
   storyTone?: string;
   enableStatsSystem: boolean;
+  powerSystem: PowerSystemConfig;
   coreRules: string[];
   initialEntities: InitialEntity[];
   temporaryRules: TemporaryRule[];
@@ -170,6 +188,9 @@ export interface WorldTime {
   month: number;
   day: number;
   hour: number; // 0-23
+  minute: number; // 0-59
+  season: string;
+  weather: string;
 }
 
 export interface Reputation {
@@ -237,7 +258,7 @@ export interface StartGameResponse {
   suggestions: ActionSuggestion[];
   initialPlayerStatus?: StatusEffect[];
   initialInventory?: GameItem[];
-  initialWorldTime?: WorldTime;
+  initialWorldTime?: Partial<WorldTime>;
   timePassed?: TimePassed;
   reputationChange?: {
     score: number;
@@ -264,7 +285,7 @@ export interface EncyclopediaEntriesUpdateResponse {
 
 // For player character's long-term state
 export interface CharacterStateUpdateResponse {
-    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
+    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation' | 'realm' | 'root'>>;
     updatedSkills?: { name: string; description: string; }[];
     newMemories?: string[];
     timePassed?: TimePassed;

@@ -35,6 +35,9 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 [SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."] // Chỉ dùng khi **nhân vật chính** học được kỹ năng MỚI
 [QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]
 [COMPANION_REMOVE: name="Sói Con"] // Dùng khi đồng hành rời nhóm
+[REALM_UPDATE: name="Trúc Cơ Kỳ - Tầng 1"] // Dùng khi nhân vật chính đột phá cảnh giới.
+[ROOT_UPDATE: name="Hỏa Linh Căn - Thiên Phẩm"] // Dùng khi căn cơ của nhân vật chính được xác định/thay đổi.
+
 
 **--- THẺ ĐỊNH NGHĨA & CẬP NHẬT THỰC THỂ ---**
 (Sử dụng [XXX_NEW] hoặc [XXX_DEFINED] khi một thực thể mới xuất hiện trong tường thuật)
@@ -49,8 +52,8 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 
 **--- DÀNH RIÊNG CHO LƯỢT ĐẦU TIÊN (startGame) ---**
 [PLAYER_STATS_INIT: name="Sinh Lực", value=100, maxValue=100, isPercentage=true, description="Sức sống", hasLimit=true] (Sử dụng cho MỖI chỉ số)
-[WORLD_TIME_SET: year=1, month=1, day=1, hour=8]
-[REPUTATION_TIERS_SET: tiers="Ma Đầu,Kẻ Bị Truy Nã,Vô Danh,Thiện Nhân,Anh Hùng"] (5 cấp, không có dấu cách, phân cách bằng dấu phẩy)
+[WORLD_TIME_SET: year=1, month=1, day=1, hour=8, minute=0]
+[REPUTATION_TIERS_SET: tiers="Ma Đầu,Tà Đồ,Kẻ Xấu,Vô Danh,Người Tốt,Thiện Nhân,Anh Hùng"] (5-7 cấp, từ xấu nhất đến tốt nhất, không có dấu cách, phân cách bằng dấu phẩy)
 `;
 
 export const getStartGamePrompt = (config: WorldConfig) => {
@@ -74,8 +77,8 @@ ${JSON.stringify(config, null, 2)}`;
     *   Sử dụng các thẻ định dạng (<entity>, <important>, <thought>...) trong lời kể một cách tự nhiên.
 2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc đã được cung cấp ở trên (trong phần QUY TẮC HỆ THỐNG).
     *   BẮT BUỘC khởi tạo TOÀN BỘ chỉ số của nhân vật bằng các thẻ \`PLAYER_STATS_INIT\`.
-    *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
-    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
+    *   BẮT BUỘC tạo 5-7 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
+    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp. Thời gian phải bao gồm cả Giờ và Phút.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`SUGGESTION\`) đa dạng.
     *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`ITEM_DEFINED\`, \`NPC_NEW\`...) VÀ thẻ sở hữu (\`ITEM_ADD\`).
 
@@ -134,7 +137,12 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     ${JSON.stringify({
         worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
         character: { name: character.name, gender: character.gender, bio: character.bio, motivation: character.motivation, personality: character.personality === 'Tuỳ chỉnh' ? character.customPersonality : character.personality, stats: character.stats },
-        worldTime: worldTime,
+        worldState: { 
+            time: `${String(worldTime.hour).padStart(2, '0')}:${String(worldTime.minute).padStart(2, '0')}`,
+            date: `Ngày ${worldTime.day}/${worldTime.month}/${worldTime.year}`,
+            season: worldTime.season,
+            weather: worldTime.weather,
+        },
         reputation: { ...reputation, reputationTiers },
     }, null, 2)}
 *   **Bách Khoa Toàn Thư (Toàn bộ các thực thể đã gặp):**

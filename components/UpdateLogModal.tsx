@@ -12,6 +12,14 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.6.0 (Đại tu Giao diện & AI)",
+      notes: [
+        "**Đại tu Giao diện Chỉ số:** Tích hợp sâu 'Cảnh giới' và 'Căn cơ' vào bảng chỉ số nhân vật trong gameplay. Giao diện bảng thuộc tính được thiết kế lại gọn gàng, trực quan hơn với bố cục hai cột.",
+        "**Nâng cấp AI Kiến tạo:** Bổ sung 'AI Hỗ trợ' cho từng Cảnh giới và Căn cơ, cho phép AI thiết kế chi tiết từng cấp bậc sức mạnh dựa trên bối cảnh thế giới, hỗ trợ đắc lực cho việc xây dựng hệ thống tu luyện phức tạp.",
+        "**[Nền tảng] Hệ thống Thế giới Động:** Bổ sung nền tảng kỹ thuật cho các tính năng tương lai như đồng hồ, thời tiết, và hệ thống mùa, hứa hẹn một thế giới sống động và chân thực hơn trong các bản cập nhật tới."
+      ]
+    },
+    {
       version: "1.5.4 (Nâng cấp Trải nghiệm Người dùng & AI)",
       notes: [
         "**Nâng cấp Tính cách Nhân vật do AI tạo:** AI giờ đây sẽ tạo ra các tính cách tùy chỉnh có chiều sâu, phức tạp và mâu thuẫn hơn, mang lại những nhân vật đáng nhớ và khó đoán hơn.",

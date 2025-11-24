@@ -1,11 +1,14 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { WorldConfig, InitialEntity, GameState } from '../../types';
+import { WorldConfig, InitialEntity, GameState, PowerSystemConfig, PowerSystemRealm, PowerSystemOrigin } from '../../types';
 import { 
     getGenerateGenrePrompt, 
     getGenerateSettingPrompt, 
     getGenerateWorldFromIdeaPrompt,
     getGenerateFanfictionWorldPrompt,
-    getGenerateEntityInfoOnTheFlyPrompt
+    getGenerateEntityInfoOnTheFlyPrompt,
+    getGeneratePowerSystemPrompt,
+    getGenerateSingleRealmPrompt,
+    getGenerateSingleOriginPrompt
 } from '../../prompts/worldCreationPrompts';
 import {
     getGenerateEntityNamePrompt,
@@ -72,6 +75,22 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
     const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
+
+export const generatePowerSystem = (config: WorldConfig): Promise<Pick<PowerSystemConfig, 'realms' | 'origins'>> => {
+    const { prompt, schema } = getGeneratePowerSystemPrompt(config);
+    return generateJson(prompt, schema);
+};
+
+export const generateSingleRealm = (config: WorldConfig, previousRealms: PowerSystemRealm[], currentName?: string): Promise<PowerSystemRealm> => {
+    const { prompt, schema } = getGenerateSingleRealmPrompt(config, previousRealms, currentName);
+    return generateJson(prompt, schema);
+};
+
+export const generateSingleOrigin = (config: WorldConfig, currentName?: string): Promise<PowerSystemOrigin> => {
+    const { prompt, schema } = getGenerateSingleOriginPrompt(config, currentName);
+    return generateJson(prompt, schema);
+};
+
 
 // --- Entity Creation AI Helpers ---
 

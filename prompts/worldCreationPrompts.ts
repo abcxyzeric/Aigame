@@ -1,5 +1,5 @@
 import { Type } from "@google/genai";
-import { WorldConfig, InitialEntity, AiPerformanceSettings } from "../types";
+import { WorldConfig, InitialEntity, AiPerformanceSettings, PowerSystemRealm, PowerSystemOrigin } from "../types";
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS } from '../constants';
 import { getSettings } from "../services/settingsService";
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from "../constants";
@@ -148,7 +148,7 @@ ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG VÀ TÀI LIỆU:** Phân tích kỹ ý tưởng chính. Nếu "KIẾN THỨC NỀN" được cung cấp, bạn BẮT BUỘC phải coi đó là nguồn thông tin chính. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập.
-2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
+2.  **Mô tả bối cảnh thế giới (\`setting\`) một cách phong phú về lịch sử, địa lý, văn hóa. TUYỆT ĐỐI KHÔNG mô tả chi tiết hệ thống sức mạnh (cảnh giới, cấp bậc) trong trường \`setting\` này. Hệ thống sức mạnh sẽ được xử lý riêng.
 3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
 4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
 5.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, vật phẩm...) và mô tả chúng một cách sống động.
@@ -176,7 +176,7 @@ ${backgroundKnowledgePrompt}
 
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập. Nếu không có kiến thức nền, hãy vận dụng kiến thức của bạn về tác phẩm gốc làm nền tảng.
-2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của tác phẩm gốc, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung.
+2.  **Mô tả bối cảnh thế giới (\`setting\`) một cách phong phú về lịch sử, địa lý, văn hóa. TUYỆT ĐỐI KHÔNG mô tả chi tiết hệ thống sức mạnh (cảnh giới, cấp bậc) trong trường \`setting\` này. Hệ thống sức mạnh sẽ được xử lý riêng.
 3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
 4.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
 5.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
@@ -197,6 +197,114 @@ YÊU CẦU BẮT BUỘC:
 
     return { prompt, schema, creativeCallConfig };
 };
+
+export const getGeneratePowerSystemPrompt = (config: WorldConfig) => {
+    const realmSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của cảnh giới/cấp bậc." },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về cảnh giới này." }
+        },
+        required: ['name', 'description']
+    };
+
+    const originSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của loại căn cơ/huyết mạch." },
+            quality: { type: Type.STRING, description: "Phẩm chất của căn cơ (VD: Thiên Phẩm, Địa Phẩm...)." },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về loại căn cơ này." }
+        },
+        required: ['name', 'quality', 'description']
+    };
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            realms: {
+                type: Type.ARRAY,
+                description: "Một danh sách được sắp xếp theo thứ tự từ thấp đến cao gồm 5-10 cảnh giới tu luyện.",
+                items: realmSchema
+            },
+            origins: {
+                type: Type.ARRAY,
+                description: "Một danh sách từ 3-5 loại căn cơ/huyết mạch và các phẩm chất của chúng.",
+                items: originSchema
+            }
+        },
+        required: ['realms', 'origins']
+    };
+
+    const prompt = `Dựa trên thể loại truyện là "${config.storyContext.genre}" và bối cảnh "${config.storyContext.setting}", hãy thiết kế một hệ thống sức mạnh chi tiết.
+    - Tạo ra một danh sách các cảnh giới tu luyện (realms), sắp xếp theo thứ tự từ thấp đến cao.
+    - Tạo ra một hệ thống căn cơ hoặc nguồn gốc sức mạnh (origins) với các phẩm chất khác nhau.
+    - Ví dụ cho thể loại Tu Tiên:
+        - Cảnh giới: Luyện Khí -> Trúc Cơ -> Kim Đan...
+        - Căn cơ: Linh Căn (phẩm chất: Thiên, Địa, Huyền, Hoàng), Thể Chất (phẩm chất: Tiên Thiên, Hậu Thiên).
+    - Ví dụ cho thể loại Phép Thuật:
+        - Cấp bậc: Học Đồ -> Pháp Sư -> Đại Pháp Sư...
+        - Nguồn gốc: Dòng dõi (phẩm chất: Thuần Huyết, Lai Tạp), Năng khiếu (phẩm chất: Tuyệt đỉnh, Khá, Kém).
+    
+    Hãy sáng tạo và đảm bảo hệ thống logic, phù hợp với thể loại. Trả về một đối tượng JSON.`;
+
+    return { prompt, schema };
+};
+
+export const getGenerateSingleRealmPrompt = (config: WorldConfig, previousRealms: PowerSystemRealm[], currentName?: string) => {
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của cảnh giới/cấp bậc." },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về cảnh giới này." }
+        },
+        required: ['name', 'description']
+    };
+
+    const previousRealmsContext = previousRealms.length > 0
+        ? `Các cảnh giới trước đó theo thứ tự từ yếu đến mạnh là: ${previousRealms.map(r => r.name).join(' -> ')}.`
+        : "Đây là cảnh giới đầu tiên.";
+
+    let taskInstruction: string;
+    if (currentName && currentName.trim()) {
+        taskInstruction = `Hãy viết một mô tả chi tiết cho cảnh giới có tên là "${currentName}".`;
+    } else {
+        taskInstruction = `Hãy tạo ra tên và mô tả cho một cảnh giới mới.`;
+    }
+
+    const prompt = `Dựa trên thể loại truyện là "${config.storyContext.genre}" và bối cảnh "${config.storyContext.setting}", hãy thực hiện nhiệm vụ sau.
+${previousRealmsContext}
+Nhiệm vụ: ${taskInstruction} Cảnh giới mới này PHẢI mạnh hơn cảnh giới cuối cùng trong danh sách trước đó. Mô tả phải thể hiện được sự vượt trội về sức mạnh hoặc sự khác biệt về bản chất so với các cảnh giới cũ.
+Trả về một đối tượng JSON.`;
+
+    return { prompt, schema };
+};
+
+export const getGenerateSingleOriginPrompt = (config: WorldConfig, currentName?: string) => {
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "Tên của loại căn cơ/huyết mạch." },
+            quality: { type: Type.STRING, description: "Phẩm chất của căn cơ (VD: Thiên Phẩm, Địa Phẩm...)." },
+            description: { type: Type.STRING, description: "Mô tả ngắn gọn về loại căn cơ này." }
+        },
+        required: ['name', 'quality', 'description']
+    };
+
+    let taskInstruction: string;
+    if (currentName && currentName.trim()) {
+        taskInstruction = `Hãy viết mô tả và phẩm chất cho một loại căn cơ/nguồn gốc sức mạnh có tên là "${currentName}".`;
+    } else {
+        taskInstruction = `Hãy tạo ra tên, phẩm chất, và mô tả cho một loại căn cơ/nguồn gốc sức mạnh mới.`;
+    }
+
+    const prompt = `Dựa trên thể loại truyện là "${config.storyContext.genre}" và bối cảnh "${config.storyContext.setting}", hãy thực hiện nhiệm vụ sau.
+Nhiệm vụ: ${taskInstruction}
+Hãy sáng tạo và đảm bảo nó phù hợp với thế giới. Ví dụ về phẩm chất: Thiên, Địa, Huyền, Hoàng; Thần Thoại, Sử Thi, Hiếm...
+Trả về một đối tượng JSON.`;
+    
+    return { prompt, schema };
+};
+
 
 export const getGenerateEntityInfoOnTheFlyPrompt = (worldConfig: WorldConfig, history: any[], entityName: string) => {
     const recentHistory = history.slice(-6).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');

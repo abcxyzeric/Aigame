@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 // FIX: The FandomFile type should be imported from the central types definition file, not from a service file.
-import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile } from '../types';
+import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile, PowerSystemConfig, PowerSystemRealm, PowerSystemOrigin } from '../types';
 import { 
     DEFAULT_WORLD_CONFIG, 
     GENDER_OPTIONS, 
@@ -111,6 +111,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
             stats: (initialConfig.character.stats && initialConfig.character.stats.length > 0) ? initialConfig.character.stats : DEFAULT_STATS,
         },
         backgroundKnowledge: initialConfig.backgroundKnowledge || [],
+        powerSystem: initialConfig.powerSystem || DEFAULT_WORLD_CONFIG.powerSystem,
       };
       sanitizedConfig.backgroundKnowledge.sort((a, b) => {
             const aIsSummary = a.name.startsWith('tom_tat_');
@@ -207,6 +208,45 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       const newStats = config.character.stats.filter((_, i) => i !== index);
       handleNestedChange('character', 'stats', newStats);
   }, [config.character.stats, handleNestedChange]);
+  
+  const handlePowerSystemChange = useCallback(<T extends keyof PowerSystemConfig>(key: T, value: PowerSystemConfig[T]) => {
+    setConfig(prev => ({ 
+        ...prev, 
+        powerSystem: {
+            ...prev.powerSystem,
+            [key]: value
+        }
+    }));
+  }, []);
+
+  const handleRealmChange = useCallback((index: number, field: keyof PowerSystemRealm, value: string) => {
+    const newRealms = [...config.powerSystem.realms];
+    newRealms[index] = { ...newRealms[index], [field]: value };
+    handlePowerSystemChange('realms', newRealms);
+  }, [config.powerSystem.realms, handlePowerSystemChange]);
+
+  const addRealm = useCallback(() => {
+    handlePowerSystemChange('realms', [...config.powerSystem.realms, { name: '', description: '' }]);
+  }, [config.powerSystem.realms, handlePowerSystemChange]);
+  
+  const removeRealm = useCallback((index: number) => {
+    handlePowerSystemChange('realms', config.powerSystem.realms.filter((_, i) => i !== index));
+  }, [config.powerSystem.realms, handlePowerSystemChange]);
+
+  const handleOriginChange = useCallback((index: number, field: keyof PowerSystemOrigin, value: string) => {
+    const newOrigins = [...config.powerSystem.origins];
+    newOrigins[index] = { ...newOrigins[index], [field]: value };
+    handlePowerSystemChange('origins', newOrigins);
+  }, [config.powerSystem.origins, handlePowerSystemChange]);
+
+  const addOrigin = useCallback(() => {
+    handlePowerSystemChange('origins', [...config.powerSystem.origins, { name: '', quality: '', description: '' }]);
+  }, [config.powerSystem.origins, handlePowerSystemChange]);
+  
+  const removeOrigin = useCallback((index: number) => {
+    handlePowerSystemChange('origins', config.powerSystem.origins.filter((_, i) => i !== index));
+  }, [config.powerSystem.origins, handlePowerSystemChange]);
+
 
   const handleCoreRuleChange = useCallback((index: number, value: string) => {
     const newList = [...config.coreRules];
@@ -393,6 +433,67 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         };
         handleNestedChange('character', 'stats', newStats);
     });
+  };
+  
+  const handleGeneratePowerSystem = () => {
+      if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim()) {
+          setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thể loại" và "Bối cảnh cụ thể" trước khi AI có thể thiết kế hệ thống sức mạnh.'] });
+          setIsNotificationOpen(true);
+          return;
+      }
+      runAiAssist('powerSystem', () => aiService.generatePowerSystem(config), (res: Pick<PowerSystemConfig, 'realms' | 'origins'>) => {
+          setConfig(prev => ({
+              ...prev,
+              powerSystem: {
+                  ...prev.powerSystem,
+                  ...res
+              }
+          }));
+      });
+  };
+
+  const handleGenerateSingleRealm = (index: number) => {
+    if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim()) {
+        setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thể loại" và "Bối cảnh" trước khi AI có thể hỗ trợ.'] });
+        setIsNotificationOpen(true);
+        return;
+    }
+    const currentRealm = config.powerSystem.realms[index];
+    const previousRealms = config.powerSystem.realms.slice(0, index);
+
+    runAiAssist(`realm_${index}`, 
+        () => aiService.generateSingleRealm(config, previousRealms, currentRealm.name), 
+        (res: PowerSystemRealm) => {
+            const newRealms = [...config.powerSystem.realms];
+            newRealms[index] = { 
+                name: res.name || currentRealm.name,
+                description: res.description 
+            };
+            handlePowerSystemChange('realms', newRealms);
+        }
+    );
+  };
+
+  const handleGenerateSingleOrigin = (index: number) => {
+      if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim()) {
+          setNotificationContent({ title: 'Thiếu thông tin', messages: ['Vui lòng điền "Thể loại" và "Bối cảnh" trước khi AI có thể hỗ trợ.'] });
+          setIsNotificationOpen(true);
+          return;
+      }
+      const currentOrigin = config.powerSystem.origins[index];
+
+      runAiAssist(`origin_${index}`,
+          () => aiService.generateSingleOrigin(config, currentOrigin.name),
+          (res: PowerSystemOrigin) => {
+              const newOrigins = [...config.powerSystem.origins];
+              newOrigins[index] = {
+                  name: res.name || currentOrigin.name,
+                  quality: res.quality,
+                  description: res.description
+              };
+              handlePowerSystemChange('origins', newOrigins);
+          }
+      );
   };
 
   const handleGenerateMotivation = () => {
@@ -1121,6 +1222,75 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                         </div>
                                     ))}
                                     <Button onClick={addStat} variant="info" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Chỉ Số</Button>
+                                </div>
+                            </div>
+                        )}
+                    </Accordion>
+                </div>
+                
+                <div className="order-5">
+                    <Accordion title="Thiết lập Nâng cao (Hệ thống Sức mạnh...)" icon={<Icon name="settings" />} titleClassName='text-orange-400' borderColorClass='border-orange-500'>
+                        <div className="flex items-center space-x-2 mb-4">
+                            <input type="checkbox" id="enable-power-system"
+                                checked={config.powerSystem.enabled}
+                                onChange={e => handlePowerSystemChange('enabled', e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                            />
+                            <label htmlFor="enable-power-system" className="text-sm font-medium text-slate-300">Bật hệ thống sức mạnh tùy chỉnh</label>
+                        </div>
+                        
+                        {config.powerSystem.enabled && (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="flex items-center justify-end mb-2">
+                                    <AiAssistButton isLoading={loadingStates['powerSystem']} onClick={handleGeneratePowerSystem}>
+                                        AI Thiết Kế Hệ Thống
+                                    </AiAssistButton>
+                                </div>
+                                {/* Realms */}
+                                <div>
+                                    <h4 className="text-md font-semibold text-orange-300 mb-2">Danh sách Cảnh giới (Thứ tự từ thấp đến cao)</h4>
+                                    <div className="max-h-80 overflow-y-auto pr-2 space-y-3">
+                                        {config.powerSystem.realms.map((realm, index) => (
+                                             <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-sm font-semibold text-slate-400">Cảnh giới {index + 1}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <AiAssistButton isLoading={loadingStates[`realm_${index}`]} onClick={() => handleGenerateSingleRealm(index)} />
+                                                        <button onClick={() => removeRealm(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <StyledInput value={realm.name} onChange={e => handleRealmChange(index, 'name', e.target.value)} placeholder="Tên cảnh giới. VD: Luyện Khí"/>
+                                                    <StyledTextArea value={realm.description} onChange={e => handleRealmChange(index, 'description', e.target.value)} rows={2} placeholder="Mô tả cảnh giới..."/>
+                                                </div>
+                                            </div>
+                                        ))}
+                                         <Button onClick={addRealm} variant="warning" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Cảnh giới</Button>
+                                    </div>
+                                </div>
+
+                                {/* Origins */}
+                                <div>
+                                    <h4 className="text-md font-semibold text-orange-300 mb-2">Hệ thống Căn cơ / Nguồn gốc</h4>
+                                     <div className="max-h-80 overflow-y-auto pr-2 space-y-3">
+                                        {config.powerSystem.origins.map((origin, index) => (
+                                            <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-sm font-semibold text-slate-400">Loại Căn cơ {index + 1}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <AiAssistButton isLoading={loadingStates[`origin_${index}`]} onClick={() => handleGenerateSingleOrigin(index)} />
+                                                        <button onClick={() => removeOrigin(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <StyledInput value={origin.name} onChange={e => handleOriginChange(index, 'name', e.target.value)} placeholder="Tên. VD: Linh Căn Ngũ Hành"/>
+                                                     <StyledInput value={origin.quality} onChange={e => handleOriginChange(index, 'quality', e.target.value)} placeholder="Phẩm chất. VD: Thiên, Địa, Huyền, Hoàng"/>
+                                                    <StyledTextArea value={origin.description} onChange={e => handleOriginChange(index, 'description', e.target.value)} rows={2} placeholder="Mô tả..."/>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <Button onClick={addOrigin} variant="warning" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Căn cơ</Button>
+                                    </div>
                                 </div>
                             </div>
                         )}

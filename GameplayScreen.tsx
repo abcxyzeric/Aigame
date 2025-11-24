@@ -704,23 +704,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             <p className="text-sm text-pink-400 truncate" title={characterPersonality || ''}>{characterPersonality}</p>
           </div>
           <div className="bg-slate-900/50 p-3 rounded-lg">
-            <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm mb-2">
-                <Icon name="sun" className="w-5 h-5"/>
-                <span>Thời Gian & Môi trường</span>
-            </div>
-            <div className="text-xs space-y-1.5 text-slate-300">
-                <p className="flex items-center gap-x-2 flex-wrap">
-                    <span className="font-mono font-bold text-sm">{String(gameState.worldTime.hour).padStart(2, '0')}:{String(gameState.worldTime.minute).padStart(2, '0')}</span>
-                    <span className="text-slate-500">●</span>
-                    <span>{getTimeOfDay(gameState.worldTime.hour)}</span>
-                    <span className="text-slate-500">●</span>
-                    <span className="font-semibold">{gameState.worldTime.weather}</span>
-                </p>
-                <p className="flex items-center gap-x-2 flex-wrap text-slate-400">
-                    <span>{gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year}</span>
-                    <span className="text-slate-500">●</span>
-                    <span className="font-semibold">{gameState.worldTime.season}</span>
-                </p>
+            <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm mb-2"><Icon name="sun" className="w-5 h-5"/>Thời Gian</div>
+            <div className="text-xs space-y-1 text-slate-300">
+                <p><strong>Thời gian:</strong> {String(gameState.worldTime.hour).padStart(2, '0')}:{String(gameState.worldTime.minute).padStart(2, '0')}</p>
+                <p><strong>Ngày:</strong> {gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year}</p>
+                <p><strong>Mùa:</strong> {gameState.worldTime.season}</p>
+                <p><strong>Thời tiết:</strong> {gameState.worldTime.weather}</p>
             </div>
           </div>
           <div className="bg-slate-900/50 p-3 rounded-lg">
