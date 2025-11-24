@@ -1,18 +1,20 @@
 import { WorldTime, TimePassed } from '../types';
+import { ATMOSPHERE_CONFIG } from '../constants/atmosphere';
+import { NARRATIVE_ARCHETYPES } from '../constants/narrative_styles';
 
 export const advanceTime = (currentTime: WorldTime, timePassed: TimePassed | {}): WorldTime => {
     if (!timePassed || Object.keys(timePassed).length === 0) return currentTime;
 
     const { years = 0, months = 0, days = 0, hours = 0, minutes = 0 } = timePassed as TimePassed;
 
-    // Sử dụng đối tượng Date của JS để xử lý các trường hợp vượt ngưỡng (vd: 25 giờ -> +1 ngày, 1 giờ)
-    // Tháng trong JS Date là 0-indexed, nên trừ 1 khi thiết lập và cộng 1 khi lấy ra.
+    // Sử dụng JS Date để xử lý rollover một cách mạnh mẽ (ví dụ: 25 giờ -> +1 ngày, 1 giờ)
+    // Tháng trong JS Date là 0-indexed, vì vậy trừ 1 khi đặt và cộng 1 khi lấy.
     const newDate = new Date(Date.UTC(
         currentTime.year, 
         currentTime.month - 1, 
         currentTime.day, 
         currentTime.hour,
-        currentTime.minute // Thêm phút
+        currentTime.minute
     ));
 
     if (years) newDate.setUTCFullYear(newDate.getUTCFullYear() + years);
@@ -26,20 +28,18 @@ export const advanceTime = (currentTime: WorldTime, timePassed: TimePassed | {})
         month: newDate.getUTCMonth() + 1, 
         day: newDate.getUTCDate(), 
         hour: newDate.getUTCHours(),
-        minute: newDate.getUTCMinutes(), // Lấy phút
-        // Giữ lại mùa và thời tiết từ thời gian cũ, chúng sẽ được tính toán lại sau
-        season: currentTime.season,
-        weather: currentTime.weather,
+        minute: newDate.getUTCMinutes(),
     };
 };
 
 export const getTimeOfDay = (hour: number): string => {
-    if (hour >= 6 && hour < 12) return 'Sáng';
-    if (hour >= 12 && hour < 14) return 'Trưa';
-    if (hour >= 14 && hour < 18) return 'Chiều';
-    if (hour >= 18 && hour < 22) return 'Tối';
-    return 'Đêm';
+    if (hour >= 5 && hour < 11) return 'Buổi Sáng';
+    if (hour >= 11 && hour < 14) return 'Buổi Trưa';
+    if (hour >= 14 && hour < 18) return 'Buổi Chiều';
+    if (hour >= 18 && hour < 22) return 'Buổi Tối';
+    return 'Ban Đêm';
 };
+
 
 export const extractTimePassedFromText = (text: string): TimePassed => {
     const timePassed: TimePassed = {};
@@ -64,16 +64,38 @@ export const extractTimePassedFromText = (text: string): TimePassed => {
     return timePassed;
 };
 
-export const shouldWeatherUpdate = (oldTime: WorldTime, newTime: WorldTime): boolean => {
-    // Nếu là ngày, tháng, hoặc năm mới, cập nhật thời tiết
-    if (newTime.day !== oldTime.day || newTime.month !== oldTime.month || newTime.year !== oldTime.year) {
-        return true;
+export const getSeason = (month: number, archetype: string): string => {
+    const config = ATMOSPHERE_CONFIG[archetype] || ATMOSPHERE_CONFIG[NARRATIVE_ARCHETYPES.DEFAULT];
+    return config.seasons[month] || 'Không xác định';
+};
+
+export const generateWeather = (season: string, archetype: string): string => {
+    const config = ATMOSPHERE_CONFIG[archetype] || ATMOSPHERE_CONFIG[NARRATIVE_ARCHETYPES.DEFAULT];
+    const weatherOptions = config.weather[season];
+
+    if (!weatherOptions || weatherOptions.length === 0) {
+        return 'Bình thường';
     }
-    // Nếu hơn một giờ đã trôi qua trong cùng một ngày, cập nhật thời tiết
-    const oldTimeInMinutes = oldTime.hour * 60 + oldTime.minute;
-    const newTimeInMinutes = newTime.hour * 60 + newTime.minute;
-    if (newTimeInMinutes - oldTimeInMinutes >= 60) {
-        return true;
+
+    const totalWeight = weatherOptions.reduce((sum, weather) => sum + weather.weight, 0);
+    let random = Math.random() * totalWeight;
+
+    for (const weather of weatherOptions) {
+        if (random < weather.weight) {
+            return weather.type;
+        }
+        random -= weather.weight;
     }
-    return false;
+
+    return weatherOptions[0].type; // Fallback
+};
+
+export const shouldWeatherUpdate = (timePassed: TimePassed, oldTime: WorldTime, newTime: WorldTime): boolean => {
+    if (!timePassed || Object.keys(timePassed).length === 0) {
+        return false;
+    }
+    const totalMinutesPassed = (timePassed.days || 0) * 24 * 60 + (timePassed.hours || 0) * 60 + (timePassed.minutes || 0);
+
+    // Cập nhật nếu trôi qua hơn một giờ hoặc nếu ngày thay đổi
+    return totalMinutesPassed >= 60 || oldTime.day !== newTime.day || oldTime.month !== newTime.month || oldTime.year !== newTime.year;
 };

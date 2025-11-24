@@ -36,7 +36,7 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 
 // FIX: Define the 'Tab' type to resolve the "Cannot find name 'Tab'" error.
 // FIX: Added 'knowledge' to Tab type to allow viewing background knowledge files and fix type error.
-type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge' | 'powerSystem';
+type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
 
 // FIX: Changed to a named export to resolve module resolution issues.
 export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState, onDeleteEntity }) => {
@@ -98,7 +98,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     }, [activeTab, mainView]);
 
     const filteredList = useMemo(() => {
-        if (activeTab === 'powerSystem') return [];
         let list: AllEntities[] = encyclopediaData[activeTab] || [];
         
         if (activeTab === 'quests') {
@@ -391,8 +390,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                     <TabButton active={activeTab === 'factions'} onClick={() => setActiveTab('factions')} iconName="world">Thế Lực</TabButton>
                                     <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
                                     <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
-                                    <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Lore chung</TabButton>
-                                    <TabButton active={activeTab === 'powerSystem'} onClick={() => setActiveTab('powerSystem')} iconName="difficulty">Hệ Thống Sức Mạnh</TabButton>
+                                    <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Hệ thống sức mạnh / Lore</TabButton>
                                     {/* FIX: Added tab button for background knowledge files. */}
                                     <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến thức nền AI</TabButton>
                                 </div>
@@ -407,7 +405,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     className="w-full bg-slate-900/70 border border-slate-600 rounded-md px-3 py-2 text-slate-200 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition placeholder:text-slate-500"
-                                    disabled={activeTab === 'powerSystem'}
                                 />
                             </div>
                             <div className="flex-grow overflow-y-auto">
@@ -434,13 +431,13 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                         ))}
                                     </ul>
                                 ) : (
-                                    activeTab !== 'powerSystem' && <p className="text-slate-500 text-center p-4">Không có mục nào.</p>
+                                    <p className="text-slate-500 text-center p-4">Không có mục nào.</p>
                                 )}
                             </div>
                         </div>
                         {/* Right Pane: Details */}
                         <div className="flex-grow p-6 overflow-y-auto">
-                             {activeItem && !isEditing ? (
+                            {activeItem && !isEditing ? (
                                 <div>
                                     <div className="flex justify-between items-start">
                                         <h3 className="text-2xl font-bold text-purple-300 mb-2">{activeItem.name}</h3>
@@ -541,43 +538,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                         <Button onClick={handleSaveEdit} variant="primary" className="!w-auto !py-2 !px-4 !text-sm">Lưu Thay Đổi</Button>
                                         <Button onClick={() => setIsEditing(false)} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm">Hủy</Button>
                                     </div>
-                                </div>
-                            ) : activeTab === 'powerSystem' ? (
-                                <div>
-                                    <h3 className="text-2xl font-bold text-purple-300 mb-4 flex items-center gap-2"><Icon name="difficulty" /> Hệ Thống Sức Mạnh</h3>
-                                    {gameState.worldConfig.powerSystem.enabled ? (
-                                        <div className="space-y-6">
-                                        <div>
-                                            <h4 className="text-lg font-semibold text-purple-200 mb-2">Cảnh giới (Thứ tự từ yếu đến mạnh)</h4>
-                                            {gameState.worldConfig.powerSystem.realms.length > 0 ? (
-                                            <ul className="space-y-3">
-                                                {gameState.worldConfig.powerSystem.realms.map((realm, index) => (
-                                                <li key={index} className="bg-slate-900/50 p-3 rounded-md">
-                                                    <p className="font-bold text-slate-100">{index + 1}. {realm.name}</p>
-                                                    <p className="text-sm text-slate-400 mt-1">{realm.description}</p>
-                                                </li>
-                                                ))}
-                                            </ul>
-                                            ) : <p className="text-slate-500 italic">Chưa định nghĩa cảnh giới.</p>}
-                                        </div>
-                                        <div>
-                                            <h4 className="text-lg font-semibold text-purple-200 mb-2">Căn cơ / Nguồn gốc</h4>
-                                            {gameState.worldConfig.powerSystem.origins.length > 0 ? (
-                                            <ul className="space-y-3">
-                                                {gameState.worldConfig.powerSystem.origins.map((origin, index) => (
-                                                <li key={index} className="bg-slate-900/50 p-3 rounded-md">
-                                                    <p className="font-bold text-slate-100">{origin.name}</p>
-                                                    <p className="text-sm text-slate-400 mt-1">Phẩm chất: {origin.quality}</p>
-                                                    <p className="text-sm text-slate-400 mt-1">{origin.description}</p>
-                                                </li>
-                                                ))}
-                                            </ul>
-                                            ) : <p className="text-slate-500 italic">Chưa định nghĩa căn cơ.</p>}
-                                        </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-slate-500 italic">Hệ thống sức mạnh tùy chỉnh không được bật cho thế giới này.</p>
-                                    )}
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center h-full text-slate-500">

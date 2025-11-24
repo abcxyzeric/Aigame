@@ -1,3 +1,5 @@
+
+
 export interface CharacterStat {
   name: string;
   value: number;
@@ -33,25 +35,6 @@ export interface CharacterConfig {
   }[];
   stats: CharacterStat[];
   motivation: string;
-  realm?: string; // Cảnh giới: VD: "Luyện Khí - Tầng 3"
-  root?: string;  // Căn cơ: VD: "Hỏa Linh Căn - Thiên Phẩm"
-}
-
-export interface PowerSystemRealm {
-  name: string;
-  description: string;
-}
-
-export interface PowerSystemOrigin {
-  name: string;
-  quality: string;
-  description: string;
-}
-
-export interface PowerSystemConfig {
-  enabled: boolean;
-  realms: PowerSystemRealm[];
-  origins: PowerSystemOrigin[];
 }
 
 export interface TemporaryRule {
@@ -74,7 +57,6 @@ export interface WorldConfig {
   violenceLevel?: string;
   storyTone?: string;
   enableStatsSystem: boolean;
-  powerSystem: PowerSystemConfig;
   coreRules: string[];
   initialEntities: InitialEntity[];
   temporaryRules: TemporaryRule[];
@@ -189,8 +171,6 @@ export interface WorldTime {
   day: number;
   hour: number; // 0-23
   minute: number; // 0-59
-  season: string;
-  weather: string;
 }
 
 export interface Reputation {
@@ -215,6 +195,8 @@ export interface GameState {
   worldTime: WorldTime;
   reputation: Reputation;
   reputationTiers: string[]; // 5 tiers from most infamous to most famous
+  season: string;
+  weather: string;
 }
 
 export interface SaveSlot extends GameState {
@@ -258,7 +240,7 @@ export interface StartGameResponse {
   suggestions: ActionSuggestion[];
   initialPlayerStatus?: StatusEffect[];
   initialInventory?: GameItem[];
-  initialWorldTime?: Partial<WorldTime>;
+  initialWorldTime?: WorldTime;
   timePassed?: TimePassed;
   reputationChange?: {
     score: number;
@@ -285,7 +267,7 @@ export interface EncyclopediaEntriesUpdateResponse {
 
 // For player character's long-term state
 export interface CharacterStateUpdateResponse {
-    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation' | 'realm' | 'root'>>;
+    updatedCharacter?: Partial<Pick<CharacterConfig, 'bio' | 'motivation'>>;
     updatedSkills?: { name: string; description: string; }[];
     newMemories?: string[];
     timePassed?: TimePassed;

@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
@@ -6,6 +7,8 @@ import GameplayScreen from './components/GameplayScreen';
 import FandomGenesisScreen from './components/FandomGenesisScreen';
 import { WorldConfig, GameState, InitialEntity } from './types';
 import { DEFAULT_STATS } from './constants';
+import { getSeason, generateWeather } from './utils/timeUtils';
+import { resolveGenreArchetype } from './utils/genreUtils';
 
 type Screen = 'home' | 'create' | 'settings' | 'gameplay' | 'fandomGenesis';
 
@@ -39,6 +42,11 @@ const App: React.FC = () => {
         }
     }
     
+    const archetype = resolveGenreArchetype(config.storyContext.genre);
+    const initialTime = { year: 1, month: 1, day: 1, hour: 8, minute: 0 };
+    const initialSeason = getSeason(initialTime.month, archetype);
+    const initialWeather = generateWeather(initialSeason, archetype);
+
     setGameState({ 
       worldConfig: worldConfigWithLore, 
       character: {
@@ -56,9 +64,11 @@ const App: React.FC = () => {
       companions: [],
       quests: [],
       suggestions: [],
-      worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0, season: 'Mùa Xuân', weather: 'Trời quang đãng' },
+      worldTime: initialTime,
       reputation: { score: 0, tier: 'Vô Danh' },
       reputationTiers: [],
+      season: initialSeason,
+      weather: initialWeather,
     });
     setCurrentScreen('gameplay');
   }, []);
@@ -92,9 +102,11 @@ const App: React.FC = () => {
       companions: [], // For old saves
       quests: [], // For old saves
       suggestions: [], // Fallback for old saves
-      worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0, season: 'Mùa Xuân', weather: 'Trời quang đãng' }, // Fallback cho file lưu cũ
+      worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0 }, // Fallback cho file lưu cũ
       reputation: { score: 0, tier: 'Vô Danh' }, // Fallback cho file lưu cũ
       reputationTiers: [], // Fallback cho file lưu cũ
+      season: '', // Sẽ được tính toán bên dưới
+      weather: '', // Sẽ được tính toán bên dưới
       ...state,
       worldConfig: worldConfigWithLore,
       character: {
@@ -102,6 +114,17 @@ const App: React.FC = () => {
         stats: statsEnabled ? (state.character.stats && state.character.stats.length > 0 ? state.character.stats : DEFAULT_STATS) : [],
       },
     };
+
+    // Đảm bảo worldTime có minute
+    completeState.worldTime = { minute: 0, ...completeState.worldTime };
+
+    // Tính toán mùa/thời tiết nếu thiếu
+    if (!completeState.season || !completeState.weather) {
+        const archetype = resolveGenreArchetype(completeState.worldConfig.storyContext.genre);
+        completeState.season = getSeason(completeState.worldTime.month, archetype);
+        completeState.weather = generateWeather(completeState.season, archetype);
+    }
+
     setGameState(completeState);
     setCurrentScreen('gameplay');
   }, []);

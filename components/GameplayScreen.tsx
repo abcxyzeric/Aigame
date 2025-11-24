@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, TimePassed, CharacterConfig } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, TimePassed } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
 import { parseAiResponse } from '../utils/aiResponseProcessor';
-import { advanceTime, getTimeOfDay, extractTimePassedFromText, shouldWeatherUpdate } from '../utils/timeUtils';
-import { getSeason, generateWeather } from '../utils/atmosphereUtils';
+import { advanceTime, getTimeOfDay, extractTimePassedFromText, shouldWeatherUpdate, getSeason, generateWeather } from '../utils/timeUtils';
 import { updateInventory } from '../utils/inventoryUtils';
 import Button from './common/Button';
 import Icon from './common/Icon';
@@ -18,6 +17,7 @@ import { EncyclopediaModal } from './EncyclopediaModal';
 import StatusHubModal from './StatusHubModal';
 import NotificationModal from './common/NotificationModal';
 import { getSettings } from '../services/settingsService';
+import { resolveGenreArchetype } from '../utils/genreUtils';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -39,7 +39,7 @@ const useMediaQuery = (query: string) => {
 
 const StatusTooltipWrapper: React.FC<{ statusName: string; statuses: StatusEffect[]; children: React.ReactNode; onClick: () => void }> = ({ statusName, statuses, children, onClick }) => {
     const status = statuses.find(s => s.name.toLowerCase().trim() === statusName.toLowerCase().trim());
-    const specialStatuses = ['trúng độc', 'bị thương nặng', 'tẩu hỏa nhập ma', 'suy yếu']; // Từ khóa cho các trạng thái đặc biệt
+    const specialStatuses = ['trúng độc', 'bị thương nặng', 'tẩu hỏa nhập ma', 'suy yếu']; // Keywords for special statuses
 
     const clickableElement = (
         <button 
@@ -142,16 +142,6 @@ const mergeAndDeduplicateByName = <T extends { name: string }>(original: T[] = [
     return Array.from(itemMap.values());
 };
 
-const formatStatValue = (num: number): string => {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-  }
-  return String(num);
-};
-
 const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBack }) => {
   const [gameState, setGameState] = useState<GameState>({ ...initialGameState, companions: initialGameState.companions || [], quests: initialGameState.quests || [] });
   const [playerInput, setPlayerInput] = useState('');
@@ -223,18 +213,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const isTurnLoading = isLoading && gameState.history.length > 0;
 
   const getReputationTier = useCallback((score: number, tiers: string[]): string => {
-    if (!tiers || tiers.length === 0) return "Vô Danh";
-    
-    // Chuẩn hóa điểm từ -100 đến 100 thành phạm vi 0-1
-    const normalizedScore = (score + 100) / 200;
-    
-    // Tính toán chỉ số, đảm bảo nó nằm trong giới hạn của mảng
-    let index = Math.floor(normalizedScore * tiers.length);
-    if (index >= tiers.length) {
-        index = tiers.length - 1;
-    }
-    
-    return tiers[index];
+    if (!tiers || tiers.length !== 5) return "Vô Danh";
+    if (score <= -75) return tiers[0];
+    if (score <= -25) return tiers[1];
+    if (score < 25) return tiers[2];
+    if (score < 75) return tiers[3];
+    return tiers[4];
   }, []);
 
   const handleOpenStoryLog = useCallback(() => {
@@ -302,7 +286,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     }
     // --- KẾT THÚC LOGIC TÓM TẮT ---
 
-    // Bây giờ xóa đầu vào và hiển thị trạng thái đang tải
+    // Bây giờ xóa input và hiển thị trạng thái đang tải
     setPlayerInput('');
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
@@ -323,13 +307,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             }
         };
         
-        // Cập nhật trạng thái với phản hồi từ AI. `prev` đã chứa hành động lạc quan.
+        // Cập nhật trạng thái với phản hồi của AI. `prev` đã chứa hành động lạc quan.
         setGameState(prev => {
             const newStateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
             const finalState = JSON.parse(JSON.stringify(newStateWithNarration)); // Sao chép sâu để đảm bảo an toàn
 
             // Áp dụng tất cả các cập nhật khác từ phản hồi đã phân tích
-            // Cập nhật gợi ý một cách vô điều kiện. Nếu AI không cung cấp, các gợi ý cũ sẽ bị xóa.
+            // Cập nhật gợi ý một cách vô điều kiện. Nếu AI không cung cấp, các gợi ý cũ sẽ được xóa.
             finalState.suggestions = parsedResponse.suggestions;
 
             finalState.inventory = updateInventory(finalState.inventory, parsedResponse.updatedInventory);
@@ -350,15 +334,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             if (parsedResponse.updatedSkills.length > 0) {
                 finalState.character.skills = mergeAndDeduplicateByName(finalState.character.skills, parsedResponse.updatedSkills);
             }
-            
-            if (Object.keys(parsedResponse.updatedCharacter || {}).length > 0) {
-                finalState.character = { ...finalState.character, ...parsedResponse.updatedCharacter };
-            }
 
             finalState.quests = mergeAndDeduplicateByName(finalState.quests, parsedResponse.updatedQuests);
             finalState.companions = mergeAndDeduplicateByName(finalState.companions, parsedResponse.addedCompanions);
             
-            // Xử lý đồng hành đã rời đi
+            // Xử lý các đồng hành bị xóa
             if (parsedResponse.removedCompanions && parsedResponse.removedCompanions.length > 0) {
                 const removedCompanionNames = new Set(parsedResponse.removedCompanions.map(c => c.name.toLowerCase()));
                 finalState.companions = finalState.companions.filter((c: Companion) => {
@@ -370,25 +350,24 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             finalState.encounteredFactions = mergeAndDeduplicateByName(finalState.encounteredFactions, parsedResponse.updatedFactions);
             finalState.discoveredEntities = mergeAndDeduplicateByName(finalState.discoveredEntities, parsedResponse.discoveredEntities);
 
-            const oldWorldTime = finalState.worldTime;
-            let newWorldTime = advanceTime(oldWorldTime, parsedResponse.timePassed || {});
+            // Cập nhật Thời gian & Môi trường
+            const oldTime = prev.worldTime;
+            const newWorldTime = advanceTime(oldTime, parsedResponse.timePassed || {});
+            
+            let newSeason = prev.season;
+            let newWeather = prev.weather;
 
-            // Kiểm tra và cập nhật thời tiết/mùa nếu cần
-            if (shouldWeatherUpdate(oldWorldTime, newWorldTime)) {
-                const genre = finalState.worldConfig.storyContext.genre;
-                const newSeason = getSeason(newWorldTime.month, genre);
-                const newWeather = generateWeather(newSeason, genre);
-                newWorldTime = { ...newWorldTime, season: newSeason, weather: newWeather };
-            } else {
-                // Nếu thời tiết không cập nhật, mùa vẫn có thể đã thay đổi (vd: qua một tháng mới)
-                const newSeason = getSeason(newWorldTime.month, finalState.worldConfig.storyContext.genre);
-                if (newSeason !== newWorldTime.season) {
-                    newWorldTime = { ...newWorldTime, season: newSeason };
-                }
+            if (shouldWeatherUpdate(parsedResponse.timePassed || {}, oldTime, newWorldTime)) {
+                const archetype = resolveGenreArchetype(prev.worldConfig.storyContext.genre);
+                newSeason = getSeason(newWorldTime.month, archetype);
+                newWeather = generateWeather(newSeason, archetype);
             }
+            
             finalState.worldTime = newWorldTime;
+            finalState.season = newSeason;
+            finalState.weather = newWeather;
 
-            if (parsedResponse.reputationChange && finalState.reputationTiers.length > 0) {
+            if (parsedResponse.reputationChange && finalState.reputationTiers.length === 5) {
                 const newScore = Math.max(-100, Math.min(100, finalState.reputation.score + parsedResponse.reputationChange.score));
                 finalState.reputation = { score: newScore, tier: getReputationTier(newScore, finalState.reputationTiers) };
             }
@@ -455,17 +434,9 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
       const narrationTurn: GameTurn = { type: 'narration', content: parsedResponse.narration };
       
-      const baseTime: WorldTime = {
-          year: parsedResponse.initialWorldTime?.year ?? gameState.worldTime.year,
-          month: parsedResponse.initialWorldTime?.month ?? gameState.worldTime.month,
-          day: parsedResponse.initialWorldTime?.day ?? gameState.worldTime.day,
-          hour: parsedResponse.initialWorldTime?.hour ?? gameState.worldTime.hour,
-          minute: parsedResponse.initialWorldTime?.minute ?? gameState.worldTime.minute,
-          season: '', // Sẽ được tính toán
-          weather: '', // Sẽ được tính toán
-      };
+      const baseTime = parsedResponse.initialWorldTime ? { minute: 0, ...parsedResponse.initialWorldTime } : (gameState.worldTime || { year: 1, month: 1, day: 1, hour: 8, minute: 0 });
       
-      // Kết hợp thời gian từ các thẻ và từ bối cảnh tường thuật
+      // Kết hợp thời gian từ các thẻ và từ ngữ cảnh tường thuật
       const timePassedFromNarration = extractTimePassedFromText(parsedResponse.narration);
       const combinedTimePassed: TimePassed = {
           years: (parsedResponse.timePassed?.years || 0) + (timePassedFromNarration.years || 0),
@@ -475,25 +446,18 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           minutes: (parsedResponse.timePassed?.minutes || 0) + (timePassedFromNarration.minutes || 0),
       };
 
-      const newWorldTimeWithMinutes = advanceTime(baseTime, combinedTimePassed);
-      
-      // Tính toán mùa và thời tiết ban đầu
-      const genre = gameState.worldConfig.storyContext.genre;
-      const initialSeason = getSeason(newWorldTimeWithMinutes.month, genre);
-      const initialWeather = generateWeather(initialSeason, genre);
-
-      const newWorldTime = {
-          ...newWorldTimeWithMinutes,
-          season: initialSeason,
-          weather: initialWeather,
-      };
+      const newWorldTime = advanceTime(baseTime, combinedTimePassed);
       
       let newReputation = gameState.reputation;
       const newTiers = parsedResponse.reputationTiers || [];
-      if (newTiers.length > 0) {
+      if (newTiers.length === 5) {
           const newScore = parsedResponse.reputationChange?.score || 0;
           newReputation = { score: newScore, tier: getReputationTier(newScore, newTiers) };
       }
+
+      const archetype = resolveGenreArchetype(gameState.worldConfig.storyContext.genre);
+      const initialSeason = getSeason(newWorldTime.month, archetype);
+      const initialWeather = generateWeather(initialSeason, archetype);
 
       const updatedGameState: GameState = { 
           ...gameState, 
@@ -506,6 +470,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           worldTime: newWorldTime, 
           reputation: newReputation, 
           reputationTiers: newTiers,
+          season: initialSeason,
+          weather: initialWeather,
           discoveredEntities: [...(gameState.discoveredEntities || []), ...(parsedResponse.discoveredEntities || [])],
           encounteredNPCs: [...(gameState.encounteredNPCs || []), ...(parsedResponse.updatedNPCs || [])],
         };
@@ -532,7 +498,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   useEffect(() => { if (gameState.history.length === 0) startGame(); }, [gameState.history.length, startGame]);
 
   useEffect(() => {
-    if (gameState.history.length > 0 && (!gameState.reputationTiers || gameState.reputationTiers.length === 0)) {
+    if (gameState.history.length > 0 && (!gameState.reputationTiers || gameState.reputationTiers.length !== 5)) {
         const fetchTiers = async () => {
             try {
                 const tiers = await aiService.generateReputationTiers(gameState.worldConfig.storyContext.genre);
@@ -593,7 +559,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleScrollToTop = () => logContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   const handleScrollToBottom = () => { if (logContainerRef.current) logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: 'smooth' }); };
   
-  const performRestart = () => setGameState(prevState => ({ ...prevState, history: [], character: prevState.worldConfig.character, memories: [], summaries: [], playerStatus: [], inventory: [], encounteredNPCs: [], encounteredFactions: [], discoveredEntities: [], companions: [], quests: [], suggestions: [], worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0, season: 'Mùa Xuân', weather: 'Trời quang đãng' }, reputation: { score: 0, tier: 'Vô Danh' }, reputationTiers: [] }));
+  const performRestart = () => setGameState(prevState => ({ ...prevState, history: [], character: prevState.worldConfig.character, memories: [], summaries: [], playerStatus: [], inventory: [], encounteredNPCs: [], encounteredFactions: [], discoveredEntities: [], companions: [], quests: [], suggestions: [], worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0 }, reputation: { score: 0, tier: 'Vô Danh' }, reputationTiers: [] }));
   const handleSaveAndRestart = async () => { setIsSaving(true); await gameService.saveGame(gameState, 'manual'); setIsSaving(false); setShowRestartConfirm(false); performRestart(); };
   const handleRestartWithoutSaving = () => { setShowRestartConfirm(false); performRestart(); };
   const handleRestart = () => { setIsSidePanelOpen(false); setShowRestartConfirm(true); };
@@ -676,27 +642,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handlePageChange = (updater: (p: number) => number) => { setCurrentPage(prev => { const newPage = updater(prev); if (newPage !== prev) setIsPaginating(true); return newPage; }); };
   
   const characterPersonality = gameState.character.personality === 'Tuỳ chỉnh' ? gameState.character.customPersonality : gameState.character.personality;
+  const timeOfDay = getTimeOfDay(gameState.worldTime.hour);
   const getReputationColor = (score: number) => { if (score < -25) return 'text-red-400'; if (score > 25) return 'text-green-400'; return 'text-slate-300'; };
   const reputationColor = getReputationColor(gameState.reputation.score);
   const activeQuests = (gameState.quests || []).filter(q => !q.status || q.status === 'đang tiến hành');
 
-  const DashboardSidebar = () => {
-    const resourceStats = gameState.character.stats?.filter(s => s.hasLimit !== false) || [];
-    const attributeStats = gameState.character.stats?.filter(s => s.hasLimit === false) || [];
-
-    // Lọc ra Sinh Lực và Thể Lực để hiển thị riêng
-    const mainResourceStats = resourceStats.filter(s => s.name === 'Sinh Lực' || s.name === 'Thể Lực');
-    const otherResourceStats = resourceStats.filter(s => s.name !== 'Sinh Lực' && s.name !== 'Thể Lực');
-    
-    // Gộp các chỉ số thuộc tính và tài nguyên còn lại để hiển thị 2 cột
-    const combinedAttributeStats = [...otherResourceStats, ...attributeStats];
-
-    const attributeStatPairs: (CharacterStat | null)[][] = [];
-    for (let i = 0; i < combinedAttributeStats.length; i += 2) {
-        attributeStatPairs.push([combinedAttributeStats[i], combinedAttributeStats[i + 1] || null]);
-    }
-      
-    return (
+  const DashboardSidebar = () => (
       <div className="h-full bg-slate-800/80 backdrop-blur-md flex flex-col p-4 space-y-4 overflow-y-auto">
         <div className="flex-shrink-0 space-y-4">
           <div className="text-center border-b border-slate-700 pb-4">
@@ -704,23 +655,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             <p className="text-sm text-pink-400 truncate" title={characterPersonality || ''}>{characterPersonality}</p>
           </div>
           <div className="bg-slate-900/50 p-3 rounded-lg">
-            <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm mb-2">
-                <Icon name="sun" className="w-5 h-5"/>
-                <span>Thời Gian & Môi trường</span>
-            </div>
-            <div className="text-xs space-y-1.5 text-slate-300">
-                <p className="flex items-center gap-x-2 flex-wrap">
-                    <span className="font-mono font-bold text-sm">{String(gameState.worldTime.hour).padStart(2, '0')}:{String(gameState.worldTime.minute).padStart(2, '0')}</span>
-                    <span className="text-slate-500">●</span>
-                    <span>{getTimeOfDay(gameState.worldTime.hour)}</span>
-                    <span className="text-slate-500">●</span>
-                    <span className="font-semibold">{gameState.worldTime.weather}</span>
-                </p>
-                <p className="flex items-center gap-x-2 flex-wrap text-slate-400">
-                    <span>{gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year}</span>
-                    <span className="text-slate-500">●</span>
-                    <span className="font-semibold">{gameState.worldTime.season}</span>
-                </p>
+            <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm mb-2"><Icon name="sun" className="w-5 h-5"/>Thời Gian & Môi trường</div>
+            <div className="text-xs space-y-1 text-slate-300">
+                <p><strong>Hiện tại:</strong> {String(gameState.worldTime.hour).padStart(2, '0')}:{String(gameState.worldTime.minute).padStart(2, '0')} (Ngày {gameState.worldTime.day}/{gameState.worldTime.month}/{gameState.worldTime.year})</p>
+                <p><strong>Mùa:</strong> {gameState.season} - <strong>Thời tiết:</strong> {gameState.weather}</p>
             </div>
           </div>
           <div className="bg-slate-900/50 p-3 rounded-lg">
@@ -733,63 +671,33 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           <div className="bg-slate-900/50 p-3 rounded-lg">
             <div className="flex items-center gap-2 text-teal-400 font-semibold text-sm mb-2"><Icon name="status" className="w-5 h-5"/>Chỉ Số</div>
             <div className="space-y-2 text-xs">
-                 {(gameState.character.realm || gameState.character.root) && (
-                    <div className="space-y-2 text-xs mb-3 border-b border-slate-700 pb-3">
-                        {gameState.character.realm && (
-                        <div className="flex justify-between items-center">
-                            <span className="font-semibold text-teal-300">Cảnh giới:</span>
-                            <span className="font-bold text-slate-100">{gameState.character.realm}</span>
-                        </div>
-                        )}
-                        {gameState.character.root && (
-                        <div className="flex justify-between items-center">
-                            <span className="font-semibold text-teal-300">Căn cơ:</span>
-                            <span className="font-bold text-slate-100">{gameState.character.root}</span>
-                        </div>
-                        )}
-                    </div>
-                )}
-                {/* Hiển thị Sinh Lực, Thể Lực dạng thanh */}
-                {mainResourceStats.map((stat, index) => (
-                    <div key={`main-resource-${index}`}>
-                        <div className="flex justify-between items-center mb-0.5">
-                            <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
-                            <span className="font-mono text-slate-400">{stat.value}/{stat.maxValue}{stat.isPercentage ? '%' : ''}</span>
-                        </div>
-                        <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                            <div 
-                                className={`h-1.5 rounded-full transition-all duration-500 ${
-                                    (stat.value / stat.maxValue * 100) > 50 ? 'bg-green-500' : (stat.value / stat.maxValue * 100) > 20 ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} 
-                                style={{ width: `${(stat.value / Math.max(1, stat.maxValue)) * 100}%` }}>
+                {gameState.character.stats?.map((stat, index) => (
+                    <div key={index}>
+                        {stat.hasLimit !== false ? (
+                            // --- Resource Stat (e.g., HP, MP) ---
+                            <>
+                                <div className="flex justify-between items-center mb-0.5">
+                                    <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
+                                    <span className="font-mono text-slate-400">{stat.value}/{stat.maxValue}{stat.isPercentage ? '%' : ''}</span>
+                                </div>
+                                <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                                    <div 
+                                        className={`h-1.5 rounded-full transition-all duration-500 ${
+                                            (stat.value / stat.maxValue * 100) > 50 ? 'bg-green-500' : (stat.value / stat.maxValue * 100) > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                                        }`} 
+                                        style={{ width: `${(stat.value / Math.max(1, stat.maxValue)) * 100}%` }}>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            // --- Attribute Stat (e.g., Strength, Int) ---
+                            <div className="flex justify-between items-center py-1">
+                                <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
+                                <span className="font-mono text-slate-200 font-bold text-sm">{stat.value}</span>
                             </div>
-                        </div>
+                        )}
                     </div>
                 ))}
-                
-                {/* Hiển thị các chỉ số còn lại theo cặp */}
-                {attributeStatPairs.length > 0 && (
-                    <div className="border-t border-slate-700 mt-3 pt-3 space-y-2">
-                    {attributeStatPairs.map((pair, index) => (
-                        <div key={`attr-pair-${index}`} className="flex justify-between items-center gap-2">
-                        {pair.map((stat, statIndex) => (
-                            stat ? (
-                            <div key={`attr-${stat.name}`} className="flex-1 text-center bg-slate-800/50 p-1.5 rounded-md min-w-0">
-                                <span className="block font-semibold text-slate-300 text-xs truncate" title={stat.description || stat.name}>{stat.name}</span>
-                                <span className="block font-mono text-slate-100 font-bold text-base">
-                                    {stat.hasLimit !== false ? `${formatStatValue(stat.value)}/${formatStatValue(stat.maxValue)}` : formatStatValue(stat.value)}
-                                    {stat.isPercentage ? '%' : ''}
-                                </span>
-                            </div>
-                            ) : (
-                            <div key={`attr-empty-${statIndex}`} className="flex-1"></div> // Placeholder để giữ layout
-                            )
-                        ))}
-                        </div>
-                    ))}
-                    </div>
-                )}
-
                 {(!gameState.character.stats || gameState.character.stats.length === 0) && (
                     <p className="text-slate-500 italic text-center text-xs">Hệ thống chỉ số đã tắt.</p>
                 )}
@@ -835,7 +743,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         </div>
       </div>
     );
-  }
 
   return (
     <>
@@ -858,7 +765,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       {showUndoConfirm && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60] p-4"> <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl p-6 w-full max-w-md relative animate-fade-in-up"> <h2 className="text-xl font-bold mb-4 text-yellow-400">Lùi Lại Một Lượt?</h2> <p className="text-slate-300 mb-2">Hành động này sẽ xóa lượt đi cuối cùng của bạn và AI, đồng thời hoàn tác các Ký Ức hoặc Tóm tắt được tạo ra trong lượt đó.</p> <p className="text-amber-400 text-sm mb-6"><strong className="font-bold">Lưu ý:</strong> Các thay đổi về trạng thái, vật phẩm... sẽ KHÔNG được hoàn tác.</p> <div className="flex justify-end gap-4"> <Button onClick={handleConfirmUndo} variant="warning" className="!w-auto !py-2 !px-4">Tiếp tục</Button> <button onClick={() => setShowUndoConfirm(false)} className="text-slate-400 hover:text-white transition px-4 py-2 rounded-md">Hủy</button> </div> </div> </div> )}
       
       <div className="lg:flex h-screen bg-slate-900 text-slate-200 font-sans lg:gap-4">
-        {/* Nội dung chính (Cột trái trên Desktop) */}
+        {/* Main Content (Left Column on Desktop) */}
         <div className="flex-1 flex flex-col h-full p-2 sm:p-4 gap-2 sm:gap-4 lg:p-4 lg:pr-0">
             <header className="flex-shrink-0 bg-slate-800/50 p-2 rounded-lg">
               <div className="flex justify-between items-center">
@@ -916,13 +823,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             </main>
         </div>
 
-        {/* Bảng điều khiển Desktop (Cột phải) */}
+        {/* Desktop Sidebar (Right Column) */}
         <aside className="w-[320px] xl:w-[350px] flex-shrink-0 h-full hidden lg:flex flex-col p-4 pl-0">
             <DashboardSidebar />
         </aside>
       </div>
       
-       {/* Bảng điều khiển Mobile */}
+       {/* Mobile Side Panel */}
       <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:hidden ${isSidePanelOpen ? 'bg-black/60 backdrop-blur-sm' : 'pointer-events-none bg-transparent'}`} onClick={() => setIsSidePanelOpen(false)}></div>
       <div ref={menuRef} className={`fixed top-0 right-0 h-full w-4/5 max-w-xs bg-slate-800/95 backdrop-blur-lg border-l border-slate-700 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${isSidePanelOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="p-4 border-b border-slate-700 flex-shrink-0">

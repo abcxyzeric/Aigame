@@ -21,7 +21,7 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 
 **--- CÁC THẺ CHÍNH ---**
 [SUGGESTION: description="Một hành động gợi ý", successRate=80, risk="Mô tả rủi ro", reward="Mô tả phần thưởng"] (BẮT BUỘC có 4 thẻ này)
-[TIME_PASSED: years=0, months=0, days=0, hours=1, minutes=30] (BẮT BUỘC có thẻ này trong MỌI lượt)
+[TIME_PASSED: minutes=30] (BẮT BUỘC có thẻ này trong MỌI lượt. Chỉ dùng 'minutes' hoặc 'hours')
 [REPUTATION_CHANGED: score=-10, reason="Ăn trộm"]
 [MEMORY_ADD: content="Một ký ức cốt lõi mới rất quan trọng."]
 
@@ -35,9 +35,6 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 [SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."] // Chỉ dùng khi **nhân vật chính** học được kỹ năng MỚI
 [QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]
 [COMPANION_REMOVE: name="Sói Con"] // Dùng khi đồng hành rời nhóm
-[REALM_UPDATE: name="Trúc Cơ Kỳ - Tầng 1"] // Dùng khi nhân vật chính đột phá cảnh giới.
-[ROOT_UPDATE: name="Hỏa Linh Căn - Thiên Phẩm"] // Dùng khi căn cơ của nhân vật chính được xác định/thay đổi.
-
 
 **--- THẺ ĐỊNH NGHĨA & CẬP NHẬT THỰC THỂ ---**
 (Sử dụng [XXX_NEW] hoặc [XXX_DEFINED] khi một thực thể mới xuất hiện trong tường thuật)
@@ -53,7 +50,7 @@ Dữ liệu bên trong tag KHÔNG ĐƯỢC chứa các thẻ định dạng (<en
 **--- DÀNH RIÊNG CHO LƯỢT ĐẦU TIÊN (startGame) ---**
 [PLAYER_STATS_INIT: name="Sinh Lực", value=100, maxValue=100, isPercentage=true, description="Sức sống", hasLimit=true] (Sử dụng cho MỖI chỉ số)
 [WORLD_TIME_SET: year=1, month=1, day=1, hour=8, minute=0]
-[REPUTATION_TIERS_SET: tiers="Ma Đầu,Tà Đồ,Kẻ Xấu,Vô Danh,Người Tốt,Thiện Nhân,Anh Hùng"] (5-7 cấp, từ xấu nhất đến tốt nhất, không có dấu cách, phân cách bằng dấu phẩy)
+[REPUTATION_TIERS_SET: tiers="Ma Đầu,Kẻ Bị Truy Nã,Vô Danh,Thiện Nhân,Anh Hùng"] (5 cấp, không có dấu cách, phân cách bằng dấu phẩy)
 `;
 
 export const getStartGamePrompt = (config: WorldConfig) => {
@@ -77,8 +74,8 @@ ${JSON.stringify(config, null, 2)}`;
     *   Sử dụng các thẻ định dạng (<entity>, <important>, <thought>...) trong lời kể một cách tự nhiên.
 2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc đã được cung cấp ở trên (trong phần QUY TẮC HỆ THỐNG).
     *   BẮT BUỘC khởi tạo TOÀN BỘ chỉ số của nhân vật bằng các thẻ \`PLAYER_STATS_INIT\`.
-    *   BẮT BUỘC tạo 5-7 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
-    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp. Thời gian phải bao gồm cả Giờ và Phút.
+    *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`REPUTATION_TIERS_SET\`) phù hợp với thế giới.
+    *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`WORLD_TIME_SET\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`SUGGESTION\`) đa dạng.
     *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`ITEM_DEFINED\`, \`NPC_NEW\`...) VÀ thẻ sở hữu (\`ITEM_ADD\`).
 
@@ -116,7 +113,7 @@ ${academicSandboxProtocol}
 };
 
 export const getNextTurnPrompt = (gameState: GameState, fullContext: any, relevantKnowledge: string, relevantMemories: string) => {
-    const { worldConfig, history, worldTime, reputation, reputationTiers, character } = gameState;
+    const { worldConfig, history, worldTime, reputation, reputationTiers, character, season, weather } = gameState;
     const gmInstruction = `Bạn là một tiểu thuyết gia AI bậc thầy, một Quản trò (Game Master - GM). Nhiệm vụ của bạn là viết tiếp câu chuyện một cách chi tiết, sống động, dài tối thiểu 1000 từ và tuyệt đối không tóm tắt, dựa trên hành động mới nhất của người chơi.
     ${getGameMasterSystemInstruction(worldConfig)}`;
 
@@ -133,16 +130,11 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     const lengthDirective = getResponseLengthDirective(worldConfig.aiResponseLength);
     
     const worldStateContext = `--- BỐI CẢNH TOÀN DIỆN ---
+*   **Thời gian & Môi trường hiện tại:** ${String(worldTime.hour).padStart(2, '0')}:${String(worldTime.minute).padStart(2, '0')} (Ngày ${worldTime.day}/${worldTime.month}/${worldTime.year}). Mùa: ${season}. Thời tiết: ${weather}.
 *   **Thông tin Cốt lõi:**
     ${JSON.stringify({
         worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
         character: { name: character.name, gender: character.gender, bio: character.bio, motivation: character.motivation, personality: character.personality === 'Tuỳ chỉnh' ? character.customPersonality : character.personality, stats: character.stats },
-        worldState: { 
-            time: `${String(worldTime.hour).padStart(2, '0')}:${String(worldTime.minute).padStart(2, '0')}`,
-            date: `Ngày ${worldTime.day}/${worldTime.month}/${worldTime.year}`,
-            season: worldTime.season,
-            weather: worldTime.weather,
-        },
         reputation: { ...reputation, reputationTiers },
     }, null, 2)}
 *   **Bách Khoa Toàn Thư (Toàn bộ các thực thể đã gặp):**
@@ -205,28 +197,19 @@ export const getGenerateReputationTiersPrompt = (genre: string) => {
         type: Type.OBJECT, properties: {
             tiers: { 
                 type: Type.ARRAY, 
-                description: "Một danh sách gồm ĐÚNG 7 đến 9 chuỗi (string), là tên các cấp bậc danh vọng.", 
+                description: "Một danh sách gồm ĐÚNG 5 chuỗi (string), là tên các cấp bậc danh vọng.", 
                 items: { type: Type.STRING } 
             }
         }, required: ['tiers']
     };
 
-    const prompt = `Dựa trên thể loại game là "${genre}", hãy tạo ra từ 7 đến 9 cấp bậc danh vọng bằng tiếng Việt, sắp xếp theo thứ tự từ tai tiếng nhất đến danh giá nhất.
-Các cấp bậc này phải có sự phân hóa rõ rệt, thể hiện một hành trình dài để đạt được danh tiếng.
+    const prompt = `Dựa trên thể loại game là "${genre}", hãy tạo ra ĐÚNG 5 cấp bậc danh vọng bằng tiếng Việt, sắp xếp theo thứ tự từ tai tiếng nhất đến danh giá nhất. 
+    5 cấp bậc này tương ứng với các mốc điểm: Rất thấp, Thấp, Trung bình, Cao, Rất cao.
 
-Ví dụ về các mốc điểm (để bạn tham khảo, không cần đưa vào output):
-- Cấp 1 (thấp nhất): Điểm < -100 (Đại Ác Nhân)
-- Cấp 2: Điểm < -10 (Kẻ Xấu)
-- Cấp 3: Điểm ~ 0 (Vô Danh)
-- Cấp 4: Điểm > 10 (Có Chút Tiếng Tăm)
-- Cấp 5: ...
-- Cấp 6: ...
-- Cấp 7 (cao nhất): Điểm > 100 (Anh Hùng Huyền Thoại)
+    Ví dụ cho thể loại "Tu tiên": 
+    ["Ma Đầu Khét Tiếng", "Tà Tu Bị Truy Nã", "Vô Danh Tiểu Tốt", "Thiện Nhân Được Kính Trọng", "Chính Đạo Minh Chủ"]
 
-Ví dụ output cho thể loại "Tu tiên": 
-["Ma Đầu Diệt Thế", "Tà Tu Khét Tiếng", "Kẻ Bị Truy Nã", "Vô Danh Tiểu Tốt", "Thiện Nhân", "Tuấn Kiệt Nổi Danh", "Chính Đạo Minh Chủ"]
-
-Hãy sáng tạo các tên gọi thật độc đáo và phù hợp với thể loại "${genre}". Chỉ trả về một đối tượng JSON chứa một mảng chuỗi có tên là "tiers".`;
+    Hãy sáng tạo các tên gọi thật độc đáo và phù hợp với thể loại "${genre}". Chỉ trả về một đối tượng JSON chứa một mảng chuỗi có tên là "tiers".`;
 
     return { prompt, schema };
 };
