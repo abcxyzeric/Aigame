@@ -1,11 +1,12 @@
-import { SaveSlot, FandomFile, TurnVector, SummaryVector } from '../types';
+import { SaveSlot, FandomFile, TurnVector, SummaryVector, EntityVector } from '../types';
 
 const DB_NAME = 'ai-rpg-simulator-db';
 const SAVES_STORE_NAME = 'saves';
 const FANDOM_STORE_NAME = 'fandom_files';
 const TURN_VECTORS_STORE_NAME = 'turn_vectors';
 const SUMMARY_VECTORS_STORE_NAME = 'summary_vectors';
-const DB_VERSION = 3;
+const ENTITY_VECTORS_STORE_NAME = 'entity_vectors';
+const DB_VERSION = 4;
 
 let db: IDBDatabase;
 
@@ -58,7 +59,14 @@ function openDB(): Promise<IDBDatabase> {
             const store = dbInstance.createObjectStore(SUMMARY_VECTORS_STORE_NAME, { keyPath: 'summaryId' });
             store.createIndex('summaryIndex', 'summaryIndex', { unique: false });
           }
-          break; // Stop here for version 3. Add more cases for future versions.
+        // FALL THROUGH
+        case 3:
+            // Upgrading from version 3 to 4.
+            // Version 4 introduces the entity vector store.
+            if (!dbInstance.objectStoreNames.contains(ENTITY_VECTORS_STORE_NAME)) {
+                dbInstance.createObjectStore(ENTITY_VECTORS_STORE_NAME, { keyPath: 'id' });
+            }
+            break; // Stop here for version 4. Add more cases for future versions.
       }
     };
   });
@@ -207,4 +215,39 @@ export async function getAllSummaryVectors(): Promise<SummaryVector[]> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject('Không thể tải vector tóm tắt.');
   });
+}
+
+// --- Entity Vector Functions ---
+
+export async function addEntityVector(vector: EntityVector): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(ENTITY_VECTORS_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(ENTITY_VECTORS_STORE_NAME);
+        const request = store.put(vector);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject('Không thể lưu vector thực thể.');
+    });
+}
+
+export async function getAllEntityVectors(): Promise<EntityVector[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(ENTITY_VECTORS_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(ENTITY_VECTORS_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject('Không thể tải vector thực thể.');
+    });
+}
+
+export async function deleteEntityVector(id: string): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(ENTITY_VECTORS_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(ENTITY_VECTORS_STORE_NAME);
+        const request = store.delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject('Không thể xóa vector thực thể.');
+    });
 }

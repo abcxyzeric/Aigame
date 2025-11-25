@@ -1,5 +1,5 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { GameState, GameTurn, FandomDataset, WorldConfig } from '../../types';
+import { GameState, GameTurn, FandomDataset, WorldConfig, VectorUpdate, EntityVector } from '../../types';
 import { 
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
@@ -13,6 +13,9 @@ import * as fandomFileService from '../fandomFileService';
 import { cosineSimilarity } from '../../utils/vectorUtils';
 import { generateEmbedding } from '../core/geminiClient';
 import { buildNsfwPayload } from '../../utils/promptBuilders';
+import * as dbService from '../dbService';
+
+const DEBUG_MODE = true;
 
 export async function generateSummary(turns: GameTurn[], worldConfig: WorldConfig): Promise<string> {
     if (turns.length === 0) return "";
@@ -211,4 +214,35 @@ export async function distillKnowledgeForWorldCreation(
         name: `tom_tat_dai_cuong_tu_${knowledge.length}_tep.txt`,
         content: finalSummary
     }];
+}
+
+/**
+ * Xử lý một loạt các yêu cầu cập nhật vector một cách bất đồng bộ.
+ * Hàm này tạo embeddings cho nội dung văn bản và lưu chúng vào cơ sở dữ liệu.
+ * @param updates - Một mảng các đối tượng VectorUpdate.
+ */
+export async function processVectorUpdates(updates: VectorUpdate[]): Promise<void> {
+    if (!updates || updates.length === 0) return;
+
+    const textsToEmbed = updates.map(u => u.content);
+    try {
+        // Gọi embedding service để tạo vector, không cần theo dõi tiến trình cho tác vụ nền.
+        const embeddings = await embeddingService.embedChunks(textsToEmbed, () => {});
+
+        if (embeddings.length === updates.length) {
+            const newVectors: EntityVector[] = updates.map((update, i) => ({
+                id: update.id, // Tên định danh duy nhất của thực thể
+                embedding: embeddings[i],
+            }));
+            
+            // Lưu đồng thời các vector mới vào DB
+            await Promise.all(newVectors.map(vector => dbService.addEntityVector(vector)));
+
+            if(DEBUG_MODE) {
+                console.log(`[RAG SERVICE] Đã xử lý và lưu trữ thành công ${newVectors.length} bản cập nhật vector.`);
+            }
+        }
+    } catch(error) {
+        console.error("Không thể xử lý các bản cập nhật vector:", error);
+    }
 }

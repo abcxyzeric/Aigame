@@ -1,12 +1,14 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { WorldConfig, CharacterStat } from '../../types';
+import { WorldConfig, CharacterStat, CharacterMilestone } from '../../types';
 import { 
     getGenerateCharacterBioPrompt,
     getGenerateCharacterSkillsPrompt,
     getGenerateCharacterStatsPrompt,
     getGenerateSingleStatPrompt,
     getGenerateSingleSkillPrompt,
-    getGenerateCharacterMotivationPrompt
+    getGenerateCharacterMotivationPrompt,
+    getGenerateMilestonesPrompt,
+    getGenerateSingleMilestonePrompt
 } from '../../prompts/characterPrompts';
 
 export const generateCharacterBio = (config: WorldConfig): Promise<string> => {
@@ -37,4 +39,16 @@ export const generateSingleSkill = (config: WorldConfig, existingName?: string):
 export const generateCharacterMotivation = (config: WorldConfig): Promise<string> => {
     const prompt = getGenerateCharacterMotivationPrompt(config);
     return generate(prompt);
+};
+
+// --- Milestone Generation Functions ---
+
+export const generateMilestones = (config: WorldConfig): Promise<CharacterMilestone[]> => {
+    const { prompt, schema } = getGenerateMilestonesPrompt(config);
+    return generateJson<CharacterMilestone[]>(prompt, schema);
+};
+
+export const generateSingleMilestone = (config: WorldConfig, currentMilestone: Partial<CharacterMilestone>): Promise<CharacterMilestone> => {
+    const { prompt, schema } = getGenerateSingleMilestonePrompt(config, currentMilestone);
+    return generateJson<CharacterMilestone>(prompt, schema);
 };

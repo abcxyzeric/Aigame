@@ -9,6 +9,14 @@ export interface CharacterStat {
   hasLimit?: boolean;
 }
 
+// Thêm interface mới cho các chỉ số dạng chữ (Cột mốc)
+export interface CharacterMilestone {
+  name: string; // Tên của cột mốc. VD: "Cảnh giới", "Thân phận", "Công pháp chính"
+  value: string; // Giá trị hiện tại của cột mốc. VD: "Trúc Cơ", "Nội môn Đệ tử", "Vạn Kiếm Quy Tông"
+  description: string; // Giải thích cho AI biết ý nghĩa của cột mốc này.
+  category: string; // Phân loại để dễ quản lý. VD: "Tu Luyện", "Thế Lực", "Thân Thể"
+}
+
 export interface InitialEntity {
   name: string;
   type: string;
@@ -34,6 +42,7 @@ export interface CharacterConfig {
     description: string;
   }[];
   stats: CharacterStat[];
+  milestones: CharacterMilestone[]; // << THÊM TRƯỜNG MỚI NÀY
   motivation: string;
 }
 
@@ -57,6 +66,7 @@ export interface WorldConfig {
   violenceLevel?: string;
   storyTone?: string;
   enableStatsSystem: boolean;
+  enableMilestoneSystem: boolean; // Thêm trường mới
   coreRules: string[];
   initialEntities: InitialEntity[];
   temporaryRules: TemporaryRule[];
@@ -157,6 +167,7 @@ export interface EncounteredNPC {
     personality: string;
     thoughtsOnPlayer: string;
     tags?: string[];
+    memoryFlags?: Record<string, boolean | string | number>;
 }
 
 export interface EncounteredFaction {
@@ -197,6 +208,7 @@ export interface GameState {
   reputationTiers: string[]; // 5 tiers from most infamous to most famous
   season: string;
   weather: string;
+  npcDossiers?: Record<string, number[]>; // Hồ sơ tương tác với NPC, key là tên NPC (lowercase), value là mảng các index trong history
 }
 
 export interface SaveSlot extends GameState {
@@ -335,4 +347,17 @@ export interface SummaryVector {
   summaryIndex: number; // The index of the summary in the summaries array
   content: string; // The text content of the summary
   embedding: number[];
+}
+
+// For RAG updates triggered by TagProcessors
+export interface VectorUpdate {
+    id: string; // Unique identifier (e.g., entity name)
+    type: string; // Entity type (e.g., 'NPC', 'Quest', 'Item')
+    content: string; // The text content to be embedded
+}
+
+// For storing entity vectors in the database
+export interface EntityVector {
+    id: string; // Unique identifier (e.g., entity name), should match VectorUpdate id
+    embedding: number[];
 }

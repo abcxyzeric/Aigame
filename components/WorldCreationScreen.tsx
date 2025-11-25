@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 // FIX: The FandomFile type should be imported from the central types definition file, not from a service file.
-import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile } from '../types';
+import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile, CharacterMilestone } from '../types';
 import { 
     DEFAULT_WORLD_CONFIG, 
     GENDER_OPTIONS, 
@@ -11,7 +11,8 @@ import {
     STORY_TONE_OPTIONS,
     ENTITY_TYPE_OPTIONS,
     AI_RESPONSE_LENGTH_OPTIONS,
-    DEFAULT_STATS
+    DEFAULT_STATS,
+    MILESTONE_CATEGORY_OPTIONS
 } from '../constants';
 import * as aiService from '../services/aiService';
 import { getSettings, saveSettings } from '../services/settingsService';
@@ -23,6 +24,9 @@ import AiAssistButton from './common/AiAssistButton';
 import ApiKeyModal from './common/ApiKeyModal';
 import NotificationModal from './common/NotificationModal';
 import FandomFileLoadModal from './FandomFileLoadModal';
+import { resolveMilestonesByGenre } from '../constants/genreMilestones';
+import Tooltip from './common/Tooltip';
+import { GENRES } from '../constants/genres';
 
 interface WorldCreationScreenProps {
   onBack: () => void;
@@ -57,15 +61,47 @@ const StyledSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = (p
 
 const FormRow: React.FC<{ label: string; children: React.ReactNode; tooltip?: string; labelClassName?: string }> = ({ label, children, tooltip, labelClassName = 'text-slate-300' }) => (
   <div className="mb-4">
-    <label className={`block text-sm font-medium ${labelClassName} mb-1`} title={tooltip}>
-      {label}
+    <label className={`flex items-center text-sm font-medium ${labelClassName} mb-1`}>
+      <span>{label}</span>
+      {tooltip && <Tooltip text={tooltip} />}
     </label>
     {children}
   </div>
 );
 
 const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onStartGame, initialConfig }) => {
-  const [config, setConfig] = useState<WorldConfig>(DEFAULT_WORLD_CONFIG);
+  const [config, setConfig] = useState<WorldConfig>(() => {
+    // Nếu tải một config đã có, chuẩn hóa nó.
+    if (initialConfig) {
+        const sanitizedConfig = {
+            ...DEFAULT_WORLD_CONFIG,
+            ...initialConfig,
+            character: {
+                ...DEFAULT_WORLD_CONFIG.character,
+                ...initialConfig.character,
+                skills: Array.isArray(initialConfig.character.skills) ? initialConfig.character.skills : [],
+                stats: (initialConfig.character.stats && initialConfig.character.stats.length > 0) ? initialConfig.character.stats : DEFAULT_STATS,
+            },
+            backgroundKnowledge: initialConfig.backgroundKnowledge || [],
+        };
+        sanitizedConfig.backgroundKnowledge.sort((a, b) => {
+              const aIsSummary = a.name.startsWith('tom_tat_');
+              const bIsSummary = b.name.startsWith('tom_tat_');
+              if (aIsSummary && !bIsSummary) return -1;
+              if (!aIsSummary && bIsSummary) return 1;
+              return a.name.localeCompare(b.name);
+        });
+        return sanitizedConfig;
+    }
+    // Đối với game mới, bắt đầu với milestones rỗng để useEffect xử lý.
+    return {
+        ...DEFAULT_WORLD_CONFIG,
+        character: {
+            ...DEFAULT_WORLD_CONFIG.character,
+            milestones: [],
+        }
+    };
+  });
   const [loadingStates, setLoadingStates] = useState<LoadingStates>({});
   const [storyIdea, setStoryIdea] = useState('');
   const [fanfictionIdea, setFanfictionIdea] = useState('');
@@ -77,16 +113,22 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   const [notificationContent, setNotificationContent] = useState({ title: '', messages: [''] });
   const [isFanficSelectModalOpen, setIsFanficSelectModalOpen] = useState(false);
   const [isKnowledgeSelectModalOpen, setIsKnowledgeSelectModalOpen] = useState(false);
+  const [isCustomGenre, setIsCustomGenre] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fanficFileInputRef = useRef<HTMLInputElement>(null);
   const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
-
+  
   // State for entity filtering
   const [entitySearchTerm, setEntitySearchTerm] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState('Tất cả');
 
   const isSafetyFilterEnabled = getSettings().safetySettings.enabled;
+
+  // Placeholder templates for milestones based on genre
+  const milestoneTemplates = useMemo(() => {
+    return resolveMilestonesByGenre(config.storyContext.genre || '');
+  }, [config.storyContext.genre]);
 
   const filteredEntities = useMemo(() => {
     return config.initialEntities
@@ -98,32 +140,6 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         });
   }, [config.initialEntities, entityTypeFilter, entitySearchTerm]);
 
-
-  useEffect(() => {
-    if (initialConfig) {
-      const sanitizedConfig = {
-        ...DEFAULT_WORLD_CONFIG,
-        ...initialConfig,
-        character: {
-            ...DEFAULT_WORLD_CONFIG.character,
-            ...initialConfig.character,
-            skills: Array.isArray(initialConfig.character.skills) ? initialConfig.character.skills : [],
-            stats: (initialConfig.character.stats && initialConfig.character.stats.length > 0) ? initialConfig.character.stats : DEFAULT_STATS,
-        },
-        backgroundKnowledge: initialConfig.backgroundKnowledge || [],
-      };
-      sanitizedConfig.backgroundKnowledge.sort((a, b) => {
-            const aIsSummary = a.name.startsWith('tom_tat_');
-            const bIsSummary = b.name.startsWith('tom_tat_');
-            if (aIsSummary && !bIsSummary) return -1;
-            if (!aIsSummary && bIsSummary) return 1;
-            return a.name.localeCompare(b.name);
-      });
-      setConfig(sanitizedConfig);
-    } else {
-      setConfig(DEFAULT_WORLD_CONFIG);
-    }
-  }, [initialConfig]);
   
   const handleSimpleChange = useCallback(<T extends keyof WorldConfig>(key: T, value: WorldConfig[T]) => {
     setConfig(prev => ({ ...prev, [key]: value }));
@@ -142,6 +158,42 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       },
     }));
   }, []);
+
+   // Effect to auto-update milestones based on genre.
+    useEffect(() => {
+        if (!config.enableMilestoneSystem) {
+            // Nếu hệ thống tắt, đảm bảo mảng milestones rỗng
+            if (config.character.milestones.length > 0) {
+                handleNestedChange('character', 'milestones', []);
+            }
+            return;
+        }
+
+        const templates = resolveMilestonesByGenre(config.storyContext.genre);
+        const currentStructureKey = config.character.milestones.map(m => m.category).sort().join(',');
+        const templateStructureKey = templates.map(t => t.category).sort().join(',');
+
+        if (currentStructureKey !== templateStructureKey || config.character.milestones.length === 0) {
+            const newEmptyMilestones = templates.map(() => ({
+                name: '', value: '', description: '', category: ''
+            }));
+            handleNestedChange('character', 'milestones', newEmptyMilestones);
+        }
+    }, [config.storyContext.genre, config.enableMilestoneSystem, handleNestedChange]);
+    
+    // Effect to handle custom genre selection
+    useEffect(() => {
+        const genreExists = GENRES.some(g => g.name === config.storyContext.genre);
+        if (!genreExists && config.storyContext.genre !== 'Tùy chỉnh') {
+            setIsCustomGenre(true);
+        } else if (config.storyContext.genre === 'Tùy chỉnh') {
+             setIsCustomGenre(true);
+             handleNestedChange('storyContext', 'genre', '');
+        } else {
+            setIsCustomGenre(false);
+        }
+    }, [config.storyContext.genre]);
+
 
   const handleSkillChange = useCallback((index: number, key: 'name' | 'description', value: string) => {
     const newSkills = [...config.character.skills];
@@ -208,6 +260,24 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
       handleNestedChange('character', 'stats', newStats);
   }, [config.character.stats, handleNestedChange]);
 
+  const handleMilestoneChange = useCallback((index: number, field: keyof CharacterMilestone, value: string) => {
+    const newMilestones = [...(config.character.milestones || [])];
+    const milestoneToUpdate = { ...newMilestones[index] };
+    milestoneToUpdate[field] = value;
+    newMilestones[index] = milestoneToUpdate;
+    handleNestedChange('character', 'milestones', newMilestones);
+  }, [config.character.milestones, handleNestedChange]);
+
+  const addMilestone = useCallback(() => {
+    const newMilestones = [...(config.character.milestones || []), { name: '', value: '', description: '', category: MILESTONE_CATEGORY_OPTIONS[0] }];
+    handleNestedChange('character', 'milestones', newMilestones);
+  }, [config.character.milestones, handleNestedChange]);
+
+  const removeMilestone = useCallback((index: number) => {
+    const newMilestones = (config.character.milestones || []).filter((_, i) => i !== index);
+    handleNestedChange('character', 'milestones', newMilestones);
+  }, [config.character.milestones, handleNestedChange]);
+
   const handleCoreRuleChange = useCallback((index: number, value: string) => {
     const newList = [...config.coreRules];
     newList[index] = value;
@@ -249,7 +319,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   const handleCreateWorld = () => {
     const missingFields: string[] = [];
     if (!config.storyContext.worldName.trim()) missingFields.push('Tên Thế Giới');
-    if (!config.storyContext.genre.trim()) missingFields.push('Thế loại');
+    if (!config.storyContext.genre.trim()) missingFields.push('Thể loại');
     if (!config.storyContext.setting.trim()) missingFields.push('Thế Giới/Bối Cảnh Cụ Thể');
     if (!config.character.name.trim()) missingFields.push('Danh xưng (Tên nhân vật)');
     if (config.character.personality === 'Tuỳ chỉnh' && !config.character.customPersonality?.trim()) {
@@ -394,6 +464,21 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
         handleNestedChange('character', 'stats', newStats);
     });
   };
+  
+  const handleGenerateMilestones = () => {
+      runAiAssist('milestones_all', () => aiService.generateMilestones(config), (res: CharacterMilestone[]) => {
+          handleNestedChange('character', 'milestones', res);
+      });
+  };
+
+  const handleGenerateSingleMilestone = (index: number) => {
+      const currentMilestone = config.character.milestones[index];
+      runAiAssist(`milestone_item_${index}`, () => aiService.generateSingleMilestone(config, currentMilestone), (res: CharacterMilestone) => {
+          const newMilestones = [...config.character.milestones];
+          newMilestones[index] = res;
+          handleNestedChange('character', 'milestones', newMilestones);
+      });
+  };
 
   const handleGenerateMotivation = () => {
      if (!config.storyContext.genre.trim() || !config.storyContext.setting.trim() || !config.character.name.trim() || !config.character.bio.trim()) {
@@ -407,19 +492,16 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
   const processAndSetConfig = (newConfig: WorldConfig) => {
       const mergedConfig: WorldConfig = {
           ...config,
+          ...newConfig,
           storyContext: newConfig.storyContext,
           character: {
-            ...newConfig.character,
+            ...config.character, // Giữ lại cài đặt nhân vật hiện tại
+            ...newConfig.character, // Ghi đè bằng dữ liệu từ AI
             stats: newConfig.enableStatsSystem ? (newConfig.character.stats || DEFAULT_STATS) : [],
+            milestones: newConfig.enableMilestoneSystem ? (newConfig.character.milestones || []) : [],
           },
-          difficulty: newConfig.difficulty,
           initialEntities: newConfig.initialEntities || [],
-          enableStatsSystem: typeof newConfig.enableStatsSystem === 'boolean' ? newConfig.enableStatsSystem : config.enableStatsSystem,
       };
-
-      if (typeof newConfig.allowAdultContent === 'boolean') {
-        mergedConfig.allowAdultContent = newConfig.allowAdultContent;
-      }
 
       setConfig(mergedConfig);
       setNotificationContent({ title: 'Hoàn thành!', messages: ["AI đã kiến tạo xong thế giới của bạn! Hãy kiểm tra và tinh chỉnh các chi tiết bên dưới."] });
@@ -435,7 +517,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     const task = async () => {
       setLoadingStates(prev => ({...prev, worldIdea: true }));
       try {
-        const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.backgroundKnowledge);
+        const newConfig = await aiService.generateWorldFromIdea(storyIdea, config.enableMilestoneSystem, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
         setLoadingStates(prev => ({...prev, worldIdea: false }));
@@ -453,7 +535,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     const task = async () => {
       setLoadingStates(prev => ({...prev, worldFanfictionIdea: true }));
       try {
-        const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea, config.backgroundKnowledge);
+        const newConfig = await aiService.generateFanfictionWorld(fanfictionIdea, config.enableMilestoneSystem, config.backgroundKnowledge);
         processAndSetConfig(newConfig);
       } finally {
         setLoadingStates(prev => ({...prev, worldFanfictionIdea: false }));
@@ -757,16 +839,25 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                     placeholder="VD: Lục Địa Gió, Tinh Hệ X..."
                                 />
                             </FormRow>
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="block text-sm font-medium text-sky-300">Thể loại:</label>
-                                    <AiAssistButton isLoading={loadingStates['genre']} onClick={() => runAiAssist('genre', () => aiService.generateGenre(config), res => handleNestedChange('storyContext', 'genre', res))} />
-                                </div>
-                                <StyledInput 
-                                    value={config.storyContext.genre} 
-                                    onChange={e => handleNestedChange('storyContext', 'genre', e.target.value)} 
-                                    placeholder="VD: Tiên hiệp, Kỳ ảo đô thị..."
-                                />
+                             <div>
+                                <FormRow label="Thể loại:" labelClassName="text-sky-300">
+                                    <StyledSelect
+                                        value={isCustomGenre ? 'Tùy chỉnh' : config.storyContext.genre}
+                                        onChange={e => handleNestedChange('storyContext', 'genre', e.target.value)}
+                                    >
+                                        {GENRES.map(genre => (
+                                            <option key={genre.name} value={genre.name}>{genre.name}</option>
+                                        ))}
+                                    </StyledSelect>
+                                </FormRow>
+                                {isCustomGenre && (
+                                    <StyledInput
+                                        value={config.storyContext.genre}
+                                        onChange={e => handleNestedChange('storyContext', 'genre', e.target.value)}
+                                        placeholder="Nhập thể loại tùy chỉnh/hỗn hợp..."
+                                        className="mt-2"
+                                    />
+                                )}
                             </div>
                         </div>
 
@@ -1037,90 +1128,192 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                 {/* Character Stats */}
                 <div className="order-4">
                     <Accordion title="Hệ Thống Chỉ Số Nhân Vật" icon={<Icon name="status" />} titleClassName='text-teal-400' borderColorClass='border-teal-500'>
-                        <div className="flex items-center space-x-2 mb-4">
-                            <input type="checkbox" id="enable-stats"
-                                checked={config.enableStatsSystem}
-                                onChange={e => handleSimpleChange('enableStatsSystem', e.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-                            />
-                            <label htmlFor="enable-stats" className="text-sm font-medium text-slate-300">Bật hệ thống chỉ số</label>
+                        <div className="space-y-4">
+                            <div className="flex items-center space-x-2">
+                                <input type="checkbox" id="enable-stats"
+                                    checked={config.enableStatsSystem}
+                                    onChange={e => handleSimpleChange('enableStatsSystem', e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                />
+                                <label htmlFor="enable-stats" className="text-sm font-medium text-slate-300">Bật hệ thống chỉ số (Dạng số)</label>
+                            </div>
+
+                             <div className="flex items-center space-x-2">
+                                <input type="checkbox" id="enable-milestones"
+                                    checked={config.enableMilestoneSystem}
+                                    onChange={e => handleSimpleChange('enableMilestoneSystem', e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                />
+                                <label htmlFor="enable-milestones" className="text-sm font-medium text-slate-300">Bật hệ thống Cột mốc (Dạng chữ)</label>
+                            </div>
                         </div>
 
                         {config.enableStatsSystem && (
-                            <div className="space-y-4 animate-fade-in">
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="block text-sm font-medium text-teal-300">Các chỉ số:</label>
-                                    <AiAssistButton isLoading={loadingStates['stats']} onClick={handleGenerateStats} />
+                            <div className="mt-6 border-t border-slate-700 pt-4 space-y-4 animate-fade-in">
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="flex items-center text-sm font-medium text-teal-300">
+                                            <span>Các chỉ số (Dạng số):</span>
+                                        </label>
+                                        <AiAssistButton isLoading={loadingStates['stats']} onClick={handleGenerateStats} />
+                                    </div>
+                                    <div className="max-h-96 overflow-y-auto pr-2 space-y-4">
+                                        {(config.character.stats || []).map((stat, index) => (
+                                            <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                                                    <div className="mb-0">
+                                                        <label className="flex items-center text-sm font-medium text-slate-300 mb-1">
+                                                            <span>Tên Chỉ Số</span>
+                                                            <Tooltip text="Tên của chỉ số mà bạn và AI sẽ thấy trong game. VD: Sức Mạnh, Linh Lực." />
+                                                        </label>
+                                                        <div className="flex items-center gap-2">
+                                                            <StyledInput value={stat.name} onChange={e => handleStatChange(index, 'name', e.target.value)} disabled={index < 2} />
+                                                            {index >= 2 && <AiAssistButton isLoading={loadingStates[`stat_${index}`]} onClick={() => handleGenerateSingleStat(index)} />}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="mb-0 flex-grow">
+                                                             <label className="flex items-center text-sm font-medium text-slate-300 mb-1">
+                                                                <span>Giá trị</span>
+                                                                <Tooltip text="Giá trị khởi đầu của chỉ số. VD: 10, 100." />
+                                                             </label>
+                                                            <StyledInput 
+                                                                type="number" 
+                                                                value={stat.value} 
+                                                                onChange={e => handleStatChange(index, 'value', e.target.value)} 
+                                                                max={stat.hasLimit === false ? 9999 : undefined}
+                                                            />
+                                                        </div>
+                                                        {stat.hasLimit !== false && (
+                                                            <>
+                                                                <span className="pt-6">/</span>
+                                                                <div className="mb-0 flex-grow">
+                                                                    <label className="flex items-center text-sm font-medium text-slate-300 mb-1">
+                                                                        <span>Tối đa</span>
+                                                                        <Tooltip text="Giới hạn trên của chỉ số. Chỉ áp dụng cho các chỉ số có giới hạn tối đa như Sinh Lực, Năng Lượng." />
+                                                                    </label>
+                                                                    <StyledInput type="number" value={stat.maxValue} onChange={e => handleStatChange(index, 'maxValue', e.target.value)} />
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3">
+                                                    <label className="flex items-center text-sm font-medium text-slate-300 mb-1">
+                                                        <span>Mô tả (cho AI)</span>
+                                                        <Tooltip text="Giải thích cho AI biết chỉ số này có ý nghĩa gì và hoạt động như thế nào. Đây là phần QUAN TRỌNG NHẤT để AI dẫn truyện logic." />
+                                                    </label>
+                                                    <StyledTextArea 
+                                                        value={stat.description || ''} 
+                                                        onChange={e => handleStatChange(index, 'description', e.target.value)} 
+                                                        rows={2}
+                                                        placeholder="VD: Tăng khả năng né tránh, thể hiện sức mạnh phép thuật..."
+                                                    />
+                                                </div>
+                                                <div className="mt-3 flex items-center justify-between">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <input 
+                                                                type="checkbox" 
+                                                                id={`has-limit-${index}`} 
+                                                                checked={stat.hasLimit !== false}
+                                                                onChange={e => handleStatChange(index, 'hasLimit', e.target.checked)} 
+                                                                className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                                                disabled={index < 2}
+                                                            />
+                                                            <label htmlFor={`has-limit-${index}`} className={`text-xs ${index < 2 ? 'text-slate-500' : 'text-slate-400'}`}>Có giới hạn tối đa?</label>
+                                                        </div>
+                                                        
+                                                        {stat.hasLimit !== false && (
+                                                            <div className="flex items-center gap-2">
+                                                                <input type="checkbox" id={`is-percentage-${index}`} checked={stat.isPercentage} onChange={e => handleStatChange(index, 'isPercentage', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
+                                                                <label htmlFor={`is-percentage-${index}`} className="text-xs text-slate-400">Hiển thị dạng %</label>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {index >= 2 && (
+                                                        <button onClick={() => removeStat(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <Button onClick={addStat} variant="info" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Chỉ Số</Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {config.enableMilestoneSystem && (
+                            <div className="mt-6 border-t border-slate-700 pt-4 animate-fade-in">
+                                <div className="flex items-center justify-between mb-2">
+                                        <label className="flex items-center text-sm font-medium text-teal-300">
+                                        <span>Các Cột Mốc (Chỉ số dạng chữ):</span>
+                                    </label>
+                                    <AiAssistButton isLoading={loadingStates['milestones_all']} onClick={handleGenerateMilestones} />
                                 </div>
                                 <div className="max-h-96 overflow-y-auto pr-2 space-y-4">
-                                    {(config.character.stats || []).map((stat, index) => (
+                                    {(config.character.milestones || []).map((milestone, index) => (
                                         <div key={index} className="bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-                                                <div className="mb-0">
-                                                    <label className="block text-sm font-medium text-slate-300 mb-1">Tên Chỉ Số</label>
-                                                    <div className="flex items-center gap-2">
-                                                        <StyledInput value={stat.name} onChange={e => handleStatChange(index, 'name', e.target.value)} disabled={index < 2} />
-                                                        {index >= 2 && <AiAssistButton isLoading={loadingStates[`stat_${index}`]} onClick={() => handleGenerateSingleStat(index)} />}
-                                                    </div>
-                                                </div>
+                                             <div className="flex justify-end items-center mb-2">
                                                 <div className="flex items-center gap-2">
-                                                    <div className="mb-0 flex-grow">
-                                                         <label className="block text-sm font-medium text-slate-300 mb-1">Giá trị</label>
-                                                        <StyledInput 
-                                                            type="number" 
-                                                            value={stat.value} 
-                                                            onChange={e => handleStatChange(index, 'value', e.target.value)} 
-                                                            max={stat.hasLimit === false ? 9999 : undefined}
-                                                        />
-                                                    </div>
-                                                    {stat.hasLimit !== false && (
-                                                        <>
-                                                            <span className="pt-6">/</span>
-                                                            <div className="mb-0 flex-grow">
-                                                                <label className="block text-sm font-medium text-slate-300 mb-1">Tối đa</label>
-                                                                <StyledInput type="number" value={stat.maxValue} onChange={e => handleStatChange(index, 'maxValue', e.target.value)} />
-                                                            </div>
-                                                        </>
-                                                    )}
+                                                     <span className="text-xs text-slate-400">AI Hỗ trợ</span>
+                                                    <AiAssistButton isLoading={loadingStates[`milestone_item_${index}`]} onClick={() => handleGenerateSingleMilestone(index)} />
                                                 </div>
                                             </div>
-                                            <div className="mt-3">
-                                                <label className="block text-sm font-medium text-slate-300 mb-1">Mô tả (cho AI)</label>
-                                                <StyledTextArea 
-                                                    value={stat.description || ''} 
-                                                    onChange={e => handleStatChange(index, 'description', e.target.value)} 
-                                                    rows={2}
-                                                    placeholder="VD: Tăng khả năng né tránh, thể hiện sức mạnh phép thuật..."
-                                                />
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mb-2">
+                                                <FormRow 
+                                                    label="Tên Cột Mốc" 
+                                                    labelClassName="text-slate-300 text-xs" 
+                                                    tooltip="Tên của cột mốc mà bạn và AI sẽ thấy trong game. VD: Cảnh Giới Tu Luyện, Thân Phận."
+                                                >
+                                                    <StyledInput 
+                                                        value={milestone.name} 
+                                                        onChange={e => handleMilestoneChange(index, 'name', e.target.value)}
+                                                        placeholder={milestoneTemplates[index]?.name || 'VD: Cảnh Giới'}
+                                                    />
+                                                </FormRow>
+                                                <FormRow 
+                                                    label="Giá trị Hiện tại" 
+                                                    labelClassName="text-slate-300 text-xs" 
+                                                    tooltip="Giá trị khởi đầu của cột mốc. VD: 'Luyện Khí Tầng 1', 'Nội Môn Đệ Tử'."
+                                                >
+                                                    <StyledInput 
+                                                        value={milestone.value} 
+                                                        onChange={e => handleMilestoneChange(index, 'value', e.target.value)}
+                                                        placeholder={milestoneTemplates[index]?.value || 'VD: Phàm Nhân'}
+                                                    />
+                                                </FormRow>
                                             </div>
-                                            <div className="mt-3 flex items-center justify-between">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            id={`has-limit-${index}`} 
-                                                            checked={stat.hasLimit !== false}
-                                                            onChange={e => handleStatChange(index, 'hasLimit', e.target.checked)} 
-                                                            className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-                                                            disabled={index < 2}
-                                                        />
-                                                        <label htmlFor={`has-limit-${index}`} className={`text-xs ${index < 2 ? 'text-slate-500' : 'text-slate-400'}`}>Có giới hạn tối đa?</label>
-                                                    </div>
-                                                    
-                                                    {stat.hasLimit !== false && (
-                                                        <div className="flex items-center gap-2">
-                                                            <input type="checkbox" id={`is-percentage-${index}`} checked={stat.isPercentage} onChange={e => handleStatChange(index, 'isPercentage', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"/>
-                                                            <label htmlFor={`is-percentage-${index}`} className="text-xs text-slate-400">Hiển thị dạng %</label>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {index >= 2 && (
-                                                    <button onClick={() => removeStat(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
-                                                )}
+                                            <div className="mb-2">
+                                                    <FormRow 
+                                                    label="Phân Loại" 
+                                                    labelClassName="text-slate-300 text-xs" 
+                                                    tooltip="Phân loại cột mốc để quản lý. 'Tu Luyện' cho các cấp bậc sức mạnh, 'Thân Thể' cho các đặc tính cơ thể."
+                                                    >
+                                                    <StyledSelect value={milestoneTemplates[index]?.category || milestone.category} onChange={e => handleMilestoneChange(index, 'category', e.target.value)}>
+                                                        {MILESTONE_CATEGORY_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                    </StyledSelect>
+                                                </FormRow>
+                                            </div>
+                                            <div className="mb-2">
+                                                    <FormRow 
+                                                    label="Mô tả (cho AI)" 
+                                                    labelClassName="text-slate-300 text-xs" 
+                                                    tooltip="Giải thích cho AI biết cột mốc này có ý nghĩa gì và hệ thống cấp bậc của nó (nếu có). Đây là phần QUAN TRỌNG NHẤT để AI dẫn truyện logic."
+                                                    >
+                                                    <StyledTextArea 
+                                                        value={milestone.description} 
+                                                        onChange={e => handleMilestoneChange(index, 'description', e.target.value)} 
+                                                        rows={2}
+                                                        placeholder={milestoneTemplates[index]?.description || 'VD: Cấp bậc tu vi, cảnh giới sức mạnh cốt lõi của nhân vật...'}
+                                                    />
+                                                </FormRow>
+                                            </div>
+                                            <div className="flex justify-end">
+                                                <button onClick={() => removeMilestone(index)} className="p-1 text-red-400 hover:bg-red-500/20 rounded-full transition"><Icon name="trash" className="w-4 h-4"/></button>
                                             </div>
                                         </div>
                                     ))}
-                                    <Button onClick={addStat} variant="info" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Chỉ Số</Button>
+                                    <Button onClick={addMilestone} variant="info" className="!w-full !text-sm !py-2"><Icon name="plus" className="w-4 h-4 mr-2"/>Thêm Cột Mốc</Button>
                                 </div>
                             </div>
                         )}

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
@@ -52,6 +53,7 @@ const App: React.FC = () => {
       character: {
         ...config.character,
         stats: config.enableStatsSystem ? (config.character.stats && config.character.stats.length > 0 ? config.character.stats : DEFAULT_STATS) : [],
+        milestones: config.enableMilestoneSystem ? (config.character.milestones && config.character.milestones.length > 0 ? config.character.milestones : []) : [],
       }, 
       history: [], 
       memories: [], 
@@ -69,12 +71,14 @@ const App: React.FC = () => {
       reputationTiers: [],
       season: initialSeason,
       weather: initialWeather,
+      npcDossiers: {}, // Khởi tạo hồ sơ NPC
     });
     setCurrentScreen('gameplay');
   }, []);
 
   const handleLoadSavedGame = useCallback((state: GameState) => {
     const statsEnabled = state.worldConfig.enableStatsSystem === true;
+    const milestonesEnabled = state.worldConfig.enableMilestoneSystem === true;
     
     const worldConfigWithLore = { ...state.worldConfig };
     if (worldConfigWithLore.storyContext.setting) {
@@ -107,11 +111,17 @@ const App: React.FC = () => {
       reputationTiers: [], // Fallback cho file lưu cũ
       season: '', // Sẽ được tính toán bên dưới
       weather: '', // Sẽ được tính toán bên dưới
+      npcDossiers: {}, // Fallback cho file lưu cũ
       ...state,
-      worldConfig: worldConfigWithLore,
+      worldConfig: {
+        ...worldConfigWithLore,
+        // Fallback for old saves that don't have this property
+        enableMilestoneSystem: state.worldConfig.enableMilestoneSystem ?? (state.character.milestones && state.character.milestones.length > 0)
+      },
       character: {
         ...(state.character || state.worldConfig.character), // Handle very old saves
         stats: statsEnabled ? (state.character.stats && state.character.stats.length > 0 ? state.character.stats : DEFAULT_STATS) : [],
+        milestones: milestonesEnabled ? (state.character.milestones || []) : [],
       },
     };
 

@@ -1,4 +1,6 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat, CharacterMilestone } from './types';
+import { EMPTY_GENERIC_MILESTONES } from './constants/genreMilestones';
+import { GENRES } from './constants/genres'; // Import a lista de gêneros
 
 export const GENDER_OPTIONS = ['Không xác định (Để AI quyết định)', 'Nam', 'Nữ', 'Khác'];
 export const PERSONALITY_OPTIONS = [
@@ -37,11 +39,7 @@ export const AI_RESPONSE_LENGTH_OPTIONS = ['Mặc định', 'Ngắn', 'Trung bì
 export const ENTITY_TYPE_OPTIONS = [
     'NPC', 
     'Địa điểm', 
-    'Vật phẩm', 
     'Phe phái/Thế lực', 
-    'Cảnh giới', 
-    'Công pháp / Kỹ năng',
-    'Hệ thống sức mạnh / Lore'
 ];
 
 export const DEFAULT_STATS: CharacterStat[] = [
@@ -49,10 +47,14 @@ export const DEFAULT_STATS: CharacterStat[] = [
   { name: 'Thể Lực', value: 100, maxValue: 100, isPercentage: true, description: 'Đại diện cho sức bền. Bị trừ khi vận động mạnh. Hồi phục khi nghỉ.', hasLimit: true },
 ];
 
+export const MILESTONE_CATEGORY_OPTIONS = ['Tu Luyện', 'Thân Thể'];
+
+export const DEFAULT_MILESTONES: CharacterMilestone[] = EMPTY_GENERIC_MILESTONES;
+
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   storyContext: {
     worldName: '',
-    genre: '',
+    genre: GENRES[0].name, // Usa o primeiro gênero como padrão
     setting: '',
   },
   character: {
@@ -63,6 +65,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
     bio: '',
     skills: [],
     stats: DEFAULT_STATS,
+    milestones: DEFAULT_MILESTONES,
     motivation: '',
   },
   difficulty: DIFFICULTY_OPTIONS[1],
@@ -73,6 +76,7 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   violenceLevel: VIOLENCE_LEVEL_OPTIONS[0],
   storyTone: STORY_TONE_OPTIONS[1],
   enableStatsSystem: true,
+  enableMilestoneSystem: false, // Mặc định tắt
   coreRules: [],
   initialEntities: [],
   temporaryRules: [],
@@ -89,7 +93,6 @@ export const HARM_CATEGORIES: { [key in HarmCategory]: string } = {
 
 export const HARM_BLOCK_THRESHOLDS: { [key in HarmBlockThreshold]: string } = {
   [HarmBlockThreshold.BLOCK_NONE]: 'Tắt bộ lọc (Không chặn)',
-  // FIX: Corrected typo from HarmBlockBlockThreshold to HarmBlockThreshold.
   [HarmBlockThreshold.BLOCK_ONLY_HIGH]: 'Chỉ chặn mức cao',
   [HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE]: 'Chặn từ mức trung bình',
   [HarmBlockThreshold.BLOCK_LOW_AND_ABOVE]: 'Chặn cả mức thấp (nghiêm ngặt nhất)',

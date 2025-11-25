@@ -1,5 +1,5 @@
 import { Type } from "@google/genai";
-import { WorldConfig, CharacterStat } from "../types";
+import { WorldConfig, CharacterStat, CharacterMilestone } from "../types";
 
 export const getGenerateCharacterBioPrompt = (config: WorldConfig): string => {
     const { storyContext, character } = config;
@@ -121,4 +121,52 @@ export const getGenerateCharacterMotivationPrompt = (config: WorldConfig): strin
     return currentMotivation
         ? `Nhân vật "${character.name}" (Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) hiện có động lực là: "${currentMotivation}". Dựa vào toàn bộ thông tin về nhân vật và thế giới, hãy phát triển động lực này để nó trở nên cụ thể, có chiều sâu và tạo ra một mục tiêu rõ ràng hơn cho cuộc phiêu lưu. Chỉ trả về nội dung động lực, không thêm lời dẫn.`
         : `Dựa trên nhân vật (Tên: ${character.name}, Tiểu sử: ${character.bio}, Kỹ năng: ${skillsString}) và bối cảnh thế giới (Thể loại: ${storyContext.genre}), hãy đề xuất một mục tiêu hoặc động lực hấp dẫn để bắt đầu cuộc phiêu lưu của họ. Trả lời bằng một câu ngắn gọn, không thêm lời dẫn.`;
+};
+
+// --- Milestone Generation Prompts ---
+
+export const getGenerateMilestonesPrompt = (config: WorldConfig) => {
+    const { storyContext, character } = config;
+    const milestoneSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            value: { type: Type.STRING },
+            description: { type: Type.STRING, description: "Mô tả chi tiết ý nghĩa và hệ thống cấp bậc của cột mốc này cho AI." },
+            category: { type: Type.STRING, enum: ['Tu Luyện', 'Thân Thể'] },
+        },
+        required: ['name', 'value', 'description', 'category']
+    };
+    const schema = {
+        type: Type.ARRAY,
+        description: "Một danh sách các cột mốc (chỉ số dạng chữ) phù hợp với thể loại.",
+        items: milestoneSchema
+    };
+    const prompt = `Dựa trên bối cảnh thế giới (Thể loại: ${storyContext.genre}, Bối cảnh: ${storyContext.setting}) và nhân vật (Tiểu sử: ${character.bio}), hãy tạo ra một bộ Cột mốc (chỉ số dạng chữ) phù hợp.
+- Các cột mốc phải thuộc danh mục 'Tu Luyện' hoặc 'Thân Thể'.
+- Với MỖI cột mốc, bạn BẮT BUỘC phải cung cấp một \`description\` chi tiết, giải thích hệ thống cấp bậc của nó cho AI.
+- Cung cấp một giá trị khởi đầu hợp lý cho trường \`value\`.`;
+    return { prompt, schema };
+};
+
+export const getGenerateSingleMilestonePrompt = (config: WorldConfig, currentMilestone: Partial<CharacterMilestone>) => {
+    const { storyContext } = config;
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING },
+            value: { type: Type.STRING },
+            description: { type: Type.STRING },
+            category: { type: Type.STRING, enum: ['Tu Luyện', 'Thân Thể'] },
+        },
+        required: ['name', 'value', 'description', 'category']
+    };
+    const prompt = `Bối cảnh game: Thể loại "${storyContext.genre}", Bối cảnh chi tiết "${storyContext.setting}".
+Một Cột mốc của nhân vật có thông tin ban đầu như sau: ${JSON.stringify(currentMilestone)}.
+Dựa vào bối cảnh và thông tin đã có, hãy hoàn thiện các phần còn thiếu của Cột mốc này.
+- Nếu tên đã có, hãy phát triển giá trị và mô tả dựa trên tên đó.
+- Nếu chưa có gì, hãy tạo một Cột mốc hoàn toàn mới phù hợp với bối cảnh.
+- Mô tả phải giải thích rõ hệ thống cấp bậc/phân loại của cột mốc.
+Trả về một đối tượng JSON hoàn chỉnh cho Cột mốc này.`;
+    return { prompt, schema };
 };

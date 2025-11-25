@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, WorldTime, Reputation, CharacterStat, TimePassed } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
-import { parseAiResponse } from '../utils/aiResponseProcessor';
-import { advanceTime, getTimeOfDay, extractTimePassedFromText, shouldWeatherUpdate, getSeason, generateWeather } from '../utils/timeUtils';
-import { updateInventory } from '../utils/inventoryUtils';
+import { getSeason, generateWeather } from '../utils/timeUtils';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import TemporaryRulesModal from './TemporaryRulesModal';
@@ -18,6 +16,8 @@ import StatusHubModal from './StatusHubModal';
 import NotificationModal from './common/NotificationModal';
 import { getSettings } from '../services/settingsService';
 import { resolveGenreArchetype } from '../utils/genreUtils';
+import { dispatchTags, ParsedTag } from '../utils/tagProcessors';
+import { processNarration } from '../utils/textProcessing';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -132,16 +132,6 @@ const SuggestionCard: React.FC<{ suggestion: ActionSuggestion; onSelect: (descri
     );
 };
 
-const mergeAndDeduplicateByName = <T extends { name: string }>(original: T[] = [], updates: T[] = []): T[] => {
-    const itemMap = new Map<string, T>();
-    [...original, ...updates].forEach(item => {
-        if (item && item.name) {
-            itemMap.set(item.name.toLowerCase(), { ...(itemMap.get(item.name.toLowerCase()) || {}), ...item });
-        }
-    });
-    return Array.from(itemMap.values());
-};
-
 const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBack }) => {
   const [gameState, setGameState] = useState<GameState>({ ...initialGameState, companions: initialGameState.companions || [], quests: initialGameState.quests || [] });
   const [playerInput, setPlayerInput] = useState('');
@@ -212,15 +202,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const isInitialLoading = isLoading && gameState.history.length === 0;
   const isTurnLoading = isLoading && gameState.history.length > 0;
 
-  const getReputationTier = useCallback((score: number, tiers: string[]): string => {
-    if (!tiers || tiers.length !== 5) return "Vô Danh";
-    if (score <= -75) return tiers[0];
-    if (score <= -25) return tiers[1];
-    if (score < 25) return tiers[2];
-    if (score < 75) return tiers[3];
-    return tiers[4];
-  }, []);
-
   const handleOpenStoryLog = useCallback(() => {
     if (logContainerRef.current) setStoryLogInitialScrollTop(logContainerRef.current.scrollTop);
     else setStoryLogInitialScrollTop(0);
@@ -265,126 +246,69 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     
-    // Cập nhật giao diện người dùng một cách lạc quan: Thêm hành động vào lịch sử ngay lập tức
+    // Cập nhật giao diện người dùng một cách lạc quan
     setGameState(prev => ({ ...prev, history: [...prev.history, newAction] }));
 
-    // --- LOGIC TÓM TẮT RIÊNG BIỆT ---
-    const { ragSettings } = getSettings();
-    const narrationTurnsCount = gameState.history.filter(t => t.type === 'narration').length;
-    const shouldSummarize = narrationTurnsCount > 0 && narrationTurnsCount % ragSettings.summaryFrequency === 0;
-    let newSummary: string | undefined = undefined;
-
-    if (shouldSummarize) {
-      try {
-        const lastSummaryTurnIndex = gameState.history.length - (ragSettings.summaryFrequency * 2);
-        const turnsToSummarize = gameState.history.slice(lastSummaryTurnIndex > 0 ? lastSummaryTurnIndex : 0);
-        newSummary = await aiService.generateSummary(turnsToSummarize, gameState.worldConfig);
-      } catch (e) {
-        console.error("Lỗi khi tạo tóm tắt:", e);
-        // Không chặn game nếu tóm tắt thất bại, chỉ ghi log.
-      }
-    }
-    // --- KẾT THÚC LOGIC TÓM TẮT ---
-
-    // Bây giờ xóa input và hiển thị trạng thái đang tải
+    // Xóa input và hiển thị trạng thái đang tải
     setPlayerInput('');
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
 
     try {
-        // `gameState` cho lệnh gọi API cần bao gồm hành động mới.
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
-        const rawResponse = await aiService.getNextTurn(tempGameState);
-        const parsedResponse = parseAiResponse(rawResponse);
+        const { narration, tags } = await aiService.getNextTurn(tempGameState);
 
-        // Thêm lượt tường thuật vào lịch sử
-        const narrationTurn: GameTurn = { 
-            type: 'narration', 
-            content: parsedResponse.narration,
-            metadata: {
-                isSummaryTurn: !!newSummary,
-                addedMemoryCount: parsedResponse.newMemories.length,
-            }
-        };
-        
-        // Cập nhật trạng thái với phản hồi của AI. `prev` đã chứa hành động lạc quan.
         setGameState(prev => {
-            const newStateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
-            const finalState = JSON.parse(JSON.stringify(newStateWithNarration)); // Sao chép sâu để đảm bảo an toàn
-
-            // Áp dụng tất cả các cập nhật khác từ phản hồi đã phân tích
-            // Cập nhật gợi ý một cách vô điều kiện. Nếu AI không cung cấp, các gợi ý cũ sẽ được xóa.
-            finalState.suggestions = parsedResponse.suggestions;
-
-            finalState.inventory = updateInventory(finalState.inventory, parsedResponse.updatedInventory);
+            const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
             
-            const currentStatusNames = new Set(finalState.playerStatus.map((s: StatusEffect) => s.name.toLowerCase()));
-            parsedResponse.addedStatuses.forEach(newStatus => {
-                if (!currentStatusNames.has(newStatus.name.toLowerCase())) {
-                    finalState.playerStatus.push(newStatus);
-                }
-            });
-            const removedStatusNames = new Set(parsedResponse.removedStatuses.map(s => s.name.toLowerCase()));
-            finalState.playerStatus = finalState.playerStatus.filter((s: StatusEffect) => !removedStatusNames.has(s.name.toLowerCase()));
-
-            if (parsedResponse.updatedStats.length > 0) {
-                finalState.character.stats = mergeAndDeduplicateByName(finalState.character.stats, parsedResponse.updatedStats);
+            // 1. Thêm lượt tường thuật mới vào lịch sử
+            const stateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
+            
+            // 2. Tách thẻ Gợi ý ra để xử lý riêng
+            const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
+            const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
+            
+            // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
+            const { finalState, vectorUpdates } = dispatchTags(stateWithNarration, stateChangingTags);
+            
+            // Xử lý cập nhật vector ở chế độ nền
+            aiService.processVectorUpdates(vectorUpdates);
+            
+            // 4. Cập nhật gợi ý
+            finalState.suggestions = suggestions;
+            
+            // 5. Cập nhật Hồ sơ NPC
+            const lastActionIndex = prev.history.length;
+            const lastNarrationIndex = prev.history.length + 1;
+            const allKnownNpcNames = new Set([
+                ...(finalState.encounteredNPCs || []).map(n => n.name.toLowerCase()),
+                ...(finalState.companions || []).map(c => c.name.toLowerCase()),
+                ...(finalState.worldConfig.initialEntities || []).filter(e => e.type === 'NPC').map(e => e.name.toLowerCase())
+            ]);
+            const involvedNpcs = new Set<string>();
+            allKnownNpcNames.forEach(npcName => { if (newAction.content.toLowerCase().includes(npcName)) involvedNpcs.add(npcName); });
+            const entityRegex = /<entity>(.*?)<\/entity>/gs;
+            let match;
+            while ((match = entityRegex.exec(narrationTurn.content)) !== null) {
+                const entityName = match[1].trim().toLowerCase();
+                if (allKnownNpcNames.has(entityName)) involvedNpcs.add(entityName);
             }
-            
-            if (parsedResponse.updatedSkills.length > 0) {
-                finalState.character.skills = mergeAndDeduplicateByName(finalState.character.skills, parsedResponse.updatedSkills);
-            }
-
-            finalState.quests = mergeAndDeduplicateByName(finalState.quests, parsedResponse.updatedQuests);
-            finalState.companions = mergeAndDeduplicateByName(finalState.companions, parsedResponse.addedCompanions);
-            
-            // Xử lý các đồng hành bị xóa
-            if (parsedResponse.removedCompanions && parsedResponse.removedCompanions.length > 0) {
-                const removedCompanionNames = new Set(parsedResponse.removedCompanions.map(c => c.name.toLowerCase()));
-                finalState.companions = finalState.companions.filter((c: Companion) => {
-                    return !removedCompanionNames.has(c.name.toLowerCase());
+            if (involvedNpcs.size > 0) {
+                if (!finalState.npcDossiers) finalState.npcDossiers = {};
+                involvedNpcs.forEach(npcNameKey => {
+                    if (!finalState.npcDossiers![npcNameKey]) finalState.npcDossiers![npcNameKey] = [];
+                    const dossier = finalState.npcDossiers![npcNameKey];
+                    if (!dossier.includes(lastActionIndex)) dossier.push(lastActionIndex);
+                    if (!dossier.includes(lastNarrationIndex)) dossier.push(lastNarrationIndex);
                 });
             }
 
-            finalState.encounteredNPCs = mergeAndDeduplicateByName(finalState.encounteredNPCs, parsedResponse.updatedNPCs);
-            finalState.encounteredFactions = mergeAndDeduplicateByName(finalState.encounteredFactions, parsedResponse.updatedFactions);
-            finalState.discoveredEntities = mergeAndDeduplicateByName(finalState.discoveredEntities, parsedResponse.discoveredEntities);
-
-            // Cập nhật Thời gian & Môi trường
-            const oldTime = prev.worldTime;
-            const newWorldTime = advanceTime(oldTime, parsedResponse.timePassed || {});
-            
-            let newSeason = prev.season;
-            let newWeather = prev.weather;
-
-            if (shouldWeatherUpdate(parsedResponse.timePassed || {}, oldTime, newWorldTime)) {
-                const archetype = resolveGenreArchetype(prev.worldConfig.storyContext.genre);
-                newSeason = getSeason(newWorldTime.month, archetype);
-                newWeather = generateWeather(newSeason, archetype);
-            }
-            
-            finalState.worldTime = newWorldTime;
-            finalState.season = newSeason;
-            finalState.weather = newWeather;
-
-            if (parsedResponse.reputationChange && finalState.reputationTiers.length === 5) {
-                const newScore = Math.max(-100, Math.min(100, finalState.reputation.score + parsedResponse.reputationChange.score));
-                finalState.reputation = { score: newScore, tier: getReputationTier(newScore, finalState.reputationTiers) };
-            }
-
-            if (parsedResponse.newMemories.length > 0) {
-                finalState.memories.push(...parsedResponse.newMemories);
-            }
-            if (newSummary) { // Thêm tóm tắt mới nếu có
-                finalState.summaries.push(newSummary);
-            }
-
-            // Lưu trạng thái cuối cùng
+            // 6. Lưu game và trả về trạng thái cuối cùng
             gameService.saveGame(finalState, 'auto');
             return finalState;
         });
 
-        const newNarrationTurns = [...narrationTurns, narrationTurn];
+        const newNarrationTurns = [...narrationTurns, { type: 'narration', content: narration }];
         const newTotalPages = Math.max(1, Math.ceil(newNarrationTurns.length / turnsPerPage));
         const lastPage = newTotalPages > 0 ? newTotalPages - 1 : 0;
 
@@ -413,7 +337,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, isLoading, getReputationTier, narrationTurns]);
+  }, [gameState, isLoading, narrationTurns]);
   
   const startGame = useCallback(async () => {
     if (gameState.history.length > 0) {
@@ -429,60 +353,29 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
-      const rawResponse = await aiService.startGame(gameState.worldConfig);
-      const parsedResponse = parseAiResponse(rawResponse);
-
-      const narrationTurn: GameTurn = { type: 'narration', content: parsedResponse.narration };
+      const { narration, tags } = await aiService.startGame(gameState.worldConfig);
       
-      const baseTime = parsedResponse.initialWorldTime ? { minute: 0, ...parsedResponse.initialWorldTime } : (gameState.worldTime || { year: 1, month: 1, day: 1, hour: 8, minute: 0 });
+      const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
+      const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
+      const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
+
+      // Bắt đầu với trạng thái ban đầu và áp dụng các thẻ khởi tạo
+      const { finalState, vectorUpdates } = dispatchTags(gameState, stateChangingTags);
       
-      // Kết hợp thời gian từ các thẻ và từ ngữ cảnh tường thuật
-      const timePassedFromNarration = extractTimePassedFromText(parsedResponse.narration);
-      const combinedTimePassed: TimePassed = {
-          years: (parsedResponse.timePassed?.years || 0) + (timePassedFromNarration.years || 0),
-          months: (parsedResponse.timePassed?.months || 0) + (timePassedFromNarration.months || 0),
-          days: (parsedResponse.timePassed?.days || 0) + (timePassedFromNarration.days || 0),
-          hours: (parsedResponse.timePassed?.hours || 0) + (timePassedFromNarration.hours || 0),
-          minutes: (parsedResponse.timePassed?.minutes || 0) + (timePassedFromNarration.minutes || 0),
-      };
+      // Xử lý cập nhật vector ở chế độ nền
+      aiService.processVectorUpdates(vectorUpdates);
 
-      const newWorldTime = advanceTime(baseTime, combinedTimePassed);
+      let updatedGameState = finalState;
       
-      let newReputation = gameState.reputation;
-      const newTiers = parsedResponse.reputationTiers || [];
-      if (newTiers.length === 5) {
-          const newScore = parsedResponse.reputationChange?.score || 0;
-          newReputation = { score: newScore, tier: getReputationTier(newScore, newTiers) };
-      }
-
-      const archetype = resolveGenreArchetype(gameState.worldConfig.storyContext.genre);
-      const initialSeason = getSeason(newWorldTime.month, archetype);
-      const initialWeather = generateWeather(initialSeason, archetype);
-
-      const updatedGameState: GameState = { 
-          ...gameState, 
-          history: [narrationTurn], 
-          playerStatus: parsedResponse.addedStatuses || [], 
-          inventory: updateInventory(gameState.inventory, parsedResponse.updatedInventory),
-          companions: parsedResponse.addedCompanions || [], 
-          quests: parsedResponse.updatedQuests || [], 
-          suggestions: parsedResponse.suggestions, 
-          worldTime: newWorldTime, 
-          reputation: newReputation, 
-          reputationTiers: newTiers,
-          season: initialSeason,
-          weather: initialWeather,
-          discoveredEntities: [...(gameState.discoveredEntities || []), ...(parsedResponse.discoveredEntities || [])],
-          encounteredNPCs: [...(gameState.encounteredNPCs || []), ...(parsedResponse.updatedNPCs || [])],
-        };
-        
-      if (parsedResponse.initialStats && parsedResponse.initialStats.length > 0) {
-          updatedGameState.character = {
-              ...updatedGameState.character,
-              stats: parsedResponse.initialStats,
-          };
-      }
-        
+      // Tính toán mùa và thời tiết sau khi thời gian được thiết lập
+      const archetype = resolveGenreArchetype(updatedGameState.worldConfig.storyContext.genre);
+      updatedGameState.season = getSeason(updatedGameState.worldTime.month, archetype);
+      updatedGameState.weather = generateWeather(updatedGameState.season, archetype);
+      
+      // Cập nhật lịch sử và gợi ý
+      updatedGameState.history = [narrationTurn];
+      updatedGameState.suggestions = suggestions;
+      
       setGameState(updatedGameState);
       setShowSuggestions(true);
       await gameService.saveGame(updatedGameState, 'auto');
@@ -493,7 +386,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, getReputationTier]);
+  }, [gameState]);
 
   useEffect(() => { if (gameState.history.length === 0) startGame(); }, [gameState.history.length, startGame]);
 
@@ -502,11 +395,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         const fetchTiers = async () => {
             try {
                 const tiers = await aiService.generateReputationTiers(gameState.worldConfig.storyContext.genre);
-                const updatedTierName = getReputationTier(gameState.reputation.score, tiers);
                 setGameState(prev => {
-                    const newState = { ...prev, reputationTiers: tiers, reputation: { ...prev.reputation, tier: updatedTierName } };
-                    gameService.saveGame(newState, 'auto');
-                    return newState;
+                    const newState = { ...prev, reputationTiers: tiers };
+                    // Gọi dispatchTags để cập nhật lại danh tiếng với các tier mới
+                    const { finalState } = dispatchTags(newState, [{ tagName: 'REPUTATION_CHANGED', params: { score: 0 } }]);
+                    gameService.saveGame(finalState, 'auto');
+                    return finalState;
                 });
             } catch (e) { 
                 const errorMessage = e instanceof Error ? `Lỗi tạo cấp bậc danh vọng: ${e.message}` : 'Lỗi không xác định.';
@@ -515,7 +409,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         };
         fetchTiers();
     }
-  }, [gameState.history.length, gameState.reputation.score, gameState.reputationTiers, gameState.worldConfig.storyContext.genre, getReputationTier]);
+  }, [gameState.history.length, gameState.reputation.score, gameState.reputationTiers, gameState.worldConfig.storyContext.genre]);
 
   useEffect(() => {
     const lastTurn = gameState.history[gameState.history.length - 1];
@@ -559,7 +453,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handleScrollToTop = () => logContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   const handleScrollToBottom = () => { if (logContainerRef.current) logContainerRef.current.scrollTo({ top: logContainerRef.current.scrollHeight, behavior: 'smooth' }); };
   
-  const performRestart = () => setGameState(prevState => ({ ...prevState, history: [], character: prevState.worldConfig.character, memories: [], summaries: [], playerStatus: [], inventory: [], encounteredNPCs: [], encounteredFactions: [], discoveredEntities: [], companions: [], quests: [], suggestions: [], worldTime: { year: 1, month: 1, day: 1, hour: 8, minute: 0 }, reputation: { score: 0, tier: 'Vô Danh' }, reputationTiers: [] }));
+  const performRestart = () => setGameState(prevState => ({ ...initialGameState, history: [] })); // Quay về trạng thái ban đầu, xóa lịch sử
   const handleSaveAndRestart = async () => { setIsSaving(true); await gameService.saveGame(gameState, 'manual'); setIsSaving(false); setShowRestartConfirm(false); performRestart(); };
   const handleRestartWithoutSaving = () => { setShowRestartConfirm(false); performRestart(); };
   const handleRestart = () => { setIsSidePanelOpen(false); setShowRestartConfirm(true); };
@@ -585,14 +479,13 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
           }
       }
   
-      // Hoàn tác cả hành động cuối cùng và tường thuật cuối cùng
       const newHistory = gameState.history.slice(0, -2);
       const newState = {
           ...gameState,
           history: newHistory,
           summaries: newSummaries,
           memories: newMemories,
-          suggestions: [], // Xóa gợi ý từ lượt chơi đã hoàn tác
+          suggestions: [], 
       };
       
       setGameState(newState);
@@ -642,7 +535,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const handlePageChange = (updater: (p: number) => number) => { setCurrentPage(prev => { const newPage = updater(prev); if (newPage !== prev) setIsPaginating(true); return newPage; }); };
   
   const characterPersonality = gameState.character.personality === 'Tuỳ chỉnh' ? gameState.character.customPersonality : gameState.character.personality;
-  const timeOfDay = getTimeOfDay(gameState.worldTime.hour);
   const getReputationColor = (score: number) => { if (score < -25) return 'text-red-400'; if (score > 25) return 'text-green-400'; return 'text-slate-300'; };
   const reputationColor = getReputationColor(gameState.reputation.score);
   const activeQuests = (gameState.quests || []).filter(q => !q.status || q.status === 'đang tiến hành');
@@ -674,7 +566,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                 {gameState.character.stats?.map((stat, index) => (
                     <div key={index}>
                         {stat.hasLimit !== false ? (
-                            // --- Resource Stat (e.g., HP, MP) ---
                             <>
                                 <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
@@ -690,7 +581,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                                 </div>
                             </>
                         ) : (
-                            // --- Attribute Stat (e.g., Strength, Int) ---
                             <div className="flex justify-between items-center py-1">
                                 <span className="font-semibold text-slate-300" title={stat.description || stat.name}>{stat.name}</span>
                                 <span className="font-mono text-slate-200 font-bold text-sm">{stat.value}</span>
@@ -702,6 +592,20 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                     <p className="text-slate-500 italic text-center text-xs">Hệ thống chỉ số đã tắt.</p>
                 )}
             </div>
+          </div>
+          <div className="bg-slate-900/50 p-3 rounded-lg">
+              <div className="flex items-center gap-2 text-purple-400 font-semibold text-sm mb-2"><Icon name="goal" className="w-5 h-5"/>Cột Mốc</div>
+              <div className="space-y-1 text-xs">
+                  {(gameState.character.milestones || []).map((milestone, index) => (
+                      <div key={index} className="flex justify-between items-center" title={milestone.description}>
+                          <span className="font-semibold text-slate-300 truncate pr-2">{milestone.name}:</span>
+                          <span className="font-mono text-slate-200 text-right">{milestone.value}</span>
+                      </div>
+                  ))}
+                  {(!gameState.character.milestones || gameState.character.milestones.length === 0) && (
+                      <p className="text-slate-500 italic text-center text-xs">Không có cột mốc nào.</p>
+                  )}
+              </div>
           </div>
         </div>
 

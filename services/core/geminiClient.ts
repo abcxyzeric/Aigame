@@ -2,7 +2,7 @@ import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } fro
 import { getSettings } from '../settingsService';
 import { AiPerformanceSettings, SafetySettingsConfig } from '../../types';
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
-import { obfuscateText, processNarration } from '../../utils/aiResponseProcessor';
+import { obfuscateText, processNarration } from '../../utils/textProcessing';
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
 
@@ -276,6 +276,8 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         try {
           const parsedJson = JSON.parse(jsonString) as T;
           
+          // ÁP DỤNG HÀM LÀM SẠCH VĂN BẢN
+          // Nếu đối tượng JSON có chứa trường 'narration', hãy xử lý nó.
           if (typeof parsedJson === 'object' && parsedJson !== null && 'narration' in parsedJson && typeof (parsedJson as any).narration === 'string') {
               (parsedJson as any).narration = processNarration((parsedJson as any).narration);
           }

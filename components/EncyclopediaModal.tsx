@@ -34,11 +34,8 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     </button>
 );
 
-// FIX: Define the 'Tab' type to resolve the "Cannot find name 'Tab'" error.
-// FIX: Added 'knowledge' to Tab type to allow viewing background knowledge files and fix type error.
 type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
 
-// FIX: Changed to a named export to resolve module resolution issues.
 export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState, onDeleteEntity }) => {
     const [mainView, setMainView] = useState<'browse' | 'analyze' | 'manage'>('browse');
     const [activeTab, setActiveTab] = useState<Tab>('characters');
@@ -305,8 +302,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     const analysisStats = useMemo(() => {
         if (mainView !== 'analyze') return null;
 
-        // FIX: Explicitly type allItems to resolve type inference issues.
-        // FIX: Replaced Object.values().flat() with a more explicit array spread to avoid type inference issues that can result in `unknown[]`.
         const allItems: AllEntities[] = [
             ...encyclopediaData.characters,
             ...encyclopediaData.items,
@@ -320,7 +315,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         const totalItems = allItems.length;
 
         const totalDescLength = allItems.reduce((acc, item) => {
-            // FIX: Use type-safe access to description/content properties.
             const desc = isKnowledgeItem(item) ? item.content : (item as any).description;
             return acc + (desc ? desc.length : 0);
         }, 0);
@@ -391,7 +385,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                     <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
                                     <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
                                     <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Hệ thống sức mạnh / Lore</TabButton>
-                                    {/* FIX: Added tab button for background knowledge files. */}
                                     <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến thức nền AI</TabButton>
                                 </div>
                             </div>
@@ -478,10 +471,6 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                     )}
 
                                     {('tags' in activeItem && activeItem.tags) && (() => {
-                                        // FIX: Safely handle tags that might be a string or an array.
-                                        // The original code produced a 'never' type error because TypeScript correctly
-                                        // inferred that `activeItem.tags` couldn't be a string based on the defined types.
-                                        // This implementation handles both cases gracefully at runtime.
                                         const tagsSource = (activeItem as any).tags;
                                         let tagsToDisplay: string[] = [];
                                         if (Array.isArray(tagsSource)) {
@@ -622,6 +611,3 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         </div>
     );
 };
-
-// This is the correct way to export a named component in TSX.
-// export default EncyclopediaModal;

@@ -33,7 +33,7 @@ export const generateSetting = (config: WorldConfig): Promise<string> => {
     return generate(prompt);
 };
 
-export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
+export async function generateWorldFromIdea(idea: string, enableMilestoneSystem: boolean, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
     let knowledgeForGeneration = backgroundKnowledge;
     const KNOWLEDGE_SIZE_THRESHOLD = 50000; // 50KB threshold
 
@@ -49,11 +49,11 @@ export async function generateWorldFromIdea(idea: string, backgroundKnowledge?: 
         }
     }
     
-    const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, knowledgeForGeneration);
+    const { prompt, schema, creativeCallConfig } = getGenerateWorldFromIdeaPrompt(idea, enableMilestoneSystem, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 
-export async function generateFanfictionWorld(idea: string, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
+export async function generateFanfictionWorld(idea: string, enableMilestoneSystem: boolean, backgroundKnowledge?: {name: string, content: string}[]): Promise<WorldConfig> {
     let knowledgeForGeneration = backgroundKnowledge;
     const KNOWLEDGE_SIZE_THRESHOLD = 50000;
 
@@ -69,7 +69,7 @@ export async function generateFanfictionWorld(idea: string, backgroundKnowledge?
         }
     }
 
-    const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, knowledgeForGeneration);
+    const { prompt, schema, creativeCallConfig } = getGenerateFanfictionWorldPrompt(idea, enableMilestoneSystem, knowledgeForGeneration);
     return generateJson<WorldConfig>(prompt, schema, undefined, 'gemini-2.5-pro', creativeCallConfig);
 }
 

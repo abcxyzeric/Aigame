@@ -1,5 +1,5 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { GameState, WorldConfig, TurnVector, SummaryVector } from '../../types';
+import { GameState, WorldConfig } from '../../types';
 import { getStartGamePrompt, getNextTurnPrompt, getGenerateReputationTiersPrompt } from '../../prompts/gameplayPrompts';
 import * as ragService from './ragService';
 import { getSettings } from '../settingsService';
@@ -7,12 +7,15 @@ import * as dbService from '../dbService';
 import * as embeddingService from './embeddingService';
 import { cosineSimilarity } from '../../utils/vectorUtils';
 import { calculateKeywordScore, reciprocalRankFusion } from '../../utils/searchUtils';
+import { parseResponse } from '../../utils/tagProcessors';
+import { ParsedTag } from '../../utils/tagProcessors/types';
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
 
-export const startGame = (config: WorldConfig): Promise<string> => {
+export const startGame = async (config: WorldConfig): Promise<{ narration: string; tags: ParsedTag[] }> => {
     const { prompt, systemInstruction } = getStartGamePrompt(config);
-    return generate(prompt, systemInstruction);
+    const rawResponse = await generate(prompt, systemInstruction);
+    return parseResponse(rawResponse);
 };
 
 export const generateReputationTiers = async (genre: string): Promise<string[]> => {
@@ -21,33 +24,61 @@ export const generateReputationTiers = async (genre: string): Promise<string[]> 
     return result.tiers || ["Tai Tiếng", "Bị Ghét", "Vô Danh", "Được Mến", "Nổi Vọng"];
 };
 
-export const getNextTurn = async (gameState: GameState): Promise<string> => {
-    const { history, worldConfig, encounteredNPCs, encounteredFactions, discoveredEntities, companions, quests, character, inventory, playerStatus } = gameState;
+// Hàm trợ giúp mới để triển khai logic trí nhớ kết hợp
+async function getInjectedMemories(gameState: GameState): Promise<string> {
+    const { history, npcDossiers } = gameState;
     const { ragSettings } = getSettings();
     const NUM_RECENT_TURNS = 5;
-    
     const lastPlayerAction = history[history.length - 1];
-    if (!lastPlayerAction || lastPlayerAction.type !== 'action') {
-        throw new Error("Lỗi logic: Lượt đi cuối cùng phải là hành động của người chơi.");
+
+    // 1. Xác định các NPC trong hành động
+    const allKnownNpcNames = [
+        ...gameState.encounteredNPCs.map(n => n.name),
+        ...gameState.companions.map(c => c.name),
+        ...gameState.worldConfig.initialEntities.filter(e => e.type === 'NPC').map(e => e.name)
+    ];
+    const uniqueNpcNames = [...new Set(allKnownNpcNames)];
+    const involvedNpcsInAction = uniqueNpcNames.filter(name =>
+        lastPlayerAction.content.toLowerCase().includes(name.toLowerCase())
+    );
+
+    // 2. Sử dụng Phương pháp 1 nếu phát hiện NPC
+    if (involvedNpcsInAction.length > 0 && npcDossiers) {
+        if (DEBUG_MODE) {
+            console.log(`%c[METHOD 1: NPC DOSSIER]`, 'color: yellow; font-weight: bold;', `NPCs detected: ${involvedNpcsInAction.join(', ')}`);
+        }
+        let dossierContent = '';
+        for (const npcName of involvedNpcsInAction) {
+            const dossierIndices = npcDossiers[npcName.toLowerCase()];
+            if (dossierIndices && dossierIndices.length > 0) {
+                const interactionHistory = dossierIndices
+                    .map(index => history[index])
+                    .filter(Boolean) // Lọc ra các lượt chơi có thể không xác định
+                    .map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`)
+                    .join('\n\n');
+                
+                dossierContent += `--- HỒ SƠ TƯƠNG TÁC VỚI ${npcName} ---\n${interactionHistory}\n--- KẾT THÚC HỒ SƠ ---\n\n`;
+            }
+        }
+        if (DEBUG_MODE) {
+            console.log(`%c[INJECTED DOSSIER]`, 'color: lightblue;', dossierContent || "Không có hồ sơ.");
+        }
+        return dossierContent;
     }
-    
-    // Bước 1: Tạo Query Text (code thuần, không gọi AI)
+
+    // 3. Sử dụng Phương pháp 3 (Hybrid Search) nếu không có NPC cụ thể nào
     const previousTurn = history.length > 1 ? history[history.length - 2] : null;
     const previousContent = previousTurn ? `${previousTurn.type === 'action' ? 'Người chơi' : 'AI'}: ${previousTurn.content.replace(/<[^>]*>/g, '').substring(0, 200)}...` : '';
     const ragQueryText = `${previousContent}\n\nHành động hiện tại: ${lastPlayerAction.content}`;
 
-
     if (DEBUG_MODE) {
-        console.groupCollapsed('🧠 [DEBUG] RAG Context');
+        console.log(`%c[METHOD 3: CONTEXTUAL INJECTION]`, 'color: yellow; font-weight: bold;', `No specific NPC detected in action.`);
         console.log('%c[QUERY]', 'color: cyan; font-weight: bold;', ragQueryText);
     }
     
-    // GỌI API DUY NHẤT
     const globalQueryEmbedding = await embeddingService.embedContent(ragQueryText);
 
-    // --- HYBRID SEARCH IMPLEMENTATION ---
-
-    // Bước 2: Hybrid Search cho các lượt chơi cũ liên quan
+    // Hybrid Search cho các lượt chơi
     let relevantPastTurns = '';
     let foundTurnsCount = 0;
     try {
@@ -55,26 +86,11 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         const searchableTurnVectors = allTurnVectors.filter(v => v.turnIndex < history.length - NUM_RECENT_TURNS);
 
         if (searchableTurnVectors.length > 0) {
-            // A. Vector Search
-            const vectorRankedTurns = searchableTurnVectors.map(vector => ({
-                id: vector.turnIndex,
-                score: cosineSimilarity(globalQueryEmbedding, vector.embedding), // SỬ DỤNG VECTOR TOÀN CỤC
-                data: vector,
-            })).sort((a, b) => b.score - a.score);
-
-            // B. Keyword Search
-            const keywordRankedTurns = searchableTurnVectors.map(vector => ({
-                id: vector.turnIndex,
-                score: calculateKeywordScore(ragQueryText, vector.content),
-                data: vector,
-            })).sort((a, b) => b.score - a.score);
-
-            // C. Fuse Results
+            const vectorRankedTurns = searchableTurnVectors.map(vector => ({ id: vector.turnIndex, score: cosineSimilarity(globalQueryEmbedding, vector.embedding), data: vector })).sort((a, b) => b.score - a.score);
+            const keywordRankedTurns = searchableTurnVectors.map(vector => ({ id: vector.turnIndex, score: calculateKeywordScore(ragQueryText, vector.content), data: vector })).sort((a, b) => b.score - a.score);
             const fusedTurnResults = reciprocalRankFusion([vectorRankedTurns, keywordRankedTurns]);
-            
             const topTurns = fusedTurnResults.slice(0, ragSettings.topK);
             foundTurnsCount = topTurns.length;
-            
             if (topTurns.length > 0) {
                 relevantPastTurns = topTurns.map(t => `[Lượt ${t.data.turnIndex}]: ${t.data.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
             }
@@ -83,54 +99,59 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         console.error("Lỗi khi thực hiện Hybrid Search cho lượt chơi:", e);
     }
 
-    if (DEBUG_MODE) {
-        console.log(`%c[FOUND TURNS: ${foundTurnsCount}]`, 'color: lightblue;', relevantPastTurns || "Không có.");
-    }
-
-    // Bước 3: Hybrid Search cho các tóm tắt liên quan
+    // Hybrid Search cho các tóm tắt
     let relevantMemories = '';
     let foundSummariesCount = 0;
-     try {
+    try {
         const allSummaryVectors = await dbService.getAllSummaryVectors();
         if (allSummaryVectors.length > 0) {
-            // A. Vector Search
-            const vectorRankedSummaries = allSummaryVectors.map(vector => ({
-                id: vector.summaryIndex,
-                score: cosineSimilarity(globalQueryEmbedding, vector.embedding), // SỬ DỤNG VECTOR TOÀN CỤC
-                data: vector,
-            })).sort((a, b) => b.score - a.score);
-            
-            // B. Keyword Search
-            const keywordRankedSummaries = allSummaryVectors.map(vector => ({
-                id: vector.summaryIndex,
-                score: calculateKeywordScore(ragQueryText, vector.content),
-                data: vector,
-            })).sort((a, b) => b.score - a.score);
-
-            // C. Fuse Results
+            const vectorRankedSummaries = allSummaryVectors.map(vector => ({ id: vector.summaryIndex, score: cosineSimilarity(globalQueryEmbedding, vector.embedding), data: vector })).sort((a, b) => b.score - a.score);
+            const keywordRankedSummaries = allSummaryVectors.map(vector => ({ id: vector.summaryIndex, score: calculateKeywordScore(ragQueryText, vector.content), data: vector })).sort((a, b) => b.score - a.score);
             const fusedSummaryResults = reciprocalRankFusion([vectorRankedSummaries, keywordRankedSummaries]);
             const topSummaries = fusedSummaryResults.slice(0, ragSettings.topK);
             foundSummariesCount = topSummaries.length;
-
             if (topSummaries.length > 0) {
-                 relevantMemories = topSummaries.map(s => `[Tóm tắt giai đoạn ${s.data.summaryIndex + 1}]: ${s.data.content}`).join('\n\n');
+                relevantMemories = topSummaries.map(s => `[Tóm tắt giai đoạn ${s.data.summaryIndex + 1}]: ${s.data.content}`).join('\n\n');
             }
         }
     } catch (e) {
         console.error("Lỗi khi thực hiện Hybrid Search cho tóm tắt:", e);
     }
     
+    const injectedString = `--- KÝ ỨC DÀI HẠN LIÊN QUAN (TỪ TÓM TẮT) ---\n${relevantMemories || "Không có."}\n\n--- DIỄN BIẾN CŨ LIÊN QUAN (TỪ LỊCH SỬ) ---\n${relevantPastTurns || "Không có."}`;
+
     if (DEBUG_MODE) {
+        console.log(`%c[FOUND TURNS: ${foundTurnsCount}]`, 'color: lightblue;', relevantPastTurns || "Không có.");
         console.log(`%c[FOUND MEMORIES: ${foundSummariesCount}]`, 'color: lightblue;', relevantMemories || "Không có.");
     }
+    return injectedString;
+}
 
-    // Bước 4: RAG - Truy xuất lore/kiến thức liên quan
-    let relevantKnowledge = '';
-    if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
-        relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryText, worldConfig.backgroundKnowledge, 3, globalQueryEmbedding); // TRUYỀN VECTOR VÀO
+
+export const getNextTurn = async (gameState: GameState): Promise<{ narration: string; tags: ParsedTag[] }> => {
+    const { history, worldConfig, encounteredNPCs, encounteredFactions, discoveredEntities, companions, quests, character, inventory, playerStatus } = gameState;
+    
+    const lastPlayerAction = history[history.length - 1];
+    if (!lastPlayerAction || lastPlayerAction.type !== 'action') {
+        throw new Error("Lỗi logic: Lượt đi cuối cùng phải là hành động của người chơi.");
     }
     
-    // Bước 5: Lắp ráp prompt cuối cùng
+    if (DEBUG_MODE) {
+        console.groupCollapsed('🧠 [DEBUG] RAG Context');
+    }
+
+    // Bước 1: Lấy bối cảnh trí nhớ được tiêm vào (Dossier hoặc RAG)
+    const injectedMemories = await getInjectedMemories(gameState);
+
+    // Bước 2: RAG - Truy xuất lore/kiến thức liên quan (luôn chạy)
+    let relevantKnowledge = '';
+    const ragQueryTextForKnowledge = `${history.slice(-2).map(t => t.content).join(' ')}`;
+    const queryEmbeddingForKnowledge = await embeddingService.embedContent(ragQueryTextForKnowledge);
+    if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
+        relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryTextForKnowledge, worldConfig.backgroundKnowledge, 3, queryEmbeddingForKnowledge);
+    }
+    
+    // Bước 3: Lắp ráp prompt cuối cùng
     const fullContext = {
         inventory, playerStatus, companions,
         activeQuests: quests.filter(q => q.status !== 'hoàn thành'),
@@ -148,7 +169,7 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         gameState,
         fullContext,
         relevantKnowledge,
-        `--- KÝ ỨC DÀI HẠN LIÊN QUAN (TỪ TÓM TẮT) ---\n${relevantMemories || "Không có."}\n\n--- DIỄN BIẾN CŨ LIÊN QUAN (TỪ LỊCH SỬ) ---\n${relevantPastTurns || "Không có."}`
+        injectedMemories
     );
     
     if (DEBUG_MODE) {
@@ -156,5 +177,6 @@ export const getNextTurn = async (gameState: GameState): Promise<string> => {
         console.groupEnd();
     }
 
-    return generate(prompt, systemInstruction);
+    const rawResponse = await generate(prompt, systemInstruction);
+    return parseResponse(rawResponse);
 };

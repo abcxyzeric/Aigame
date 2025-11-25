@@ -12,6 +12,15 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.6.0 (Đại tu Kiến tạo Thế giới & Hệ thống Cột mốc)",
+      notes: [
+        "**Hệ thống Cột mốc (Chỉ số dạng chữ):** Giới thiệu một hệ thống chỉ số dạng chữ hoàn toàn mới, cho phép theo dõi các tiến trình phi số hóa như 'Cảnh Giới Tu Luyện', 'Thân Phận', 'Linh Căn'... Hệ thống này có thể bật/tắt riêng biệt.",
+        "**AI Hỗ trợ Thông minh:** Bổ sung các nút 'AI Hỗ trợ' chuyên dụng cho Hệ thống Cột mốc, giúp AI tự động điền các chỉ số phù hợp với thể loại và bối cảnh, hoặc hoàn thiện các chi tiết người chơi còn bỏ trống.",
+        "**Nâng cấp Giao diện Kiến tạo:** Tích hợp các 'Tooltips' (hướng dẫn chi tiết) cho mọi mục quan trọng, giúp người mới dễ dàng hiểu rõ công dụng của từng tùy chọn. Chuyển đổi mục 'Thể loại' thành danh sách chọn lựa với tùy chọn 'Tùy chỉnh' linh hoạt.",
+        "**Hiển thị Cột mốc trong Gameplay:** Bảng điều khiển nhân vật trong game giờ đây sẽ hiển thị các Cột mốc quan trọng, giúp người chơi dễ dàng theo dõi tiến trình tu luyện và các trạng thái đặc biệt."
+      ]
+    },
+    {
       version: "1.5.4 (Nâng cấp Trải nghiệm Người dùng & AI)",
       notes: [
         "**Nâng cấp Tính cách Nhân vật do AI tạo:** AI giờ đây sẽ tạo ra các tính cách tùy chỉnh có chiều sâu, phức tạp và mâu thuẫn hơn, mang lại những nhân vật đáng nhớ và khó đoán hơn.",
