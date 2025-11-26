@@ -1,6 +1,7 @@
 // utils/tagProcessors/SkillProcessor.ts
 import { GameState, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
+import { sanitizeEntityName } from '../textProcessing';
 
 /**
  * Xử lý logic thêm một kỹ năng mới cho nhân vật.
@@ -14,8 +15,10 @@ export function processSkillLearned(currentState: GameState, params: any): { new
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
+
     const newSkill = {
-        name: params.name,
+        name: sanitizedName,
         description: params.description || '',
     };
 

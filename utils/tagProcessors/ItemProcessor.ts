@@ -1,5 +1,6 @@
 // utils/tagProcessors/ItemProcessor.ts
 import { GameState, GameItem, VectorUpdate } from '../../types';
+import { sanitizeEntityName } from '../textProcessing';
 
 /**
  * Xử lý logic thêm hoặc cập nhật vật phẩm trong túi đồ.
@@ -8,14 +9,22 @@ import { GameState, GameItem, VectorUpdate } from '../../types';
  * @returns Một đối tượng chứa trạng thái game mới và các yêu cầu cập nhật vector.
  */
 export function processItemAdd(currentState: GameState, params: any): { newState: GameState, vectorUpdates: VectorUpdate[] } {
+    // BƯỚC 1: Thêm lớp bảo mật Code
+    // Nếu thẻ có mục tiêu (target) và mục tiêu đó không phải là người chơi, bỏ qua thẻ này.
+    if (params.target && params.target.toLowerCase() !== 'player') {
+        console.warn(`[Code-Security] Bỏ qua thẻ [ITEM_ADD] vì mục tiêu không phải người chơi: target="${params.target}"`);
+        return { newState: currentState, vectorUpdates: [] };
+    }
+    
     // Kiểm tra tính hợp lệ của tham số
     if (!params.name || !params.quantity || typeof params.quantity !== 'number' || params.quantity <= 0) {
         console.warn('Bỏ qua thẻ [ITEM_ADD] không hợp lệ:', params);
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
     const newInventory = [...(currentState.inventory || [])];
-    const key = params.name.toLowerCase();
+    const key = sanitizedName.toLowerCase();
     const existingItemIndex = newInventory.findIndex(item => item.name.toLowerCase() === key);
     
     let vectorUpdates: VectorUpdate[] = [];
@@ -32,10 +41,11 @@ export function processItemAdd(currentState: GameState, params: any): { newState
     } else {
         // Vật phẩm mới, thêm vào túi đồ
         const newItem: GameItem = {
-            name: params.name,
+            name: sanitizedName,
             quantity: params.quantity,
             description: params.description || '',
             tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
+            customCategory: params.category,
         };
         newInventory.push(newItem);
 
@@ -65,13 +75,21 @@ export function processItemAdd(currentState: GameState, params: any): { newState
  * @returns Một đối tượng chứa trạng thái game mới và mảng vectorUpdates rỗng.
  */
 export function processItemRemove(currentState: GameState, params: any): { newState: GameState, vectorUpdates: VectorUpdate[] } {
+    // BƯỚC 1: Thêm lớp bảo mật Code
+    // Nếu thẻ có mục tiêu (target) và mục tiêu đó không phải là người chơi, bỏ qua thẻ này.
+    if (params.target && params.target.toLowerCase() !== 'player') {
+        console.warn(`[Code-Security] Bỏ qua thẻ [ITEM_REMOVE] vì mục tiêu không phải người chơi: target="${params.target}"`);
+        return { newState: currentState, vectorUpdates: [] };
+    }
+
     if (!params.name || !params.quantity || typeof params.quantity !== 'number' || params.quantity <= 0) {
         console.warn('Bỏ qua thẻ [ITEM_REMOVE] không hợp lệ:', params);
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
     const newInventory = [...(currentState.inventory || [])];
-    const key = params.name.toLowerCase();
+    const key = sanitizedName.toLowerCase();
     const existingItemIndex = newInventory.findIndex(item => item.name.toLowerCase() === key);
 
     if (existingItemIndex > -1) {
@@ -89,7 +107,7 @@ export function processItemRemove(currentState: GameState, params: any): { newSt
         }
     } else {
         // Nếu xóa vật phẩm không có trong túi đồ, bỏ qua và ghi log cảnh báo.
-        console.warn(`Cố gắng xóa vật phẩm không có trong túi đồ: "${params.name}"`);
+        console.warn(`Cố gắng xóa vật phẩm không có trong túi đồ: "${sanitizedName}"`);
     }
 
     return {

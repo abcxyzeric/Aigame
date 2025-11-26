@@ -1,5 +1,6 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { GameState, WorldConfig } from '../../types';
+import { GameState, WorldConfig, TimePassed } from '../../types';
+import { ParsedTag } from '../../utils/tagProcessors';
 import { getStartGamePrompt, getNextTurnPrompt, getGenerateReputationTiersPrompt } from '../../prompts/gameplayPrompts';
 import * as ragService from './ragService';
 import { getSettings } from '../settingsService';
@@ -8,7 +9,8 @@ import * as embeddingService from './embeddingService';
 import { cosineSimilarity } from '../../utils/vectorUtils';
 import { calculateKeywordScore, reciprocalRankFusion } from '../../utils/searchUtils';
 import { parseResponse } from '../../utils/tagProcessors';
-import { ParsedTag } from '../../utils/tagProcessors/types';
+import { selectRelevantContext } from '../../utils/ContextManager';
+
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
 
@@ -49,15 +51,22 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
         }
         let dossierContent = '';
         for (const npcName of involvedNpcsInAction) {
-            const dossierIndices = npcDossiers[npcName.toLowerCase()];
-            if (dossierIndices && dossierIndices.length > 0) {
-                const interactionHistory = dossierIndices
-                    .map(index => history[index])
-                    .filter(Boolean) // Lọc ra các lượt chơi có thể không xác định
-                    .map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`)
-                    .join('\n\n');
-                
-                dossierContent += `--- HỒ SƠ TƯƠNG TÁC VỚI ${npcName} ---\n${interactionHistory}\n--- KẾT THÚC HỒ SƠ ---\n\n`;
+            const dossier = npcDossiers[npcName.toLowerCase()];
+            if (dossier) {
+                let npcDossierString = `--- HỒ SƠ TƯƠNG TÁC VỚI ${npcName} ---\n`;
+                if (dossier.archived && dossier.archived.length > 0) {
+                    npcDossierString += "Ký ức đã lưu trữ (sự kiện cũ):\n- " + dossier.archived.join('\n- ') + "\n\n";
+                }
+                if (dossier.fresh && dossier.fresh.length > 0) {
+                    const freshHistory = dossier.fresh
+                        .map(index => history[index])
+                        .filter(Boolean)
+                        .map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`)
+                        .join('\n\n');
+                    npcDossierString += `Diễn biến gần đây nhất (nguyên văn):\n${freshHistory}\n`;
+                }
+                npcDossierString += `--- KẾT THÚC HỒ SƠ ---\n\n`;
+                dossierContent += npcDossierString;
             }
         }
         if (DEBUG_MODE) {
@@ -128,8 +137,8 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
 }
 
 
-export const getNextTurn = async (gameState: GameState): Promise<{ narration: string; tags: ParsedTag[] }> => {
-    const { history, worldConfig, encounteredNPCs, encounteredFactions, discoveredEntities, companions, quests, character, inventory, playerStatus } = gameState;
+export const getNextTurn = async (gameState: GameState, codeExtractedTime?: TimePassed): Promise<{ narration: string; tags: ParsedTag[] }> => {
+    const { history, worldConfig } = gameState;
     
     const lastPlayerAction = history[history.length - 1];
     if (!lastPlayerAction || lastPlayerAction.type !== 'action') {
@@ -137,13 +146,19 @@ export const getNextTurn = async (gameState: GameState): Promise<{ narration: st
     }
     
     if (DEBUG_MODE) {
-        console.groupCollapsed('🧠 [DEBUG] RAG Context');
+        console.groupCollapsed('🧠 [DEBUG] Smart Context & RAG');
     }
 
-    // Bước 1: Lấy bối cảnh trí nhớ được tiêm vào (Dossier hoặc RAG)
+    // Bước 1: Quản lý Ngữ cảnh Thông minh (Smart Context Manager)
+    const relevantContext = selectRelevantContext(gameState, lastPlayerAction.content);
+    if (DEBUG_MODE) {
+        console.log(`%c[SMART CONTEXT]`, 'color: #FFD700; font-weight: bold;', relevantContext);
+    }
+
+    // Bước 2: Lấy bối cảnh trí nhớ được tiêm vào (Dossier hoặc RAG cho Lịch sử/Tóm tắt)
     const injectedMemories = await getInjectedMemories(gameState);
 
-    // Bước 2: RAG - Truy xuất lore/kiến thức liên quan (luôn chạy)
+    // Bước 3: RAG - Truy xuất lore/kiến thức liên quan từ các tệp kiến thức nền (luôn chạy)
     let relevantKnowledge = '';
     const ragQueryTextForKnowledge = `${history.slice(-2).map(t => t.content).join(' ')}`;
     const queryEmbeddingForKnowledge = await embeddingService.embedContent(ragQueryTextForKnowledge);
@@ -151,25 +166,13 @@ export const getNextTurn = async (gameState: GameState): Promise<{ narration: st
         relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryTextForKnowledge, worldConfig.backgroundKnowledge, 3, queryEmbeddingForKnowledge);
     }
     
-    // Bước 3: Lắp ráp prompt cuối cùng
-    const fullContext = {
-        inventory, playerStatus, companions,
-        activeQuests: quests.filter(q => q.status !== 'hoàn thành'),
-        encounteredNPCs, encounteredFactions, discoveredEntities,
-        characterSkills: character.skills,
-    };
-    Object.keys(fullContext).forEach(key => {
-        const typedKey = key as keyof typeof fullContext;
-        if (Array.isArray(fullContext[typedKey]) && fullContext[typedKey].length === 0) {
-            delete fullContext[typedKey];
-        }
-    });
-
+    // Bước 4: Lắp ráp prompt cuối cùng với dữ liệu đã được lọc
     const { prompt, systemInstruction } = getNextTurnPrompt(
         gameState,
-        fullContext,
+        relevantContext, // <- SỬ DỤNG NGỮ CẢNH ĐÃ LỌC
         relevantKnowledge,
-        injectedMemories
+        injectedMemories,
+        codeExtractedTime
     );
     
     if (DEBUG_MODE) {

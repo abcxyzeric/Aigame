@@ -1,6 +1,7 @@
 // utils/tagProcessors/CompanionProcessor.ts
 import { GameState, Companion, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
+import { sanitizeEntityName } from '../textProcessing';
 
 /**
  * Xử lý logic thêm hoặc cập nhật một đồng hành.
@@ -14,11 +15,14 @@ export function processCompanionNew(currentState: GameState, params: any): { new
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
+
     const newCompanion: Companion = {
-        name: params.name,
+        name: sanitizedName,
         description: params.description || '',
         personality: params.personality || '',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
+        customCategory: params.category,
     };
     
     const updatedCompanions = mergeAndDeduplicateByName(currentState.companions || [], [newCompanion]);
@@ -51,7 +55,7 @@ export function processCompanionRemove(currentState: GameState, params: any): { 
         return { newState: currentState, vectorUpdates: [] };
     }
 
-    const nameToRemove = params.name.toLowerCase();
+    const nameToRemove = sanitizeEntityName(params.name).toLowerCase();
     const updatedCompanions = (currentState.companions || []).filter(c => c.name.toLowerCase() !== nameToRemove);
 
     // TODO: Consider adding logic to remove vector from DB in the future

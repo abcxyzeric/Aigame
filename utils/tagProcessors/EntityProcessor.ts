@@ -1,6 +1,7 @@
 // utils/tagProcessors/EntityProcessor.ts
 import { GameState, EncounteredFaction, InitialEntity, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
+import { sanitizeEntityName } from '../textProcessing';
 
 /**
  * Xử lý logic thêm hoặc cập nhật một phe phái/thế lực.
@@ -14,10 +15,13 @@ export function processFactionUpdate(currentState: GameState, params: any): { ne
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
+
     const newFaction: EncounteredFaction = {
-        name: params.name,
+        name: sanitizedName,
         description: params.description || '',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
+        customCategory: params.category,
     };
 
     const updatedFactions = mergeAndDeduplicateByName(currentState.encounteredFactions || [], [newFaction]);
@@ -51,12 +55,18 @@ export function processEntityDiscovered(currentState: GameState, params: any, ty
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
+
     const newEntity: InitialEntity = {
-        name: params.name,
+        name: sanitizedName,
         type: type,
         description: params.description || '',
         personality: params.personality || '', // Mặc dù không phổ biến, vẫn hỗ trợ
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
+        customCategory: params.category,
+        // Tự động gán vị trí hiện tại của người chơi cho thực thể này khi nó được khám phá.
+        // Điều này hữu ích để biết lore này được tìm thấy ở đâu.
+        locationId: currentState.currentLocationId,
     };
 
     const updatedEntities = mergeAndDeduplicateByName(currentState.discoveredEntities || [], [newEntity]);
@@ -67,12 +77,20 @@ export function processEntityDiscovered(currentState: GameState, params: any, ty
         type: type,
         content: vectorContent,
     };
+    
+    // Tạo một bản sao của trạng thái để sửa đổi
+    const newState = {
+        ...currentState,
+        discoveredEntities: updatedEntities,
+    };
+
+    // Nếu thực thể được khám phá là một địa điểm mới, cập nhật vị trí hiện tại của người chơi
+    if (type === 'Địa điểm') {
+        newState.currentLocationId = sanitizedName;
+    }
 
     return {
-        newState: {
-            ...currentState,
-            discoveredEntities: updatedEntities,
-        },
+        newState,
         vectorUpdates: [vectorUpdate],
     };
 }

@@ -12,6 +12,15 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+      version: "1.6.5 (Đại tu Bách Khoa Toàn Thư & Tối ưu hóa Dữ liệu)",
+      notes: [
+        "**Hệ thống Phân loại Động:** Bách Khoa Toàn Thư giờ đây có khả năng tự động học và tạo ra các danh mục phân loại mới (`customCategory`) do AI đề xuất, giúp hệ thống linh hoạt với mọi loại dữ liệu sáng tạo.",
+        "**Chuẩn hóa Thông minh bằng AI:** Tích hợp công cụ \"Chuẩn Hóa\" trong mục Quản Lý, cho phép AI tự động phân tích, gộp các danh mục lộn xộn (VD: 'Dược thảo', 'Linh dược' -> 'Dược Liệu') và hợp nhất các mục bị trùng lặp (VD: 'Lộ Na' và 'HLV Lộ Na'), giữ cho dữ liệu luôn sạch sẽ và có tổ chức.",
+        "**Giao diện Tab Động:** Giao diện Bách Khoa Toàn Thư được nâng cấp để tự động hiển thị các tab mới dựa trên các phân loại động do AI tạo ra, giúp người chơi dễ dàng duyệt qua các loại thông tin mới lạ.",
+        "**Vệ sinh Dữ liệu Đầu vào:** Triển khai cơ chế tự động làm sạch tên thực thể, loại bỏ các hậu tố thừa (VD: 'Thanh Tâm Liên - Tuyệt phẩm' -> 'Thanh Tâm Liên'), đảm bảo tính nhất quán của dữ liệu."
+      ]
+    },
+    {
       version: "1.6.0 (Đại tu Kiến tạo Thế giới & Hệ thống Cột mốc)",
       notes: [
         "**Hệ thống Cột mốc (Chỉ số dạng chữ):** Giới thiệu một hệ thống chỉ số dạng chữ hoàn toàn mới, cho phép theo dõi các tiến trình phi số hóa như 'Cảnh Giới Tu Luyện', 'Thân Phận', 'Linh Căn'... Hệ thống này có thể bật/tắt riêng biệt.",

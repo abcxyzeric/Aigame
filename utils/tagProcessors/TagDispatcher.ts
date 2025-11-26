@@ -23,7 +23,30 @@ import { processStatusAcquired, processStatusRemoved } from './StatusProcessor';
  */
 export function dispatchTags(currentState: GameState, tags: ParsedTag[]): { finalState: GameState, vectorUpdates: VectorUpdate[] } {
     
-    const result = tags.reduce(
+    // Giai đoạn xác thực bằng code: Cố gắng sửa các lỗi phân loại thẻ rõ ràng của AI.
+    const validatedTags = tags.map(tag => {
+        const newTag = { ...tag, params: { ...tag.params } }; // Tạo bản sao sâu hơn
+
+        if (newTag.tagName === 'LOCATION_DISCOVERED' || newTag.tagName === 'LORE_DISCOVERED') {
+            const name = (newTag.params.name as string)?.toLowerCase() || '';
+            const itemKeywords = ['kiếm', 'đao', 'giáp', 'thuốc', 'đan', 'bình', 'sách', 'quyển', 'vật', 'châu', 'giáp', 'khiên', 'mũ', 'trượng'];
+            
+            if (itemKeywords.some(kw => name.includes(kw))) {
+                const locationKeywords = ['thành', 'làng', 'hang', 'động', 'sông', 'núi', 'rừng', 'thung lũng', 'quốc', 'cốc', 'viện', 'phủ'];
+                if (!locationKeywords.some(kw => name.includes(kw))) {
+                    console.warn(`[Code-Validation] Chuyển thẻ ${newTag.tagName} thành ITEM_ADD vì tên "${newTag.params.name}" chứa từ khóa vật phẩm.`);
+                    newTag.tagName = 'ITEM_ADD';
+                    // Thêm các tham số mặc định cần thiết cho một vật phẩm
+                    newTag.params.quantity = newTag.params.quantity || 1;
+                    newTag.params.target = newTag.params.target || 'player';
+                }
+            }
+        }
+        return newTag;
+    });
+
+
+    const result = validatedTags.reduce(
         (acc: { state: GameState; updates: VectorUpdate[] }, tag) => {
             
             let processResult: { newState: GameState; vectorUpdates: VectorUpdate[] };

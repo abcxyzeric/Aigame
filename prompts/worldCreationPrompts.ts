@@ -267,10 +267,6 @@ export const getGenerateEntityInfoOnTheFlyPrompt = (worldConfig: WorldConfig, hi
             personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết, hợp lý và sáng tạo về thực thể dựa trên bối cảnh." },
             tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Quan trọng', 'Cổ đại', 'Học thuật') để phân loại thực thể." },
-            details: { 
-                type: Type.OBJECT,
-                description: "Trường này không còn được sử dụng, vui lòng để trống.",
-            }
         },
         required: ['name', 'type', 'description', 'tags']
     };

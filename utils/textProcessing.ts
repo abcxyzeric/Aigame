@@ -19,6 +19,28 @@ export const obfuscateText = (text: string): string => {
 };
 
 /**
+ * Giải mã các từ bị làm mờ (ví dụ: '[t-h-ú-c]') thành văn bản gốc.
+ * Hàm này sẽ bỏ qua các thẻ lệnh game (ví dụ: '[ITEM_ADD:...]').
+ * @param text - Văn bản đầu vào có thể chứa các từ bị làm mờ.
+ * @returns Văn bản đã được giải mã.
+ */
+export const deobfuscateText = (text: string): string => {
+    if (!text) return '';
+    // Regex để tìm nội dung trong ngoặc vuông có chứa dấu gạch ngang nhưng không chứa dấu hai chấm.
+    // [^:\]]*   : khớp với bất kỳ ký tự nào không phải là ':' và ']' không hoặc nhiều lần.
+    // -         : đảm bảo có ít nhất một dấu gạch ngang.
+    // [^\]]*    : khớp với bất kỳ ký tự nào không phải là ']' cho đến cuối ngoặc.
+    const regex = /\[([^:\]]*-[^\]]*)\]/g;
+    
+    return text.replace(regex, (match, group1) => {
+        // group1 là nội dung bên trong ngoặc.
+        // Xóa tất cả các dấu gạch ngang khỏi nội dung.
+        return group1.replace(/-/g, '');
+    });
+};
+
+
+/**
  * Xử lý chuỗi tường thuật thô từ AI để làm sạch các thẻ không mong muốn trước khi hiển thị.
  * Hàm này được thiết kế để giải quyết triệt để vấn đề thẻ xuất hiện trong hội thoại và suy nghĩ.
  * @param narration - Chuỗi tường thuật thô từ AI.
@@ -47,5 +69,20 @@ export const processNarration = (narration: string): string => {
     // Bước 3: Dọn dẹp các lỗi định dạng phổ biến khác (ví dụ: khoảng trắng thừa trước thẻ đóng)
     cleanedText = cleanedText.replace(/\s+<\/(entity|important|status|exp|thought)>/g, '</$1>');
 
+    // Bước 4: Giải mã các từ bị làm mờ (ví dụ: [t-h-ú-c] -> thúc)
+    cleanedText = deobfuscateText(cleanedText);
+
     return cleanedText.trim();
+};
+
+/**
+ * Tự động cắt bỏ các phần mô tả phẩm cấp/trạng thái khỏi tên thực thể.
+ * Ví dụ: "Thanh Tâm Liên - Tuyệt Phẩm" -> "Thanh Tâm Liên"
+ * @param name - Tên thực thể đầu vào.
+ * @returns Tên đã được làm sạch.
+ */
+export const sanitizeEntityName = (name: string): string => {
+    if (!name) return '';
+    // Cắt bỏ phần sau dấu gạch ngang có khoảng trắng
+    return name.split(/\s*-\s*/)[0].trim();
 };

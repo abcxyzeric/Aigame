@@ -6,7 +6,7 @@ import WorldCreationScreen from './components/WorldCreationScreen';
 import SettingsScreen from './components/SettingsScreen';
 import GameplayScreen from './components/GameplayScreen';
 import FandomGenesisScreen from './components/FandomGenesisScreen';
-import { WorldConfig, GameState, InitialEntity } from './types';
+import { WorldConfig, GameState, InitialEntity, NpcDossier } from './types';
 import { DEFAULT_STATS } from './constants';
 import { getSeason, generateWeather } from './utils/timeUtils';
 import { resolveGenreArchetype } from './utils/genreUtils';
@@ -127,6 +127,22 @@ const App: React.FC = () => {
 
     // Đảm bảo worldTime có minute
     completeState.worldTime = { minute: 0, ...completeState.worldTime };
+
+    // Di chuyển npcDossiers nếu nó ở định dạng cũ
+    if (completeState.npcDossiers) {
+        const firstDossierKey = Object.keys(completeState.npcDossiers)[0];
+        if (firstDossierKey && Array.isArray(completeState.npcDossiers[firstDossierKey])) {
+            const oldDossiers = completeState.npcDossiers as unknown as Record<string, number[]>;
+            const newDossiers: Record<string, NpcDossier> = {};
+            for (const npcName in oldDossiers) {
+                newDossiers[npcName] = {
+                    fresh: oldDossiers[npcName],
+                    archived: []
+                };
+            }
+            completeState.npcDossiers = newDossiers;
+        }
+    }
 
     // Tính toán mùa/thời tiết nếu thiếu
     if (!completeState.season || !completeState.weather) {

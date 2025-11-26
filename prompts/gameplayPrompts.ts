@@ -1,5 +1,5 @@
 import { Type } from "@google/genai";
-import { GameState, WorldConfig } from "../types";
+import { GameState, WorldConfig, TimePassed } from "../types";
 import { getGameMasterSystemInstruction, getResponseLengthDirective } from './systemInstructions';
 import { buildNsfwPayload, buildPronounPayload, buildTimePayload, buildReputationPayload } from '../utils/promptBuilders';
 
@@ -42,7 +42,7 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
 **LƯU Ý CÚ PHÁP (CỰC KỲ QUAN TRỌNG):**
 - Luôn dùng dấu ngoặc kép \`"\` cho tất cả các giá trị chuỗi (string values).
 - TUYỆT ĐỐI không thêm dấu phẩy (,) vào sau cặp key-value cuối cùng trong một thẻ.
-- Ví dụ ĐÚNG: \`[ITEM_ADD: name="Kiếm Sắt", quantity=1, description="Một thanh kiếm bình thường."]\`
+- Ví dụ ĐÚNG: \`[ITEM_ADD: target="player", name="Kiếm Sắt", quantity=1, description="Một thanh kiếm bình thường."]\`
 - Ví dụ SAI: \`[ITEM_ADD: name='Kiếm Sắt', quantity=1,]\` (Sai dấu ngoặc đơn và có dấu phẩy thừa)
 
 **--- CÁC THẺ BẮT BUỘC (MỌI LƯỢT CHƠI) ---**
@@ -54,8 +54,19 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
     [STAT_CHANGE: name="Sinh Lực", operation="subtract", level="low"] (Dùng logic mờ: "low", "medium", "high")
     [STAT_CHANGE: name="Sinh Lực", operation="add", amount=10] (Dùng con số cụ thể nếu cần)
 *   **Vật phẩm:**
-    [ITEM_ADD: name="Thuốc Hồi Phục", quantity=1, description="Một bình thuốc nhỏ."]
-    [ITEM_REMOVE: name="Chìa Khóa Cũ", quantity=1]
+    [ITEM_ADD: target="player", name="Thuốc Hồi Phục", quantity=1, description="Một bình thuốc nhỏ.", tags="y tế, tiêu hao"] (BẮT BUỘC có 'description' và 'tags' cho vật phẩm mới)
+    [ITEM_REMOVE: target="player", name="Chìa Khóa Cũ", quantity=1]
+    **NGUYÊN TẮC XÁC ĐỊNH MẤT VẬT PHẨM (Contextual Item Loss Logic):** Đừng chỉ tìm kiếm từ khóa 'cho' hay 'tặng'. Hãy phân tích HÀNH ĐỘNG và KẾT QUẢ của tình huống:
+    - **Câu hỏi cốt lõi:** "Sau hành động này, vật phẩm có còn nằm trong quyền kiểm soát của Người Chơi không?"
+    - **Các trường hợp áp dụng (Bao gồm cả Tiếng Việt & Hán Việt):**
+        - Chuyển giao vĩnh viễn: Tặng, biếu, cho, nhường, cúng dường, bố thí, lì xì, trao tay...
+        - Vứt bỏ/Tiêu hủy: Ném đi, vứt, đánh rơi, làm mất, tiêu hủy, đốt, uống (dược phẩm), ăn...
+        - Giao dịch: Bán, đổi, gán nợ...
+    - **Ngoại lệ (KHÔNG gắn thẻ):**
+        - Cho mượn (vẫn sẽ đòi lại).
+        - Đưa cho xem (chỉ là hành động cầm tạm).
+        - Cất vào kho (vẫn thuộc sở hữu).
+    - **CHỈ THỊ:** Nếu câu trả lời cho câu hỏi cốt lõi là **KHÔNG**, bạn BẮT BUỘC phải xuất thẻ [ITEM_REMOVE] ngay lập tức.
 *   **Cột mốc:**
     [MILESTONE_UPDATE: name="Cảnh Giới Tu Luyện", value="Trúc Cơ Kỳ"] (Dùng khi nhân vật thăng cấp, thay đổi Cột mốc)
 *   **Trạng thái:**
@@ -70,11 +81,12 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
 [SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."]
 [QUEST_NEW: name="Tìm kho báu", description="Tìm kho báu được giấu trong Hang Sói."]
 [QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]
-[NPC_NEW: name="Lão Ăn Mày", description="Một ông lão bí ẩn...", personality="Khôn ngoan"]
-[NPC_UPDATE: name="Lão Ăn Mày", thoughtsOnPlayer="Bắt đầu cảm thấy nghi ngờ bạn."]
-[LOCATION_DISCOVERED: name="Hang Sói", description="Một hang động tối tăm."]
-[LORE_DISCOVERED: name="Lời Tiên Tri Cổ", description="Lời tiên tri về người anh hùng..."]
-[COMPANION_NEW: name="Sói Con", description="Một con sói nhỏ đi theo bạn.", personality="Trung thành"]
+[NPC_NEW: name="Lão Ăn Mày", description="Một ông lão bí ẩn...", personality="Khôn ngoan", tags="bí ẩn"]
+[NPC_UPDATE: name="Lão Ăn Mày", thoughtsOnPlayer="Bắt đầu cảm thấy nghi ngờ bạn.", physicalState="Tay trái của ông ta bị gãy."]
+[FACTION_UPDATE: name="Hắc Long Bang", description="Một bang phái tà ác.", tags="tà ác"]
+[LOCATION_DISCOVERED: name="Hang Sói", description="Một hang động tối tăm.", tags="nguy hiểm"]
+[LORE_DISCOVERED: name="Lời Tiên Tri Cổ", description="Lời tiên tri về người anh hùng...", tags="lịch sử, quan trọng"]
+[COMPANION_NEW: name="Sói Con", description="Một con sói nhỏ đi theo bạn.", personality="Trung thành", tags="động vật"]
 [COMPANION_REMOVE: name="Sói Con"]
 [MEMORY_ADD: content="Một ký ức cốt lõi mới rất quan trọng."]
 
@@ -105,7 +117,7 @@ ${JSON.stringify(config, null, 2)}`;
     *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`[REPUTATION_TIERS_SET]\`) phù hợp với thế giới.
     *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`[WORLD_TIME_SET]\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
-    *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`[ITEM_DEFINED]\`, \`[NPC_NEW]\`) VÀ thẻ sở hữu (\`[ITEM_ADD]\`).
+    *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`[ITEM_ADD]\`, \`[NPC_NEW]\`).
 
 **OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) duy nhất, bao gồm cả phần tường thuật và phần thẻ dữ liệu.`;
 
@@ -135,7 +147,7 @@ ${academicSandboxProtocol}
     return { prompt: fullPrompt, systemInstruction: undefined };
 };
 
-export const getNextTurnPrompt = (gameState: GameState, fullContext: any, relevantKnowledge: string, relevantMemories: string) => {
+export const getNextTurnPrompt = (gameState: GameState, fullContext: any, relevantKnowledge: string, relevantMemories: string, codeExtractedTime?: TimePassed) => {
     const { worldConfig, history, worldTime, reputation, reputationTiers, character, season, weather } = gameState;
     const gmInstruction = getGameMasterSystemInstruction(worldConfig);
     const tagInstructions = getTagInstructions();
@@ -150,23 +162,62 @@ export const getNextTurnPrompt = (gameState: GameState, fullContext: any, releva
     const memoryFlagContext = buildNpcMemoryFlagContext(gameState, playerActionContent);
     const lengthDirective = getResponseLengthDirective(worldConfig.aiResponseLength);
     
-    const worldStateContext = `--- BỐI CẢNH TOÀN DIỆN ---
-${memoryFlagContext}*   **Thời gian & Môi trường hiện tại:** ${String(worldTime.hour).padStart(2, '0')}:${String(worldTime.minute).padStart(2, '0')} (Ngày ${worldTime.day}/${worldTime.month}/${worldTime.year}). Mùa: ${season}. Thời tiết: ${weather}.
-*   **Thông tin Cốt lõi:**
-    ${JSON.stringify({
+    const worldStateContextParts: string[] = ['--- BỐI CẢNH TOÀN DIỆN ---'];
+
+    // Lớp 1: Dữ liệu Ưu tiên (Trạng thái Vật lý & Hồ sơ Tương tác)
+    let physicalStateContext = '';
+    if (fullContext.encounteredNPCs && Array.isArray(fullContext.encounteredNPCs)) {
+        for (const npc of fullContext.encounteredNPCs) {
+            if (npc.physicalState) {
+                physicalStateContext += `\n*   GHI NHỚ VẬT LÝ VỀ ${npc.name}: ${npc.physicalState}`;
+            }
+        }
+    }
+    if (physicalStateContext) {
+        worldStateContextParts.push(`--- DỮ LIỆU CỨNG VỀ TRẠNG THÁI VẬT LÝ ---${physicalStateContext}\n--- KẾT THÚC DỮ LIỆU CỨNG ---`);
+    }
+
+    worldStateContextParts.push(memoryFlagContext); // Dữ liệu cứng về Mối quan hệ
+    worldStateContextParts.push(relevantMemories); // Hồ sơ Tương tác hoặc Ký ức RAG
+
+    // Lớp 2: RAG cho Kiến thức Nền
+    worldStateContextParts.push(`*   Kiến thức Nền liên quan:\n    ${relevantKnowledge || "Không có."}`);
+
+    // Lớp 3: Dữ liệu Nền (Trạng thái cốt lõi & Bách khoa)
+    const coreInfo = {
         worldConfig: { storyContext: worldConfig.storyContext, difficulty: worldConfig.difficulty, coreRules: worldConfig.coreRules, temporaryRules: worldConfig.temporaryRules, aiResponseLength: worldConfig.aiResponseLength },
         character: { name: character.name, gender: character.gender, bio: character.bio, motivation: character.motivation, personality: character.personality === 'Tuỳ chỉnh' ? character.customPersonality : character.personality, stats: character.stats, milestones: character.milestones },
         reputation: { ...reputation, reputationTiers },
-    }, null, 2)}
-*   **Bách Khoa Toàn Thư (Toàn bộ các thực thể đã gặp):**
-    ${Object.keys(fullContext).length > 0 ? JSON.stringify(fullContext, null, 2) : "Chưa gặp thực thể nào."}
-*   **Kiến thức Nền liên quan:**
-    ${relevantKnowledge || "Không có."}
-*   **Bối cảnh Lịch sử & Ký ức được truy xuất (RAG):**
-    ${relevantMemories || "Không có."}
-*   **Diễn biến gần đây nhất:**
-    ${recentHistoryForPrompt}
---- KẾT THÚC BỐI CẢNH ---`;
+    };
+    worldStateContextParts.push(`*   Thông tin Cốt lõi:\n    ${JSON.stringify(coreInfo, null, 2)}`);
+    worldStateContextParts.push(`*   Bách Khoa Toàn Thư (Các thực thể liên quan khác):\n    ${Object.keys(fullContext).length > 0 ? JSON.stringify(fullContext, null, 2) : "Chưa gặp thực thể nào."}`);
+    
+    // Thông tin Môi trường & Lịch sử gần
+    worldStateContextParts.push(`*   Thời gian & Môi trường hiện tại: ${String(worldTime.hour).padStart(2, '0')}:${String(worldTime.minute).padStart(2, '0')} (Ngày ${worldTime.day}/${worldTime.month}/${worldTime.year}). Mùa: ${season}. Thời tiết: ${weather}.`);
+    worldStateContextParts.push(`*   Diễn biến gần đây nhất:\n    ${recentHistoryForPrompt}`);
+
+    const worldStateContext = worldStateContextParts.join('\n\n') + '\n--- KẾT THÚC BỐI CẢNH ---';
+
+
+    let timeHint = '';
+    if (codeExtractedTime && Object.keys(codeExtractedTime).length > 0) {
+        const parts = [];
+        if (codeExtractedTime.years) parts.push(`${codeExtractedTime.years} năm`);
+        if (codeExtractedTime.months) parts.push(`${codeExtractedTime.months} tháng`);
+        if (codeExtractedTime.days) parts.push(`${codeExtractedTime.days} ngày`);
+        if (codeExtractedTime.hours) parts.push(`${codeExtractedTime.hours} giờ`);
+        if (codeExtractedTime.minutes) parts.push(`${Math.round(codeExtractedTime.minutes)} phút`);
+        
+        if (parts.length > 0) {
+            const timeParams = Object.entries(codeExtractedTime)
+                .map(([key, value]) => `${key}=${Math.round(value as number)}`)
+                .join(', ');
+
+            timeHint = `
+*** LƯU Ý QUAN TRỌNG TỪ HỆ THỐNG (ƯU TIÊN TUYỆT ĐỐI): Người chơi đã xác định hành động kéo dài chính xác: ${parts.join(', ')}. Bạn PHẢI viết thẻ [TIME_PASS] khớp với thời gian này. Ví dụ thẻ cần tạo: \`[TIME_PASS: ${timeParams}]\` ***
+`;
+        }
+    }
 
     const taskInstructions = `**YÊU CẦU CỦA BẠN:**
 
@@ -195,6 +246,7 @@ ${memoryFlagContext}*   **Thời gian & Môi trường hiện tại:** ${String(
 
 --- NHIỆM VỤ ---
 ${taskInstructions}
+${timeHint}
 --- KẾT THÚC NHIỆM VỤ ---
 
 --- QUY TẮC HỆ THỐNG & GHI ĐÈ AN TOÀN ---

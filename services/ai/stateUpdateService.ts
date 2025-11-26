@@ -1,10 +1,11 @@
 import { generateJson } from '../core/geminiClient';
-import { GameState, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse, EncyclopediaOptimizationResponse, EncyclopediaData } from '../../types';
+import { GameState, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../../types';
 import { 
     getDynamicStateUpdatePrompt, 
     getEncyclopediaUpdatePrompt, 
     getCharacterStateUpdatePrompt,
-    getOptimizeEncyclopediaPrompt,
+    getCategoryNormalizationPrompt,
+    getEntityDeduplicationPrompt,
     analyticalCallConfig
 } from '../../prompts/analysisPrompts';
 
@@ -43,12 +44,33 @@ export const updateCharacterStateFromNarration = async (gameState: GameState, la
     }
 };
 
-export const optimizeEncyclopediaWithAI = (gameState: GameState): Promise<EncyclopediaOptimizationResponse> => {
-    const { encounteredNPCs, encounteredFactions, discoveredEntities, inventory, companions, quests, character } = gameState;
-    const { skills } = character;
-    const dataToOptimize: EncyclopediaData = { encounteredNPCs, encounteredFactions, discoveredEntities, inventory, companions, quests, skills };
-    
-    const { prompt, schema } = getOptimizeEncyclopediaPrompt(dataToOptimize);
+export const normalizeCategoriesWithAI = async (allEntities: { name: string, customCategory?: string }[]): Promise<Record<string, string>> => {
+    const customCategories = [...new Set(allEntities.map(e => e.customCategory).filter(Boolean) as string[])];
+    if (customCategories.length === 0) {
+        return {};
+    }
 
-    return generateJson<EncyclopediaOptimizationResponse>(prompt, schema, undefined, 'gemini-2.5-pro');
+    const { prompt, schema } = getCategoryNormalizationPrompt(customCategories);
+    try {
+        const result = await generateJson<{ categoryMap: Record<string, string> }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
+        return result.categoryMap || {};
+    } catch (error) {
+        console.error("Lỗi khi chuẩn hóa category bằng AI:", error);
+        throw error; // Ném lỗi ra để component có thể xử lý
+    }
+};
+
+export const deduplicateEntitiesInCategoryWithAI = async (entities: { name: string; id: string }[]): Promise<Record<string, string>> => {
+    if (entities.length < 2) {
+        return {};
+    }
+
+    const { prompt, schema } = getEntityDeduplicationPrompt(entities);
+    try {
+        const result = await generateJson<{ deduplicationMap: Record<string, string> }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
+        return result.deduplicationMap || {};
+    } catch (error) {
+        console.error("Lỗi khi gộp trùng lặp thực thể bằng AI:", error);
+        throw error; // Ném lỗi ra để component có thể xử lý
+    }
 };

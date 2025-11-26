@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
-import { getSeason, generateWeather } from '../utils/timeUtils';
+import { getSeason, generateWeather, extractTimePassedFromText } from '../utils/timeUtils';
 import Button from './common/Button';
 import Icon from './common/Icon';
 import TemporaryRulesModal from './TemporaryRulesModal';
@@ -240,9 +240,46 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         }
     }
   }, [gameState]);
+
+  const compressDossiersForTurn = useCallback(async (currentState: GameState, lastAction: GameTurn, lastNarration: GameTurn) => {
+    const allKnownNpcNames = new Set([
+        ...(currentState.encounteredNPCs || []).map(n => n.name.toLowerCase()),
+        ...(currentState.companions || []).map(c => c.name.toLowerCase()),
+        ...(currentState.worldConfig.initialEntities || []).filter(e => e.type === 'NPC').map(e => e.name.toLowerCase())
+    ]);
+    const involvedNpcs = new Set<string>();
+
+    allKnownNpcNames.forEach(npcName => {
+        if (lastAction.content.toLowerCase().includes(npcName) || lastNarration.content.toLowerCase().includes(npcName)) {
+            involvedNpcs.add(npcName);
+        }
+    });
+
+    if (involvedNpcs.size > 0) {
+        let stateToCompress = currentState;
+        let wasCompressed = false;
+        for (const npcName of involvedNpcs) {
+            const originalNpc = [...(stateToCompress.encounteredNPCs || []), ...(stateToCompress.companions || [])].find(n => n.name.toLowerCase() === npcName);
+            if (originalNpc) {
+                const stateBefore = stateToCompress;
+                stateToCompress = await aiService.compressNpcDossier(stateToCompress, originalNpc.name);
+                if (stateBefore !== stateToCompress) { // Simple reference check
+                    wasCompressed = true;
+                }
+            }
+        }
+        if (wasCompressed) {
+            setGameState(stateToCompress); // Update state with compressed data
+            await gameService.saveGame(stateToCompress, 'auto');
+        }
+    }
+  }, []);
   
   const handleActionSubmit = useCallback(async (actionContent: string) => {
     if (!actionContent.trim() || isLoading) return;
+
+    // Bước 1: Trích xuất thời gian từ input của người chơi bằng code
+    const extractedTime: TimePassed = extractTimePassedFromText(actionContent, gameState.worldTime);
 
     const newAction: GameTurn = { type: 'action', content: actionContent.trim().replace(/<[^>]*>/g, '') };
     
@@ -256,10 +293,11 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
-        const { narration, tags } = await aiService.getNextTurn(tempGameState);
+        // Bước 2: Truyền thời gian đã trích xuất vào dịch vụ AI
+        const { narration, tags } = await aiService.getNextTurn(tempGameState, extractedTime);
+        const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
 
         setGameState(prev => {
-            const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
             
             // 1. Thêm lượt tường thuật mới vào lịch sử
             const stateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
@@ -296,13 +334,18 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             if (involvedNpcs.size > 0) {
                 if (!finalState.npcDossiers) finalState.npcDossiers = {};
                 involvedNpcs.forEach(npcNameKey => {
-                    if (!finalState.npcDossiers![npcNameKey]) finalState.npcDossiers![npcNameKey] = [];
+                    if (!finalState.npcDossiers![npcNameKey]) {
+                        finalState.npcDossiers![npcNameKey] = { fresh: [], archived: [] };
+                    }
                     const dossier = finalState.npcDossiers![npcNameKey];
-                    if (!dossier.includes(lastActionIndex)) dossier.push(lastActionIndex);
-                    if (!dossier.includes(lastNarrationIndex)) dossier.push(lastNarrationIndex);
+                    if (!dossier.fresh.includes(lastActionIndex)) dossier.fresh.push(lastActionIndex);
+                    if (!dossier.fresh.includes(lastNarrationIndex)) dossier.fresh.push(lastNarrationIndex);
                 });
             }
 
+            // Lên lịch nén hồ sơ như một tác vụ nền
+            compressDossiersForTurn(finalState, newAction, narrationTurn);
+            
             // 6. Lưu game và trả về trạng thái cuối cùng
             gameService.saveGame(finalState, 'auto');
             return finalState;
@@ -337,7 +380,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     } finally {
       setIsLoading(false);
     }
-  }, [gameState, isLoading, narrationTurns]);
+  }, [gameState, isLoading, narrationTurns, compressDossiersForTurn]);
   
   const startGame = useCallback(async () => {
     if (gameState.history.length > 0) {
@@ -512,8 +555,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   };
   const handleNarrationContainerClick = (e: React.MouseEvent<HTMLDivElement>) => { if ((e.target as HTMLElement).tagName.toLowerCase() !== 'button') handleOpenStoryLog(); };
   const handleDeleteStatus = (statusName: string) => { if (confirm(`Bạn có chắc muốn xóa trạng thái "${statusName}" không?`)) setGameState(prev => { const newStatus = prev.playerStatus.filter(s => s.name.trim().toLowerCase() !== statusName.trim().toLowerCase()); const newState = { ...prev, playerStatus: newStatus }; gameService.saveGame(newState, 'auto'); return newState; }); };
+  
+  // Logic xóa "cứng" (khỏi mọi nơi)
   const handleDeleteEntity = useCallback((entityToDelete: { name: string }) => {
-    if (!confirm(`Bạn có chắc muốn xóa "${entityToDelete.name}" không? Thao tác này sẽ xóa mục này khỏi mọi nơi trong game.`)) return;
+    if (!confirm(`Bạn có chắc muốn xóa "${entityToDelete.name}" không? Thao tác này sẽ xóa mục này khỏi mọi nơi trong game (túi đồ, kỹ năng, bách khoa...).`)) return;
     setGameState(prev => {
         const nameToDelete = entityToDelete.name.toLowerCase();
         const newState = JSON.parse(JSON.stringify(prev));
@@ -529,6 +574,25 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         return newState;
     });
   }, []);
+  
+  // Logic xóa "mềm" (chỉ khỏi bách khoa)
+  const handleDeleteFromEncyclopedia = useCallback((entityToDelete: { name: string }) => {
+    if (!confirm(`Hành động này chỉ xóa thông tin trong Bách Khoa, không ảnh hưởng đến vật phẩm/kỹ năng của nhân vật. Bạn có chắc muốn xóa '${entityToDelete.name}' không?`)) return;
+    setGameState(prev => {
+        const nameToDelete = entityToDelete.name.toLowerCase();
+        const newState = JSON.parse(JSON.stringify(prev));
+        // KHÔNG xóa khỏi inventory hoặc skills
+        newState.encounteredNPCs = (newState.encounteredNPCs || []).filter((npc: EncounteredNPC) => npc.name.toLowerCase() !== nameToDelete);
+        newState.companions = (newState.companions || []).filter((c: Companion) => c.name.toLowerCase() !== nameToDelete);
+        newState.quests = (newState.quests || []).filter((q: Quest) => q.name.toLowerCase() !== nameToDelete);
+        newState.encounteredFactions = (newState.encounteredFactions || []).filter((f: EncounteredFaction) => f.name.toLowerCase() !== nameToDelete);
+        newState.discoveredEntities = (newState.discoveredEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
+        newState.worldConfig.initialEntities = (newState.worldConfig.initialEntities || []).filter((e: InitialEntity) => e.name.toLowerCase() !== nameToDelete);
+        gameService.saveGame(newState, 'auto');
+        return newState;
+    });
+  }, []);
+
   const handleCompanionClick = useCallback((companion: Companion) => setEntityModalContent({ title: companion.name, description: companion.description + (companion.personality ? `\n\nTính cách: ${companion.personality}` : ''), type: 'Đồng hành' }), []);
   const handleQuestClick = useCallback((quest: Quest) => setEntityModalContent({ title: quest.name, description: quest.description, type: 'Nhiệm Vụ' }), []);
   const handleDeleteQuest = useCallback((questName: string) => { if (confirm(`Bạn có chắc muốn từ bỏ nhiệm vụ "${questName}" không?`)) setGameState(prev => { const newQuests = prev.quests.filter(q => q.name !== questName); const newState = { ...prev, quests: newQuests }; gameService.saveGame(newState, 'auto'); return newState; }); }, []);
@@ -660,7 +724,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       <MemoryModal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} memories={gameState.memories} summaries={gameState.summaries} />
       <StoryLogModal isOpen={isStoryLogModalOpen} onClose={() => setIsStoryLogModalOpen(false)} history={currentTurns} title={`Diễn Biến Trang ${currentPage + 1}/${totalPages}`} initialScrollTop={storyLogInitialScrollTop} />
       <InformationModal isOpen={isInformationModalOpen} onClose={() => setIsInformationModalOpen(false)} gameState={gameState} onDeleteEntity={handleDeleteEntity} />
-      <EncyclopediaModal isOpen={isEncyclopediaModalOpen} onClose={() => setIsEncyclopediaModalOpen(false)} gameState={gameState} setGameState={setGameState} onDeleteEntity={handleDeleteEntity} />
+      <EncyclopediaModal isOpen={isEncyclopediaModalOpen} onClose={() => setIsEncyclopediaModalOpen(false)} gameState={gameState} setGameState={setGameState} onDeleteEntity={handleDeleteFromEncyclopedia} />
       <EntityInfoModal isOpen={!!entityModalContent} onClose={() => setEntityModalContent(null)} title={entityModalContent?.title || null} description={entityModalContent?.description || null} type={entityModalContent?.type || null} details={entityModalContent?.details || undefined} />
       <StatusHubModal isOpen={isStatusHubOpen} onClose={() => setIsStatusHubOpen(false)} statuses={gameState.playerStatus} companions={gameState.companions} quests={gameState.quests} onSelectStatus={handleEntityClick} onDeleteStatus={handleDeleteStatus} onSelectCompanion={handleCompanionClick} onSelectQuest={handleQuestClick} onDeleteQuest={handleDeleteQuest} />
 

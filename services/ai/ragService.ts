@@ -4,7 +4,8 @@ import {
     getRetrieveRelevantSummariesPrompt,
     getRetrieveRelevantKnowledgePrompt,
     getDistillKnowledgePrompt,
-    getContextualizePrompt
+    getContextualizePrompt,
+    getSummarizeNpcDossierPrompt
 } from '../../prompts/analysisPrompts';
 import { buildBackgroundKnowledgePrompt } from '../../prompts/worldCreationPrompts';
 import { isFandomDataset, extractCleanTextFromDataset } from '../../utils/datasetUtils';
@@ -16,6 +17,7 @@ import { buildNsfwPayload } from '../../utils/promptBuilders';
 import * as dbService from '../dbService';
 
 const DEBUG_MODE = true;
+const DOSSIER_FRESH_LIMIT = 20; // Số lượt tương tác gần nhất được giữ nguyên văn
 
 export async function generateSummary(turns: GameTurn[], worldConfig: WorldConfig): Promise<string> {
     if (turns.length === 0) return "";
@@ -39,6 +41,69 @@ export async function generateSummary(turns: GameTurn[], worldConfig: WorldConfi
     const summary = await generate(prompt, systemInstruction);
     return summary.replace(/<[^>]*>/g, '');
 }
+
+export async function compressNpcDossier(gameState: GameState, npcName: string): Promise<GameState> {
+    const npcNameLower = npcName.toLowerCase();
+    const dossier = gameState.npcDossiers?.[npcNameLower];
+
+    if (!dossier || dossier.fresh.length <= DOSSIER_FRESH_LIMIT) {
+        return gameState; // Không cần nén
+    }
+    
+    // Xác định các lượt cần tóm tắt
+    const turnsToSummarizeCount = dossier.fresh.length - DOSSIER_FRESH_LIMIT;
+    const turnsToSummarizeIndices = dossier.fresh.slice(0, turnsToSummarizeCount);
+    const turnsToKeepIndices = dossier.fresh.slice(turnsToSummarizeCount);
+
+    const interactionHistoryText = turnsToSummarizeIndices
+        .map(index => gameState.history[index])
+        .filter(Boolean)
+        .map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`);
+
+    if (interactionHistoryText.length === 0) {
+        // Chỉ dọn dẹp mảng 'fresh' nếu không có gì để tóm tắt
+        const cleanedDossier = { ...dossier, fresh: turnsToKeepIndices };
+        const newState = {
+            ...gameState,
+            npcDossiers: { ...gameState.npcDossiers, [npcNameLower]: cleanedDossier }
+        };
+        return newState;
+    }
+
+    try {
+        const prompt = getSummarizeNpcDossierPrompt(npcName, interactionHistoryText);
+        const summaryText = await generate(prompt);
+        // Tách tóm tắt thành các gạch đầu dòng riêng lẻ
+        const newArchivedFacts = summaryText.split('\n').map(s => s.trim()).filter(s => s.startsWith('- ')).map(s => s.substring(2).trim());
+
+        if (newArchivedFacts.length > 0) {
+            const newDossier = {
+                fresh: turnsToKeepIndices,
+                archived: [...dossier.archived, ...newArchivedFacts]
+            };
+            
+            const newState = {
+                ...gameState,
+                npcDossiers: {
+                    ...gameState.npcDossiers,
+                    [npcNameLower]: newDossier
+                }
+            };
+            
+            if (DEBUG_MODE) {
+                console.log(`[DOSSIER COMPRESSION] Đã tóm tắt ${turnsToSummarizeCount} lượt tương tác cho ${npcName}. Thêm ${newArchivedFacts.length} sự kiện vào kho lưu trữ.`);
+            }
+
+            return newState;
+        }
+    } catch (error) {
+        console.error(`Không thể nén hồ sơ cho ${npcName}:`, error);
+    }
+    
+    // Trả về trạng thái gốc nếu có lỗi
+    return gameState;
+}
+
 
 /**
  * Enriches a given text snippet with surrounding context to make it self-contained.

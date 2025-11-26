@@ -34,11 +34,20 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
     </button>
 );
 
-type Tab = 'characters' | 'items' | 'skills' | 'factions' | 'locations' | 'quests' | 'concepts' | 'knowledge';
+const fixedTabsConfig = [
+    { key: 'characters', label: 'Nhân Vật & Đồng hành', icon: 'user' },
+    { key: 'items', label: 'Vật phẩm', icon: 'magic' },
+    { key: 'skills', label: 'Kỹ năng', icon: 'magic' },
+    { key: 'factions', label: 'Thế Lực', icon: 'world' },
+    { key: 'locations', label: 'Địa Điểm', icon: 'world' },
+    { key: 'quests', label: 'Nhiệm Vụ', icon: 'quest' },
+    { key: 'concepts', label: 'Hệ thống sức mạnh / Lore', icon: 'news' },
+    { key: 'knowledge', label: 'Kiến thức nền AI', icon: 'rules' },
+];
 
 export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, onClose, gameState, setGameState, onDeleteEntity }) => {
     const [mainView, setMainView] = useState<'browse' | 'analyze' | 'manage'>('browse');
-    const [activeTab, setActiveTab] = useState<Tab>('characters');
+    const [activeTab, setActiveTab] = useState<string>('characters');
     const [searchTerm, setSearchTerm] = useState('');
     const [activeItem, setActiveItem] = useState<AllEntities | null>(null);
     const [isEditing, setIsEditing] = useState(false);
@@ -47,37 +56,61 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     const [notification, setNotification] = useState({ isOpen: false, title: '', messages: [''] });
     const importFileRef = useRef<HTMLInputElement>(null);
 
-
-    const encyclopediaData = useMemo(() => {
-        if (!isOpen) return {
-            characters: [], items: [], skills: [], factions: [], locations: [], quests: [], concepts: [], knowledge: [],
-        };
-
-        const allInitialAndDiscovered = [...(gameState.worldConfig.initialEntities || []), ...(gameState.discoveredEntities || [])];
+    const { processedData, dynamicCategories } = useMemo(() => {
+        if (!isOpen) return { processedData: {}, dynamicCategories: [] };
         
-        const uniqueByName = <T extends { name: string }>(arr: T[]): T[] => {
-            const seen = new Set<string>();
-            return arr.filter(item => {
-                if (!item || !item.name) return false;
-                const lowerName = item.name.toLowerCase();
-                return seen.has(lowerName) ? false : seen.add(lowerName);
-            });
+        const allEntitiesFromState = (state: GameState): (AllEntities & {type?: string})[] => {
+            const all = [
+                ...(state.encounteredNPCs || []).map(e => ({ ...e, type: 'NPC' })),
+                ...(state.companions || []).map(e => ({ ...e, type: 'NPC' })), // Coi companion là NPC cho mục đích duyệt
+                ...(state.inventory || []).map(e => ({ ...e, type: 'Vật phẩm' })),
+                ...(state.character.skills || []).map(s => ({...s, type: 'Công pháp / Kỹ năng'})),
+                ...(state.encounteredFactions || []).map(e => ({ ...e, type: 'Phe phái/Thế lực' })),
+                ...(state.quests || []),
+                ...(state.discoveredEntities || []),
+                ...(state.worldConfig.initialEntities || [])
+            ];
+             const uniqueByName = <T extends { name: string }>(arr: T[]): T[] => {
+                const seen = new Set<string>();
+                return arr.filter(item => {
+                    if (!item || !item.name) return false;
+                    const lowerName = item.name.toLowerCase();
+                    return seen.has(lowerName) ? false : seen.add(lowerName);
+                });
+            };
+            return uniqueByName(all);
         };
 
-        const data = {
-            characters: uniqueByName([...gameState.encounteredNPCs, ...gameState.companions, ...allInitialAndDiscovered.filter(e => e.type === 'NPC')]),
-            items: uniqueByName([...gameState.inventory, ...allInitialAndDiscovered.filter(e => e.type === 'Vật phẩm')]),
-            skills: uniqueByName([...gameState.character.skills, ...allInitialAndDiscovered.filter(e => e.type === 'Công pháp / Kỹ năng')]),
-            factions: uniqueByName([...gameState.encounteredFactions, ...allInitialAndDiscovered.filter(e => e.type === 'Phe phái/Thế lực')]),
-            locations: uniqueByName(allInitialAndDiscovered.filter(e => e.type === 'Địa điểm')),
-            quests: uniqueByName(gameState.quests),
-            concepts: uniqueByName(allInitialAndDiscovered.filter(e => !['NPC', 'Vật phẩm', 'Phe phái/Thế lực', 'Địa điểm', 'Công pháp / Kỹ năng'].includes(e.type))),
+        const allEntities = allEntitiesFromState(gameState);
+
+        const baseData: Record<string, AllEntities[]> & { knowledge: KnowledgeFile[] } = {
+            characters: allEntities.filter(e => e.type === 'NPC'),
+            items: allEntities.filter(e => e.type === 'Vật phẩm'),
+            skills: allEntities.filter(e => e.type === 'Công pháp / Kỹ năng'),
+            factions: allEntities.filter(e => e.type === 'Phe phái/Thế lực'),
+            locations: allEntities.filter(e => e.type === 'Địa điểm'),
+            quests: allEntities.filter(e => (e as Quest).status),
+            concepts: allEntities.filter(e => !['NPC', 'Vật phẩm', 'Phe phái/Thế lực', 'Địa điểm', 'Công pháp / Kỹ năng'].includes(e.type || '') && !(e as Quest).status),
             knowledge: gameState.worldConfig.backgroundKnowledge || [],
         };
+
+        const dynamicCats = [...new Set(allEntities.map(e => (e as any).customCategory).filter(Boolean))].sort();
+
+        const finalData: Record<string, AllEntities[]> = { ...baseData };
+
+        dynamicCats.forEach(cat => {
+            finalData[cat] = allEntities.filter(e => (e as any).customCategory === cat);
+        });
+
+        fixedTabsConfig.forEach(tab => {
+            if (tab.key !== 'knowledge' && finalData[tab.key]) {
+                 finalData[tab.key] = finalData[tab.key].filter(e => !(e as any).customCategory);
+            }
+        });
         
-        return data;
+        return { processedData: finalData, dynamicCategories: dynamicCats };
     }, [isOpen, gameState]);
-    
+
     // Reset state on open/close or tab change
     useEffect(() => {
         if (isOpen) {
@@ -95,7 +128,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     }, [activeTab, mainView]);
 
     const filteredList = useMemo(() => {
-        let list: AllEntities[] = encyclopediaData[activeTab] || [];
+        let list: AllEntities[] = processedData[activeTab] || [];
         
         if (activeTab === 'quests') {
             list = [...list].sort((a, b) => {
@@ -107,7 +140,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
 
         if (!searchTerm) return list;
         return list.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    }, [encyclopediaData, activeTab, searchTerm]);
+    }, [processedData, activeTab, searchTerm]);
     
     const handleSelectItem = (item: AllEntities) => {
         setActiveItem(item);
@@ -136,44 +169,29 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         };
         
         setGameState(prev => {
-            const newState = { ...prev };
+            const newState = JSON.parse(JSON.stringify(prev)); // Deep copy to ensure re-render
             let updated = false;
 
-            const updateList = (list: any[]) => {
+            const updateList = (list: any[] | undefined) => {
                 if(updated || !list) return list;
                 const itemIndex = list.findIndex(item => item.name === updatedItem.name);
                 if (itemIndex > -1) {
-                    list[itemIndex] = updatedItem;
+                    list[itemIndex] = { ...list[itemIndex], ...updatedItem };
                     updated = true;
                 }
                 return list;
             };
 
-            switch(activeTab) {
-                case 'characters':
-                    newState.encounteredNPCs = updateList([...(newState.encounteredNPCs || [])]);
-                    if (!updated) newState.companions = updateList([...(newState.companions || [])]);
-                    break;
-                case 'items':
-                    newState.inventory = updateList([...(newState.inventory || [])]);
-                    break;
-                case 'skills':
-                    newState.character = {...newState.character, skills: updateList([...(newState.character.skills || [])])};
-                    break;
-                case 'factions':
-                     newState.encounteredFactions = updateList([...(newState.encounteredFactions || [])]);
-                    break;
-                case 'quests':
-                    newState.quests = updateList([...(newState.quests || [])]);
-                    break;
-                case 'locations':
-                case 'concepts':
-                    newState.discoveredEntities = updateList([...(newState.discoveredEntities || [])]);
-                    if (!updated) {
-                       newState.worldConfig = {...newState.worldConfig, initialEntities: updateList([...(newState.worldConfig.initialEntities || [])])};
-                    }
-                    break;
-            }
+            // This logic is complex, needs to check all possible locations of the entity
+            updateList(newState.encounteredNPCs);
+            updateList(newState.companions);
+            updateList(newState.inventory);
+            updateList(newState.character.skills);
+            updateList(newState.encounteredFactions);
+            updateList(newState.quests);
+            updateList(newState.discoveredEntities);
+            updateList(newState.worldConfig.initialEntities);
+            
             return newState;
         });
         
@@ -249,34 +267,151 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         }
     };
 
-
     const handleAiOptimize = async () => {
-        if (!confirm("Hành động này sẽ yêu cầu AI đọc lại toàn bộ bách khoa, hợp nhất các mục trùng lặp, tóm tắt thông tin và chuẩn hóa dữ liệu để tối ưu hóa. Quá trình này có thể thay đổi dữ liệu hiện có và sử dụng API. Bạn có muốn tiếp tục?")) {
+        if (!confirm("Hành động này sẽ thực hiện 2 bước:\n1. Chuẩn hóa các danh mục tùy chỉnh.\n2. Gộp các mục bị trùng lặp trong từng danh mục.\nQuá trình sẽ sử dụng AI và cập nhật dữ liệu Bách khoa. Bạn có muốn tiếp tục?")) {
             return;
         }
         setIsAiOptimizing(true);
+        setNotification({ isOpen: true, title: 'Đang xử lý...', messages: ['Bắt đầu quá trình chuẩn hóa Bách Khoa Toàn Thư...'] });
+    
         try {
-            const response = await aiService.optimizeEncyclopediaWithAI(gameState);
+            // --- PHASE 1: NORMALIZE CATEGORIES ---
+            setNotification({ isOpen: true, title: 'Đang xử lý...', messages: ['Bước 1/2: Đang yêu cầu AI chuẩn hóa danh mục...'] });
+    
+            const allEntitiesForCat = Object.values(processedData).flat() as { name: string, customCategory?: string }[];
+            const categoryMap = await aiService.normalizeCategoriesWithAI(allEntitiesForCat);
+    
+            let stateAfterPhase1 = gameState;
+    
+            if (Object.keys(categoryMap).length === 0) {
+                setNotification({ isOpen: true, title: 'Thông báo', messages: ['Bước 1/2: AI không tìm thấy danh mục nào cần chuẩn hóa.', 'Chuyển sang Bước 2...'] });
+            } else {
+                // Apply category updates to game state
+                setGameState(prev => {
+                    const newState = JSON.parse(JSON.stringify(prev));
+    
+                    const applyMap = (list: any[] | undefined) => {
+                        if (!list) return [];
+                        return list.map(item => {
+                            if (item.customCategory && categoryMap[item.customCategory]) {
+                                item.customCategory = categoryMap[item.customCategory];
+                            }
+                            return item;
+                        });
+                    };
+    
+                    newState.encounteredNPCs = applyMap(newState.encounteredNPCs);
+                    newState.companions = applyMap(newState.companions);
+                    newState.inventory = applyMap(newState.inventory);
+                    newState.quests = applyMap(newState.quests);
+                    newState.encounteredFactions = applyMap(newState.encounteredFactions);
+                    newState.discoveredEntities = applyMap(newState.discoveredEntities);
+                    newState.worldConfig.initialEntities = applyMap(newState.worldConfig.initialEntities);
+                    
+                    stateAfterPhase1 = newState; // Capture the updated state
+                    return newState;
+                });
+                setNotification({ isOpen: true, title: 'Thông báo', messages: [`Bước 1/2: Đã chuẩn hóa ${Object.keys(categoryMap).length} danh mục.`, 'Chuyển sang Bước 2...'] });
+            }
             
-            setGameState(prev => ({
-                ...prev,
-                encounteredNPCs: response.optimizedNPCs || prev.encounteredNPCs,
-                encounteredFactions: response.optimizedFactions || prev.encounteredFactions,
-                discoveredEntities: response.optimizedDiscoveredEntities || prev.discoveredEntities,
-                inventory: response.optimizedInventory || prev.inventory,
-                companions: response.optimizedCompanions || prev.companions,
-                quests: response.optimizedQuests || prev.quests,
-                character: {
-                    ...prev.character,
-                    skills: response.optimizedSkills || prev.character.skills,
+            // Brief pause to allow React to process the state update
+            await new Promise(resolve => setTimeout(resolve, 500));
+    
+            // --- PHASE 2: DEDUPLICATE ENTITIES ---
+            setNotification({ isOpen: true, title: 'Đang xử lý...', messages: ['Bước 2/2: Đang gộp các mục trùng lặp... (có thể mất một lúc)'] });
+    
+            const getAllEntitiesFromState = (state: GameState): AllEntities[] => {
+                 const all = [
+                    ...(state.encounteredNPCs || []), ...(state.companions || []), ...(state.inventory || []),
+                    ...(state.character.skills || []), ...(state.encounteredFactions || []), ...(state.quests || []),
+                    ...(state.discoveredEntities || []), ...(state.worldConfig.initialEntities || [])
+                ];
+                 const uniqueByName = <T extends { name: string }>(arr: T[]): T[] => {
+                    const seen = new Set<string>();
+                    return arr.filter(item => item.name && !seen.has(item.name.toLowerCase()) && seen.add(item.name.toLowerCase()));
+                };
+                return uniqueByName(all);
+            }
+    
+            const allCurrentEntities = getAllEntitiesFromState(stateAfterPhase1);
+            const finalDeduplicationMap: Record<string, string> = {};
+            
+            // Group entities by their category (both fixed and custom)
+            const groupedEntities: Record<string, AllEntities[]> = {};
+            for (const entity of allCurrentEntities) {
+                const category = (entity as any).customCategory || 'Chưa phân loại'; // A default group
+                if (!groupedEntities[category]) groupedEntities[category] = [];
+                groupedEntities[category].push(entity);
+            }
+    
+            for (const category in groupedEntities) {
+                const entitiesToDedupe = groupedEntities[category].map(e => ({ name: e.name, id: e.name }));
+                if (entitiesToDedupe.length > 1) {
+                    const groupDeduplicationMap = await aiService.deduplicateEntitiesInCategoryWithAI(entitiesToDedupe);
+                    Object.assign(finalDeduplicationMap, groupDeduplicationMap);
                 }
-            }));
-            
-            setNotification({ isOpen: true, title: 'Thành Công', messages: ['Bách Khoa Toàn Thư đã được AI tối ưu hóa thành công!'] });
+            }
+    
+            if (Object.keys(finalDeduplicationMap).length === 0) {
+                setNotification({ isOpen: true, title: 'Hoàn Tất', messages: ['Quá trình chuẩn hóa hoàn tất. Không tìm thấy mục nào cần gộp.'] });
+            } else {
+                // Apply deduplication
+                setGameState(prev => {
+                    const newState = JSON.parse(JSON.stringify(prev));
+                    const itemsToDelete = new Set(Object.keys(finalDeduplicationMap));
+                    const itemsToKeep = new Map<string, AllEntities>();
+                    const allEntities = getAllEntitiesFromState(newState);
 
+                    allEntities.forEach(item => {
+                         if (Object.values(finalDeduplicationMap).includes(item.name) || !itemsToDelete.has(item.name)) {
+                             itemsToKeep.set(item.name, item);
+                         }
+                    });
+
+                    for (const nameToDelete in finalDeduplicationMap) {
+                        const nameToKeep = finalDeduplicationMap[nameToDelete];
+                        const itemToDelete = allEntities.find(i => i.name === nameToDelete);
+                        const itemToKeep = itemsToKeep.get(nameToKeep);
+    
+                        if (itemToDelete && itemToKeep) {
+                            const descToDelete = (itemToDelete as any).description || '';
+                            const descToKeep = (itemToKeep as any).description || '';
+                            if (descToDelete.length > descToKeep.length) {
+                                (itemToKeep as any).description = descToDelete;
+                            }
+                            const mergedTags = Array.from(new Set([...((itemToKeep as any).tags || []), ...((itemToDelete as any).tags || [])]));
+                            (itemToKeep as any).tags = mergedTags;
+                            itemsToKeep.set(nameToKeep, itemToKeep);
+                        }
+                    }
+                    
+                    const updateList = (list: AllEntities[] | undefined) => {
+                        if (!list) return [];
+                        let newList = list.filter(item => !itemsToDelete.has(item.name));
+                        newList = newList.map(item => itemsToKeep.get(item.name) || item);
+                        const uniqueMap = new Map();
+                        newList.forEach(item => uniqueMap.set(item.name.toLowerCase(), item));
+                        return Array.from(uniqueMap.values());
+                    };
+    
+                    newState.encounteredNPCs = updateList(newState.encounteredNPCs);
+                    newState.companions = updateList(newState.companions);
+                    newState.inventory = updateList(newState.inventory);
+                    newState.character.skills = updateList(newState.character.skills);
+                    newState.encounteredFactions = updateList(newState.encounteredFactions);
+                    newState.quests = updateList(newState.quests);
+                    newState.discoveredEntities = updateList(newState.discoveredEntities);
+                    newState.worldConfig.initialEntities = updateList(newState.worldConfig.initialEntities);
+    
+                    return newState;
+                });
+    
+                setNotification({ isOpen: true, title: 'Hoàn Tất', messages: [`Quá trình chuẩn hóa hoàn tất. Đã gộp ${Object.keys(finalDeduplicationMap).length} mục trùng lặp.`] });
+            }
+    
         } catch (e) {
             const error = e instanceof Error ? e.message : "Lỗi không xác định";
-            setNotification({ isOpen: true, title: 'Lỗi Tối Ưu Hóa', messages: [`Lỗi khi tối ưu hóa bằng AI: ${error}`] });
+            setNotification({ isOpen: true, title: 'Lỗi Chuẩn Hóa', messages: [`Lỗi khi chuẩn hóa bằng AI: ${error}`] });
         } finally {
             setIsAiOptimizing(false);
         }
@@ -302,16 +437,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     const analysisStats = useMemo(() => {
         if (mainView !== 'analyze') return null;
 
-        const allItems: AllEntities[] = [
-            ...encyclopediaData.characters,
-            ...encyclopediaData.items,
-            ...encyclopediaData.skills,
-            ...encyclopediaData.factions,
-            ...encyclopediaData.locations,
-            ...encyclopediaData.quests,
-            ...encyclopediaData.concepts,
-            ...encyclopediaData.knowledge,
-        ];
+        const allItems: AllEntities[] = Object.entries(processedData)
+            .filter(([key]) => key !== 'knowledge')
+            .flatMap(([, value]) => value);
+
         const totalItems = allItems.length;
 
         const totalDescLength = allItems.reduce((acc, item) => {
@@ -333,7 +462,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             .join(', ');
 
         return { totalItems, avgDescLength, popularTags };
-    }, [mainView, encyclopediaData]);
+    }, [mainView, processedData]);
 
 
     if (!isOpen) return null;
@@ -378,14 +507,14 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                             <h3 className="text-lg font-semibold text-slate-300 mb-3 px-1">Mục lục</h3>
                             <div className="flex-grow overflow-y-auto pr-2">
                                 <div className="space-y-2">
-                                    <TabButton active={activeTab === 'characters'} onClick={() => setActiveTab('characters')} iconName="user">Nhân Vật & Đồng hành</TabButton>
-                                    <TabButton active={activeTab === 'items'} onClick={() => setActiveTab('items')} iconName="magic">Vật phẩm</TabButton>
-                                    <TabButton active={activeTab === 'skills'} onClick={() => setActiveTab('skills')} iconName="magic">Kỹ năng</TabButton>
-                                    <TabButton active={activeTab === 'factions'} onClick={() => setActiveTab('factions')} iconName="world">Thế Lực</TabButton>
-                                    <TabButton active={activeTab === 'locations'} onClick={() => setActiveTab('locations')} iconName="world">Địa Điểm</TabButton>
-                                    <TabButton active={activeTab === 'quests'} onClick={() => setActiveTab('quests')} iconName="quest">Nhiệm Vụ</TabButton>
-                                    <TabButton active={activeTab === 'concepts'} onClick={() => setActiveTab('concepts')} iconName="news">Hệ thống sức mạnh / Lore</TabButton>
-                                    <TabButton active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} iconName="rules">Kiến thức nền AI</TabButton>
+                                    {fixedTabsConfig.map(tab => (
+                                        (processedData[tab.key] && processedData[tab.key].length > 0) &&
+                                        <TabButton key={tab.key} active={activeTab === tab.key} onClick={() => setActiveTab(tab.key)} iconName={tab.icon}>{tab.label}</TabButton>
+                                    ))}
+                                    {dynamicCategories.length > 0 && <hr className="border-slate-700 my-3" />}
+                                    {dynamicCategories.map(cat => (
+                                        <TabButton key={cat} active={activeTab === cat} onClick={() => setActiveTab(cat)} iconName="hub">{cat}</TabButton>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -522,6 +651,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                             <label className="block text-sm font-medium text-slate-300 mb-1">Tags (phân cách bởi dấu phẩy)</label>
                                             <input type="text" value={editFormData.tags} onChange={e => handleFormChange('tags', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
                                         </div>}
+                                         {'customCategory' in editFormData && <div>
+                                            <label className="block text-sm font-medium text-slate-300 mb-1">Phân loại tùy chỉnh</label>
+                                            <input type="text" value={editFormData.customCategory || ''} onChange={e => handleFormChange('customCategory', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
+                                        </div>}
                                     </div>
                                     <div className="flex gap-4 mt-6">
                                         <Button onClick={handleSaveEdit} variant="primary" className="!w-auto !py-2 !px-4 !text-sm">Lưu Thay Đổi</Button>
@@ -589,10 +722,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                         </div>
                         
                         <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
-                            <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="magic" className="w-5 h-5"/>Tối Ưu Hóa Dữ Liệu</h3>
-                             <p className="text-sm text-slate-400 mb-4">Yêu cầu AI đọc, hợp nhất các mục trùng lặp, tóm tắt và chuẩn hóa dữ liệu để tối ưu hóa và giảm token.</p>
+                            <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="magic" className="w-5 h-5"/>Chuẩn Hóa Thông Minh</h3>
+                             <p className="text-sm text-slate-400 mb-4">Yêu cầu AI phân tích và gộp các "Phân loại tùy chỉnh" lộn xộn thành các danh mục lớn, có tổ chức hơn, sau đó gộp các thực thể trùng lặp trong từng danh mục.</p>
                             <Button onClick={handleAiOptimize} disabled={isAiOptimizing} variant="special" className="!w-auto !py-2 !px-4 !text-sm">
-                                {isAiOptimizing ? 'Đang Chuẩn Hóa...' : <><Icon name="magic" className="w-4 h-4 mr-2"/>Chuẩn Hóa</>}
+                                {isAiOptimizing ? 'Đang Chuẩn Hóa...' : <><Icon name="magic" className="w-4 h-4 mr-2"/>Bắt đầu Chuẩn Hóa</>}
                             </Button>
                              {isAiOptimizing && <p className="text-sm text-slate-400 mt-2 animate-pulse">AI đang xử lý, quá trình này có thể mất một lúc...</p>}
                         </div>

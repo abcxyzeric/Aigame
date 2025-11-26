@@ -1,6 +1,7 @@
 // utils/tagProcessors/QuestProcessor.ts
 import { GameState, Quest, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
+import { sanitizeEntityName } from '../textProcessing';
 
 /**
  * Xử lý logic thêm một nhiệm vụ mới hoặc cập nhật một nhiệm vụ đã có.
@@ -14,14 +15,16 @@ export function processQuestUpdate(currentState: GameState, params: any): { newS
         return { newState: currentState, vectorUpdates: [] };
     }
 
+    const sanitizedName = sanitizeEntityName(params.name);
     const status = params.status === 'hoàn thành' ? 'hoàn thành' : 'đang tiến hành';
-    const existingQuest = (currentState.quests || []).find(q => q.name.toLowerCase() === params.name.toLowerCase());
+    const existingQuest = (currentState.quests || []).find(q => q.name.toLowerCase() === sanitizedName.toLowerCase());
 
     const newQuestData: Quest = {
-        name: params.name,
+        name: sanitizedName,
         description: params.description || existingQuest?.description || '', // Giữ lại mô tả cũ nếu chỉ cập nhật trạng thái
         status: status,
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
+        customCategory: params.category,
     };
 
     const updatedQuests = mergeAndDeduplicateByName(currentState.quests || [], [newQuestData]);

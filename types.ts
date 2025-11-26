@@ -20,9 +20,11 @@ export interface CharacterMilestone {
 export interface InitialEntity {
   name: string;
   type: string;
-  personality: string;
+  personality?: string;
   description: string;
   tags?: string[];
+  customCategory?: string; // Phân loại động từ AI
+  locationId?: string; // Vị trí của thực thể
   details?: {
     subType?: string;
     rarity?: string;
@@ -139,6 +141,7 @@ export interface GameItem {
   description: string;
   quantity: number;
   tags?: string[];
+  customCategory?: string; // Phân loại động từ AI
   details?: {
     subType?: string;
     rarity?: string;
@@ -152,6 +155,7 @@ export interface Companion {
     description: string;
     personality?: string;
     tags?: string[];
+    customCategory?: string; // Phân loại động từ AI
 }
 
 export interface Quest {
@@ -159,6 +163,7 @@ export interface Quest {
     description: string;
     status: 'đang tiến hành' | 'hoàn thành';
     tags?: string[];
+    customCategory?: string; // Phân loại động từ AI
 }
 
 export interface EncounteredNPC {
@@ -168,12 +173,16 @@ export interface EncounteredNPC {
     thoughtsOnPlayer: string;
     tags?: string[];
     memoryFlags?: Record<string, boolean | string | number>;
+    customCategory?: string; // Phân loại động từ AI
+    locationId?: string; // Vị trí của NPC
+    physicalState?: string; // Trạng thái vật lý/ngoại hình hiện tại
 }
 
 export interface EncounteredFaction {
     name: string;
     description: string;
     tags?: string[];
+    customCategory?: string; // Phân loại động từ AI
 }
 
 export interface WorldTime {
@@ -187,6 +196,11 @@ export interface WorldTime {
 export interface Reputation {
   score: number; // -100 to 100
   tier: string;
+}
+
+export interface NpcDossier {
+  fresh: number[]; // Mảng các index trong history
+  archived: string[]; // Mảng các tóm tắt sự kiện cũ
 }
 
 export interface GameState {
@@ -208,7 +222,8 @@ export interface GameState {
   reputationTiers: string[]; // 5 tiers from most infamous to most famous
   season: string;
   weather: string;
-  npcDossiers?: Record<string, number[]>; // Hồ sơ tương tác với NPC, key là tên NPC (lowercase), value là mảng các index trong history
+  npcDossiers?: Record<string, NpcDossier>; // Hồ sơ tương tác với NPC, key là tên NPC (lowercase)
+  currentLocationId?: string; // Vị trí hiện tại của người chơi
 }
 
 export interface SaveSlot extends GameState {

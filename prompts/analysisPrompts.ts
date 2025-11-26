@@ -1,5 +1,5 @@
 import { Type } from "@google/genai";
-import { AiPerformanceSettings, EncyclopediaData, GameState, GameTurn } from "../types";
+import { AiPerformanceSettings, EncyclopediaData, GameState, GameTurn } from "../../types";
 
 export const analyticalCallConfig: Partial<AiPerformanceSettings> = { maxOutputTokens: 8192, thinkingBudget: 1000 };
 
@@ -7,6 +7,14 @@ export const getGenerateSummaryPrompt = (turns: GameTurn[]): string => {
     if (turns.length === 0) return "";
     const historyText = turns.map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
     return `Bạn là một AI trợ lý ghi chép. Dựa vào đoạn hội thoại và diễn biến sau, hãy viết một đoạn tóm tắt ngắn gọn (3-4 câu) về các sự kiện chính, các nhân vật mới xuất hiện, và các thông tin quan trọng đã được tiết lộ. Tóm tắt này sẽ được dùng làm ký ức dài hạn.\n\n--- LỊCH SỬ CẦN TÓM TẮT ---\n${historyText}`;
+};
+
+export const getSummarizeNpcDossierPrompt = (npcName: string, interactionHistory: string[]): string => {
+    const historyText = interactionHistory.join('\n- ');
+    return `Bạn là một AI trợ lý ghi chép. Dưới đây là một đoạn lịch sử tương tác cũ giữa người chơi và nhân vật "${npcName}":
+- ${historyText}
+
+Nhiệm vụ: Hãy tóm tắt những sự kiện, thông tin, hoặc lời hứa quan trọng nhất từ lịch sử này thành các gạch đầu dòng ngắn gọn. Những tóm tắt này sẽ được dùng làm "ký ức lưu trữ" cho NPC. Chỉ trả về các gạch đầu dòng, không thêm lời dẫn.`;
 };
 
 export const getContextualizePrompt = (textToContextualize: string, surroundingContext: string) => {
@@ -164,7 +172,7 @@ export const getDynamicStateUpdatePrompt = (gameState: GameState, lastNarration:
 
 export const getEncyclopediaUpdatePrompt = (gameState: GameState, lastNarration: string) => {
     const { encounteredNPCs, encounteredFactions, discoveredEntities } = gameState;
-    const npcSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, thoughtsOnPlayer: { type: Type.STRING } }, required: ['name', 'description'] };
+    const npcSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, thoughtsOnPlayer: { type: Type.STRING } }, required: ['name', 'description', 'personality', 'thoughtsOnPlayer'] };
     const factionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
     const entitySchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, type: { type: Type.STRING }, personality: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'type', 'description'] };
     const schema = {
@@ -205,66 +213,27 @@ export const getCharacterStateUpdatePrompt = (gameState: GameState, lastNarratio
     return { prompt, schema };
 };
 
-export const getOptimizeEncyclopediaPrompt = (dataToOptimize: EncyclopediaData) => {
-    const npcSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, thoughtsOnPlayer: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'personality', 'thoughtsOnPlayer'] };
-    const factionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description'] };
-    const entitySchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, type: { type: Type.STRING }, personality: { type: Type.STRING }, description: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'type', 'description'] };
-    const itemSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, quantity: { type: Type.NUMBER }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'quantity'] };
-    const companionSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, personality: { type: Type.STRING }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description'] };
-    const questSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING }, status: { type: Type.STRING, enum: ['đang tiến hành', 'hoàn thành'] }, tags: { type: Type.ARRAY, items: { type: Type.STRING } } }, required: ['name', 'description', 'status'] };
-    const skillSchema = { type: Type.OBJECT, properties: { name: { type: Type.STRING }, description: { type: Type.STRING } }, required: ['name', 'description'] };
+export const getCategoryNormalizationPrompt = (categories: string[]) => {
     const schema = {
-        type: Type.OBJECT, properties: {
-            optimizedNPCs: { type: Type.ARRAY, description: "Danh sách NPC đã được tối ưu hóa.", items: npcSchema },
-            optimizedFactions: { type: Type.ARRAY, description: "Danh sách phe phái đã được tối ưu hóa.", items: factionSchema },
-            optimizedDiscoveredEntities: { type: Type.ARRAY, description: "Danh sách các thực thể khác đã được tối ưu hóa.", items: entitySchema },
-            optimizedInventory: { type: Type.ARRAY, description: "Danh sách vật phẩm đã được tối ưu hóa.", items: itemSchema },
-            optimizedCompanions: { type: Type.ARRAY, description: "Danh sách đồng hành đã được tối ưu hóa.", items: companionSchema },
-            optimizedQuests: { type: Type.ARRAY, description: "Danh sách nhiệm vụ đã được tối ưu hóa.", items: questSchema },
-            optimizedSkills: { type: Type.ARRAY, description: "Danh sách kỹ năng đã được tối ưu hóa.", items: skillSchema },
-        }, required: ['optimizedNPCs', 'optimizedFactions', 'optimizedDiscoveredEntities', 'optimizedInventory', 'optimizedCompanions', 'optimizedQuests', 'optimizedSkills']
+        type: Type.OBJECT,
+        properties: {
+            categoryMap: {
+                type: Type.OBJECT,
+                description: "Một đối tượng map, với key là category cũ và value là category mới đã được chuẩn hóa. Chỉ bao gồm các category cần thay đổi.",
+                additionalProperties: { type: Type.STRING },
+            }
+        },
+        required: ['categoryMap']
     };
-    const prompt = `Bạn là một Biên tập viên Dữ liệu AI chuyên nghiệp, có khả năng suy luận và phân tích sâu. Nhiệm vụ của bạn là "dọn dẹp", "hợp nhất" và "chuẩn hóa" toàn bộ dữ liệu Bách Khoa Toàn Thư của một game nhập vai để đảm bảo tính chính xác và nhất quán.
 
-Dữ liệu đầu vào (có thể chứa lỗi, trùng lặp và rác):
-${JSON.stringify(dataToOptimize, null, 2)}
+    const prompt = `Bạn là một AI tổ chức dữ liệu. Dưới đây là danh sách các "phân loại tùy chỉnh" (custom categories) từ một bách khoa toàn thư trong game:
+${JSON.stringify(categories)}
 
---- QUY TRÌNH XỬ LÝ BẮT BUỘC ---
+Nhiệm vụ của bạn là chuẩn hóa chúng. Hãy gộp các phân loại có ý nghĩa tương tự vào một phân loại lớn hơn, súc tích và hợp lý.
+Ví dụ: gộp 'Mạng Xã Hội', 'App', 'Website' thành 'Nền Tảng Số'. Gộp 'Dược thảo', 'Linh dược' thành 'Dược Liệu'.
 
-**0. BẢO TOÀN DANH MỤC (CATEGORY PRESERVATION - TỐI QUAN TRỌNG):**
-    *   **Mục tiêu:** Đảm bảo mỗi thực thể được giữ nguyên trong danh mục gốc của nó.
-    *   **Quy tắc:** Một thực thể được cung cấp trong danh sách \`inventory\` (vật phẩm) thì sau khi xử lý, nó BẮT BUỘC phải nằm trong danh sách \`optimizedInventory\`. Tương tự, một \`quest\` phải nằm trong \`optimizedQuests\`, một \`encounteredNPC\` phải nằm trong \`optimizedNPCs\`.
-    *   **TUYỆT ĐỐI CẤM:** Bạn không được phép di chuyển một thực thể từ danh mục này sang danh mục khác. Ví dụ: không được biến một vật phẩm thành một nhiệm vụ.
+Trả về một đối tượng JSON duy nhất chứa một trường "categoryMap". "categoryMap" này là một đối tượng map, với key là category cũ và value là category mới đã được chuẩn hóa. CHỈ bao gồm các category cần thay đổi. Nếu một category đã ổn, không cần đưa vào map. Nếu không có gì cần thay đổi, trả về một map rỗng.`;
 
-**GIAI ĐOẠN 1: HỢP NHẤT VÀ LÀM SẠCH (MERGE & CLEANUP PHASE)**
-
-1.  **Quét trùng lặp mờ (Fuzzy Deduplication - CỰC KỲ QUAN TRỌNG):**
-    *   **Mục tiêu:** Tìm và hợp nhất các mục đang nói về CÙNG MỘT thực thể nhưng có tên khác nhau.
-    *   **Quy trình:** Quét qua TẤT CẢ các mục trong mỗi danh sách (NPCs, Factions, v.v.).
-    *   **Điều kiện hợp nhất:**
-        a.  Tên của mục A là một phần của tên mục B (hoặc ngược lại). Ví dụ: "Lộ Na" và "Huấn luyện viên Lộ Na", "Đức" và "HLV Đức", "Thanh kiếm" và "Thanh kiếm Cổ".
-        b.  **VÀ** mô tả, vai trò, hoặc bối cảnh của chúng cho thấy rõ ràng chúng là cùng một thực thể.
-    *   **Hành động:** Nếu cả hai điều kiện trên đều đúng, bạn BẮT BUỘC phải hợp nhất chúng thành MỘT mục duy nhất.
-    *   **Luật hợp nhất:**
-        *   **Giữ lại tên đầy đủ nhất:** Luôn giữ lại cái tên có nhiều thông tin hơn (VD: giữ "Huấn luyện viên Lộ Na", bỏ "Lộ Na").
-        *   **Tổng hợp thông tin:** Kết hợp mô tả, tính cách, và các thông tin khác từ tất cả các mục bị trùng lặp để tạo ra một mô tả đầy đủ và chi tiết nhất cho mục đã hợp nhất.
-
-2.  **Lọc rác (Sanitization):**
-    *   **Mục tiêu:** Loại bỏ các mục không hợp lệ.
-    *   **Quy trình:** Sau khi đã hợp nhất, hãy rà soát lại toàn bộ danh sách một lần nữa.
-    *   **Điều kiện xóa:** Nếu bạn phát hiện bất kỳ mục nào rõ ràng KHÔNG phải là một thực thể trong game (ví dụ: tên là một động từ như 'Chạy trốn', một cảm xúc như 'Buồn bã', một bộ phận cơ thể như 'Cánh tay', hoặc một danh từ chung không có định danh cụ thể như 'Cái cây', 'Viên đá').
-    *   **Hành động:** BẠN BẮT BUỘC phải **XÓA BỎ HOÀN TOÀN** mục đó khỏi danh sách kết quả cuối cùng.
-
-**GIAI ĐOẠN 2: CHUẨN HÓA VÀ LÀM GIÀU (STANDARDIZE & ENRICH PHASE)**
-
-Sau khi đã làm sạch, hãy xử lý các mục còn lại:
-1.  **Chuẩn hóa tên:** Viết hoa chữ cái đầu của tất cả các tên một cách nhất quán.
-2.  **Làm giàu mô tả:** Dựa vào thông tin tổng thể, hãy viết lại các mô tả một cách súc tích hơn nhưng vẫn giữ đầy đủ ý, hoặc bổ sung thêm chi tiết nếu cần để làm rõ vai trò của thực thể.
-3.  **Phân loại Tags:** Xem xét lại và chuẩn hóa các 'tags' cho mỗi mục. Xóa các tags không liên quan và thêm các tags phù hợp nếu thiếu.
-4.  **Giữ nguyên số lượng:** Nếu một vật phẩm trong \`inventory\` có số lượng (quantity), hãy giữ nguyên số lượng đó.
-
---- KẾT QUẢ ĐẦU RA ---
-Trả về một đối tượng JSON duy nhất chứa toàn bộ dữ liệu đã được tối ưu hóa, tuân thủ nghiêm ngặt schema đã cho. Danh sách cuối cùng phải sạch, gọn, không trùng lặp và không chứa rác.`;
     return { prompt, schema };
 };
 
@@ -284,4 +253,32 @@ ${chunk}
 ${task}
 Chỉ trả về nội dung tóm tắt.
 `;
+};
+
+export const getEntityDeduplicationPrompt = (entities: { name: string; id: string }[]) => {
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            deduplicationMap: {
+                type: Type.OBJECT,
+                description: `Một đối tượng map, với key là ID của mục cần XÓA và value là ID của mục cần GIỮ LẠI. Chỉ bao gồm các mục trùng lặp.`,
+                additionalProperties: { type: Type.STRING },
+            }
+        },
+        required: ['deduplicationMap']
+    };
+
+    const prompt = `Bạn là một AI tổ chức dữ liệu. Dưới đây là danh sách các thực thể (dưới dạng {id, name}) trong cùng một danh mục của bách khoa toàn thư game:
+${JSON.stringify(entities)}
+
+Nhiệm vụ của bạn là xác định các mục bị trùng lặp do có tên (name) gần giống nhau. Các trường hợp trùng lặp phổ biến:
+- Tên có và không có chức danh/phẩm chất (Ví dụ: "Lộ Na" và "HLV Lộ Na", "Thanh Tâm Liên" và "Thanh Tâm Liên - Tuyệt phẩm").
+- Lỗi chính tả nhỏ hoặc biến thể viết tắt.
+
+Trả về một đối tượng JSON duy nhất chứa một trường "deduplicationMap". 
+"deduplicationMap" này là một đối tượng map, với key là **ID** của mục cần **XÓA** và value là **ID** của mục cần **GIỮ LẠI**.
+Ví dụ: { "deduplicationMap": { "HLV Lộ Na": "Lộ Na", "Thanh Tâm Liên - Tuyệt phẩm": "Thanh Tâm Liên" } }.
+Nếu không có mục nào trùng lặp, trả về một đối tượng map rỗng.`;
+
+    return { prompt, schema };
 };
