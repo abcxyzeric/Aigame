@@ -6,7 +6,7 @@ const FANDOM_STORE_NAME = 'fandom_files';
 const TURN_VECTORS_STORE_NAME = 'turn_vectors';
 const SUMMARY_VECTORS_STORE_NAME = 'summary_vectors';
 const ENTITY_VECTORS_STORE_NAME = 'entity_vectors';
-const DB_VERSION = 4;
+const DB_VERSION = 5; // Tăng phiên bản DB
 
 let db: IDBDatabase;
 
@@ -31,26 +31,16 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = (event) => {
       const dbInstance = (event.target as IDBOpenDBRequest).result;
 
-      // Use a switch statement with fall-through for robust, sequential upgrades.
-      // This is the standard best practice for IndexedDB migrations and prevents data loss.
       switch (event.oldVersion) {
         case 0:
-          // Version 0 means the database is being created for the first time.
-          // Create the initial 'saves' store.
           if (!dbInstance.objectStoreNames.contains(SAVES_STORE_NAME)) {
             dbInstance.createObjectStore(SAVES_STORE_NAME, { keyPath: 'saveId' });
           }
-        // FALL THROUGH to apply subsequent version changes
         case 1:
-          // Upgrading from version 1 to 2 (or a fresh install falling through).
-          // Version 2 introduced the 'fandom_files' store.
           if (!dbInstance.objectStoreNames.contains(FANDOM_STORE_NAME)) {
             dbInstance.createObjectStore(FANDOM_STORE_NAME, { keyPath: 'id' });
           }
-        // FALL THROUGH
         case 2:
-          // Upgrading from version 2 to 3.
-          // Version 3 introduces vector stores for RAG.
           if (!dbInstance.objectStoreNames.contains(TURN_VECTORS_STORE_NAME)) {
             const store = dbInstance.createObjectStore(TURN_VECTORS_STORE_NAME, { keyPath: 'turnId' });
             store.createIndex('turnIndex', 'turnIndex', { unique: false });
@@ -59,14 +49,31 @@ function openDB(): Promise<IDBDatabase> {
             const store = dbInstance.createObjectStore(SUMMARY_VECTORS_STORE_NAME, { keyPath: 'summaryId' });
             store.createIndex('summaryIndex', 'summaryIndex', { unique: false });
           }
-        // FALL THROUGH
         case 3:
-            // Upgrading from version 3 to 4.
-            // Version 4 introduces the entity vector store.
             if (!dbInstance.objectStoreNames.contains(ENTITY_VECTORS_STORE_NAME)) {
                 dbInstance.createObjectStore(ENTITY_VECTORS_STORE_NAME, { keyPath: 'id' });
             }
-            break; // Stop here for version 4. Add more cases for future versions.
+        case 4:
+            // Nâng cấp từ v4 lên v5: Thêm chỉ mục 'worldId'
+            if (dbInstance.objectStoreNames.contains(TURN_VECTORS_STORE_NAME)) {
+                const store = request.transaction!.objectStore(TURN_VECTORS_STORE_NAME);
+                if (!store.indexNames.contains('worldId')) {
+                    store.createIndex('worldId', 'worldId', { unique: false });
+                }
+            }
+             if (dbInstance.objectStoreNames.contains(SUMMARY_VECTORS_STORE_NAME)) {
+                const store = request.transaction!.objectStore(SUMMARY_VECTORS_STORE_NAME);
+                if (!store.indexNames.contains('worldId')) {
+                    store.createIndex('worldId', 'worldId', { unique: false });
+                }
+            }
+             if (dbInstance.objectStoreNames.contains(ENTITY_VECTORS_STORE_NAME)) {
+                const store = request.transaction!.objectStore(ENTITY_VECTORS_STORE_NAME);
+                 if (!store.indexNames.contains('worldId')) {
+                    store.createIndex('worldId', 'worldId', { unique: false });
+                }
+            }
+            break;
       }
     };
   });
@@ -110,14 +117,33 @@ export async function getAllSaves(): Promise<SaveSlot[]> {
 export async function deleteSave(saveId: number): Promise<void> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction(SAVES_STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(SAVES_STORE_NAME);
-        const request = store.delete(saveId);
+        const transaction = db.transaction([SAVES_STORE_NAME, TURN_VECTORS_STORE_NAME, SUMMARY_VECTORS_STORE_NAME, ENTITY_VECTORS_STORE_NAME], 'readwrite');
         
-        request.onsuccess = () => resolve();
-        request.onerror = () => {
-            console.error('Lỗi khi xóa save từ IndexedDB:', request.error);
-            reject('Không thể xóa file lưu.');
+        // Xóa save slot
+        transaction.objectStore(SAVES_STORE_NAME).delete(saveId);
+        
+        // Xóa các vector liên quan
+        const deleteFromStore = (storeName: string) => {
+            const store = transaction.objectStore(storeName);
+            const index = store.index('worldId');
+            const request = index.openKeyCursor(IDBKeyRange.only(saveId));
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (cursor) {
+                    store.delete(cursor.primaryKey);
+                    cursor.continue();
+                }
+            };
+        };
+        
+        deleteFromStore(TURN_VECTORS_STORE_NAME);
+        deleteFromStore(SUMMARY_VECTORS_STORE_NAME);
+        deleteFromStore(ENTITY_VECTORS_STORE_NAME);
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => {
+            console.error('Lỗi khi xóa save và các vector liên quan từ IndexedDB:', transaction.error);
+            reject('Không thể xóa file lưu và dữ liệu liên quan.');
         };
     });
 }
@@ -183,12 +209,13 @@ export async function addTurnVector(vector: TurnVector): Promise<void> {
   });
 }
 
-export async function getAllTurnVectors(): Promise<TurnVector[]> {
+export async function getAllTurnVectors(worldId: number): Promise<TurnVector[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(TURN_VECTORS_STORE_NAME, 'readonly');
     const store = transaction.objectStore(TURN_VECTORS_STORE_NAME);
-    const request = store.getAll();
+    const index = store.index('worldId');
+    const request = index.getAll(worldId);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject('Không thể tải vector lượt chơi.');
   });
@@ -206,12 +233,13 @@ export async function addSummaryVector(vector: SummaryVector): Promise<void> {
   });
 }
 
-export async function getAllSummaryVectors(): Promise<SummaryVector[]> {
+export async function getAllSummaryVectors(worldId: number): Promise<SummaryVector[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(SUMMARY_VECTORS_STORE_NAME, 'readonly');
     const store = transaction.objectStore(SUMMARY_VECTORS_STORE_NAME);
-    const request = store.getAll();
+    const index = store.index('worldId');
+    const request = index.getAll(worldId);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject('Không thể tải vector tóm tắt.');
   });
@@ -230,12 +258,13 @@ export async function addEntityVector(vector: EntityVector): Promise<void> {
     });
 }
 
-export async function getAllEntityVectors(): Promise<EntityVector[]> {
+export async function getAllEntityVectors(worldId: number): Promise<EntityVector[]> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(ENTITY_VECTORS_STORE_NAME, 'readonly');
         const store = transaction.objectStore(ENTITY_VECTORS_STORE_NAME);
-        const request = store.getAll();
+        const index = store.index('worldId');
+        const request = index.getAll(worldId);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject('Không thể tải vector thực thể.');
     });

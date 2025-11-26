@@ -309,8 +309,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
             const { finalState, vectorUpdates } = dispatchTags(stateWithNarration, stateChangingTags);
             
-            // Xử lý cập nhật vector ở chế độ nền
-            aiService.processVectorUpdates(vectorUpdates);
+            // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
+            if (finalState.worldId) {
+                aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+            }
             
             // 4. Cập nhật gợi ý
             finalState.suggestions = suggestions;
@@ -405,8 +407,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       // Bắt đầu với trạng thái ban đầu và áp dụng các thẻ khởi tạo
       const { finalState, vectorUpdates } = dispatchTags(gameState, stateChangingTags);
       
-      // Xử lý cập nhật vector ở chế độ nền
-      aiService.processVectorUpdates(vectorUpdates);
+      // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
+      if (finalState.worldId) {
+        aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+      }
 
       let updatedGameState = finalState;
       

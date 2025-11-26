@@ -285,8 +285,9 @@ export async function distillKnowledgeForWorldCreation(
  * Xử lý một loạt các yêu cầu cập nhật vector một cách bất đồng bộ.
  * Hàm này tạo embeddings cho nội dung văn bản và lưu chúng vào cơ sở dữ liệu.
  * @param updates - Một mảng các đối tượng VectorUpdate.
+ * @param worldId - ID của phiên chơi hiện tại.
  */
-export async function processVectorUpdates(updates: VectorUpdate[]): Promise<void> {
+export async function processVectorUpdates(updates: VectorUpdate[], worldId: number): Promise<void> {
     if (!updates || updates.length === 0) return;
 
     const textsToEmbed = updates.map(u => u.content);
@@ -297,6 +298,7 @@ export async function processVectorUpdates(updates: VectorUpdate[]): Promise<voi
         if (embeddings.length === updates.length) {
             const newVectors: EntityVector[] = updates.map((update, i) => ({
                 id: update.id, // Tên định danh duy nhất của thực thể
+                worldId: worldId, // Đóng dấu worldId
                 embedding: embeddings[i],
             }));
             
@@ -304,7 +306,7 @@ export async function processVectorUpdates(updates: VectorUpdate[]): Promise<voi
             await Promise.all(newVectors.map(vector => dbService.addEntityVector(vector)));
 
             if(DEBUG_MODE) {
-                console.log(`[RAG SERVICE] Đã xử lý và lưu trữ thành công ${newVectors.length} bản cập nhật vector.`);
+                console.log(`[RAG SERVICE] Đã xử lý và lưu trữ thành công ${newVectors.length} bản cập nhật vector cho worldId: ${worldId}.`);
             }
         }
     } catch(error) {

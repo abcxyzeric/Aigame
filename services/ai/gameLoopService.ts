@@ -28,10 +28,15 @@ export const generateReputationTiers = async (genre: string): Promise<string[]> 
 
 // Hàm trợ giúp mới để triển khai logic trí nhớ kết hợp
 async function getInjectedMemories(gameState: GameState): Promise<string> {
-    const { history, npcDossiers } = gameState;
+    const { history, npcDossiers, worldId } = gameState;
     const { ragSettings } = getSettings();
     const NUM_RECENT_TURNS = 5;
     const lastPlayerAction = history[history.length - 1];
+
+    if (!worldId) {
+        console.warn("getInjectedMemories được gọi mà không có worldId. Bỏ qua truy xuất ký ức.");
+        return '';
+    }
 
     // 1. Xác định các NPC trong hành động
     const allKnownNpcNames = [
@@ -91,7 +96,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
     let relevantPastTurns = '';
     let foundTurnsCount = 0;
     try {
-        const allTurnVectors = await dbService.getAllTurnVectors();
+        const allTurnVectors = await dbService.getAllTurnVectors(worldId);
         const searchableTurnVectors = allTurnVectors.filter(v => v.turnIndex < history.length - NUM_RECENT_TURNS);
 
         if (searchableTurnVectors.length > 0) {
@@ -112,7 +117,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
     let relevantMemories = '';
     let foundSummariesCount = 0;
     try {
-        const allSummaryVectors = await dbService.getAllSummaryVectors();
+        const allSummaryVectors = await dbService.getAllSummaryVectors(worldId);
         if (allSummaryVectors.length > 0) {
             const vectorRankedSummaries = allSummaryVectors.map(vector => ({ id: vector.summaryIndex, score: cosineSimilarity(globalQueryEmbedding, vector.embedding), data: vector })).sort((a, b) => b.score - a.score);
             const keywordRankedSummaries = allSummaryVectors.map(vector => ({ id: vector.summaryIndex, score: calculateKeywordScore(ragQueryText, vector.content), data: vector })).sort((a, b) => b.score - a.score);

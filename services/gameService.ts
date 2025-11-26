@@ -89,9 +89,16 @@ export const loadAllSaves = async (): Promise<SaveSlot[]> => {
 
 async function updateVectorsInBackground(gameState: GameState): Promise<void> {
     const { ragSettings } = getSettings();
+    const worldId = gameState.worldId;
+
+    if (!worldId) {
+        console.error("Không thể cập nhật vector: worldId không tồn tại trong gameState.");
+        return;
+    }
+
     try {
         // --- Contextualize and Update Turn Vectors ---
-        const allTurnVectors = await dbService.getAllTurnVectors();
+        const allTurnVectors = await dbService.getAllTurnVectors(worldId);
         const vectorizedTurnIndices = new Set(allTurnVectors.map(v => v.turnIndex));
         const turnsToVectorize = gameState.history.map((turn, index) => ({ turn, index }))
             .filter(item => !vectorizedTurnIndices.has(item.index));
@@ -113,6 +120,7 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
             if (embeddings.length === turnsToVectorize.length) {
                 const newTurnVectors: TurnVector[] = turnsToVectorize.map((item, i) => ({
                     turnId: Date.now() + i,
+                    worldId: worldId, // Đóng dấu worldId
                     turnIndex: item.index,
                     content: contextualizedTurnContents[i], // Store the contextualized content
                     embedding: embeddings[i],
@@ -125,7 +133,7 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
         }
 
         // --- Contextualize and Update Summary Vectors ---
-        const allSummaryVectors = await dbService.getAllSummaryVectors();
+        const allSummaryVectors = await dbService.getAllSummaryVectors(worldId);
         const vectorizedSummaryIndices = new Set(allSummaryVectors.map(v => v.summaryIndex));
         const summariesToVectorize = gameState.summaries.map((summary, index) => ({ summary, index }))
             .filter(item => !vectorizedSummaryIndices.has(item.index));
@@ -147,6 +155,7 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
             if (embeddings.length === summariesToVectorize.length) {
                 const newSummaryVectors: SummaryVector[] = summariesToVectorize.map((item, i) => ({
                     summaryId: Date.now() + (turnsToVectorize?.length || 0) + i,
+                    worldId: worldId, // Đóng dấu worldId
                     summaryIndex: item.index,
                     content: contextualizedSummaryContents[i], // Store the contextualized content
                     embedding: embeddings[i],
@@ -175,18 +184,24 @@ export const saveGame = async (gameState: GameState, saveType: 'manual' | 'auto'
 
     const newSave: SaveSlot = {
       ...gameState,
+      worldId: gameState.worldId || Date.now(), // Đảm bảo worldId luôn tồn tại khi lưu
       worldName: gameState.worldConfig.storyContext.worldName || 'Cuộc phiêu lưu không tên',
       saveId: Date.now(),
       saveDate: new Date().toISOString(),
       previewText: previewText,
       saveType: saveType,
     };
+    
+    // Gán worldId = saveId cho các save cũ chưa có
+    if (!newSave.worldId) {
+        newSave.worldId = newSave.saveId;
+    }
 
     await dbService.addSave(newSave);
     await trimSaves();
 
     // Run vector updates in the background without waiting for it to complete.
-    updateVectorsInBackground(gameState);
+    updateVectorsInBackground(newSave); // Truyền newSave để đảm bảo có worldId
 
   } catch (error) {
     console.error('Error saving game state:', error);
