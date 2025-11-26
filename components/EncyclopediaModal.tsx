@@ -279,13 +279,19 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             setNotification({ isOpen: true, title: 'Đang xử lý...', messages: ['Bước 1/2: Đang yêu cầu AI chuẩn hóa danh mục...'] });
     
             const allEntitiesForCat = Object.values(processedData).flat() as { name: string, customCategory?: string }[];
-            const categoryMap = await aiService.normalizeCategoriesWithAI(allEntitiesForCat);
+            const normalizationMappings = await aiService.normalizeCategoriesWithAI(allEntitiesForCat);
     
             let stateAfterPhase1 = gameState;
     
-            if (Object.keys(categoryMap).length === 0) {
+            if (normalizationMappings.length === 0) {
                 setNotification({ isOpen: true, title: 'Thông báo', messages: ['Bước 1/2: AI không tìm thấy danh mục nào cần chuẩn hóa.', 'Chuyển sang Bước 2...'] });
             } else {
+                 // Chuyển đổi mảng thành map để dễ dàng tra cứu
+                const categoryMap = normalizationMappings.reduce((acc, mapping) => {
+                    acc[mapping.oldCategory] = mapping.newCategory;
+                    return acc;
+                }, {} as Record<string, string>);
+
                 // Apply category updates to game state
                 setGameState(prev => {
                     const newState = JSON.parse(JSON.stringify(prev));
@@ -311,7 +317,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                     stateAfterPhase1 = newState; // Capture the updated state
                     return newState;
                 });
-                setNotification({ isOpen: true, title: 'Thông báo', messages: [`Bước 1/2: Đã chuẩn hóa ${Object.keys(categoryMap).length} danh mục.`, 'Chuyển sang Bước 2...'] });
+                setNotification({ isOpen: true, title: 'Thông báo', messages: [`Bước 1/2: Đã chuẩn hóa ${normalizationMappings.length} danh mục.`, 'Chuyển sang Bước 2...'] });
             }
             
             // Brief pause to allow React to process the state update
@@ -347,8 +353,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             for (const category in groupedEntities) {
                 const entitiesToDedupe = groupedEntities[category].map(e => ({ name: e.name, id: e.name }));
                 if (entitiesToDedupe.length > 1) {
-                    const groupDeduplicationMap = await aiService.deduplicateEntitiesInCategoryWithAI(entitiesToDedupe);
-                    Object.assign(finalDeduplicationMap, groupDeduplicationMap);
+                    const groupDeduplicationPairs = await aiService.deduplicateEntitiesInCategoryWithAI(entitiesToDedupe);
+                    for (const pair of groupDeduplicationPairs) {
+                        finalDeduplicationMap[pair.idToDelete] = pair.idToKeep;
+                    }
                 }
             }
     

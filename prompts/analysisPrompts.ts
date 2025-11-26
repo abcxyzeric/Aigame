@@ -217,13 +217,20 @@ export const getCategoryNormalizationPrompt = (categories: string[]) => {
     const schema = {
         type: Type.OBJECT,
         properties: {
-            categoryMap: {
-                type: Type.OBJECT,
-                description: "Một đối tượng map, với key là category cũ và value là category mới đã được chuẩn hóa. Chỉ bao gồm các category cần thay đổi.",
-                additionalProperties: { type: Type.STRING },
+            normalizationMappings: {
+                type: Type.ARRAY,
+                description: "Một danh sách các đối tượng ánh xạ, mỗi đối tượng chứa category cũ và category mới đã được chuẩn hóa. Chỉ bao gồm các category cần thay đổi.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        oldCategory: { type: Type.STRING, description: "Tên category cũ cần được thay đổi." },
+                        newCategory: { type: Type.STRING, description: "Tên category mới, đã được chuẩn hóa." }
+                    },
+                    required: ["oldCategory", "newCategory"]
+                }
             }
         },
-        required: ['categoryMap']
+        required: ['normalizationMappings']
     };
 
     const prompt = `Bạn là một AI tổ chức dữ liệu. Dưới đây là danh sách các "phân loại tùy chỉnh" (custom categories) từ một bách khoa toàn thư trong game:
@@ -232,7 +239,8 @@ ${JSON.stringify(categories)}
 Nhiệm vụ của bạn là chuẩn hóa chúng. Hãy gộp các phân loại có ý nghĩa tương tự vào một phân loại lớn hơn, súc tích và hợp lý.
 Ví dụ: gộp 'Mạng Xã Hội', 'App', 'Website' thành 'Nền Tảng Số'. Gộp 'Dược thảo', 'Linh dược' thành 'Dược Liệu'.
 
-Trả về một đối tượng JSON duy nhất chứa một trường "categoryMap". "categoryMap" này là một đối tượng map, với key là category cũ và value là category mới đã được chuẩn hóa. CHỈ bao gồm các category cần thay đổi. Nếu một category đã ổn, không cần đưa vào map. Nếu không có gì cần thay đổi, trả về một map rỗng.`;
+Trả về một đối tượng JSON duy nhất chứa một trường "normalizationMappings". Trường này là một MẢNG (array) các đối tượng, mỗi đối tượng chứa hai trường: "oldCategory" và "newCategory".
+CHỈ bao gồm các category cần thay đổi. Nếu một category đã ổn, không cần đưa vào danh sách. Nếu không có gì cần thay đổi, trả về một mảng rỗng.`;
 
     return { prompt, schema };
 };
@@ -259,13 +267,20 @@ export const getEntityDeduplicationPrompt = (entities: { name: string; id: strin
     const schema = {
         type: Type.OBJECT,
         properties: {
-            deduplicationMap: {
-                type: Type.OBJECT,
-                description: `Một đối tượng map, với key là ID của mục cần XÓA và value là ID của mục cần GIỮ LẠI. Chỉ bao gồm các mục trùng lặp.`,
-                additionalProperties: Type.STRING, // FIX: Correctly define map values as strings
+            deduplicationPairs: {
+                type: Type.ARRAY,
+                description: "Một danh sách các cặp đối tượng, mỗi đối tượng chứa ID của mục cần XÓA và ID của mục cần GIỮ LẠI. Chỉ bao gồm các mục trùng lặp.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        idToDelete: { type: Type.STRING, description: "ID của mục cần XÓA." },
+                        idToKeep: { type: Type.STRING, description: "ID của mục cần GIỮ LẠI." }
+                    },
+                    required: ["idToDelete", "idToKeep"]
+                }
             }
         },
-        required: ['deduplicationMap']
+        required: ['deduplicationPairs']
     };
 
     const prompt = `Bạn là một AI tổ chức dữ liệu. Dưới đây là danh sách các thực thể (dưới dạng {id, name}) trong cùng một danh mục của bách khoa toàn thư game:
@@ -275,10 +290,10 @@ Nhiệm vụ của bạn là xác định các mục bị trùng lặp do có t�
 - Tên có và không có chức danh/phẩm chất (Ví dụ: "Lộ Na" và "HLV Lộ Na", "Thanh Tâm Liên" và "Thanh Tâm Liên - Tuyệt phẩm").
 - Lỗi chính tả nhỏ hoặc biến thể viết tắt.
 
-Trả về một đối tượng JSON duy nhất chứa một trường "deduplicationMap". 
-"deduplicationMap" này là một đối tượng map, với key là **ID** của mục cần **XÓA** và value là **ID** của mục cần **GIỮ LẠI**.
-Ví dụ: { "deduplicationMap": { "HLV Lộ Na": "Lộ Na", "Thanh Tâm Liên - Tuyệt phẩm": "Thanh Tâm Liên" } }.
-Nếu không có mục nào trùng lặp, trả về một đối tượng map rỗng.`;
+Trả về một đối tượng JSON duy nhất chứa một trường "deduplicationPairs".
+"deduplicationPairs" này là một MẢNG (array) các đối tượng, mỗi đối tượng chứa hai trường: "idToDelete" (ID của mục cần XÓA) và "idToKeep" (ID của mục cần GIỮ LẠI).
+Ví dụ: { "deduplicationPairs": [ { "idToDelete": "HLV Lộ Na", "idToKeep": "Lộ Na" }, { "idToDelete": "Thanh Tâm Liên - Tuyệt phẩm", "idToKeep": "Thanh Tâm Liên" } ] }.
+Nếu không có mục nào trùng lặp, trả về một mảng rỗng.`;
 
     return { prompt, schema };
 };

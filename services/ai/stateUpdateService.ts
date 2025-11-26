@@ -44,31 +44,31 @@ export const updateCharacterStateFromNarration = async (gameState: GameState, la
     }
 };
 
-export const normalizeCategoriesWithAI = async (allEntities: { name: string, customCategory?: string }[]): Promise<Record<string, string>> => {
+export const normalizeCategoriesWithAI = async (allEntities: { name: string, customCategory?: string }[]): Promise<{ oldCategory: string, newCategory: string }[]> => {
     const customCategories = [...new Set(allEntities.map(e => e.customCategory).filter(Boolean) as string[])];
     if (customCategories.length === 0) {
-        return {};
+        return [];
     }
 
     const { prompt, schema } = getCategoryNormalizationPrompt(customCategories);
     try {
-        const result = await generateJson<{ categoryMap: Record<string, string> }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
-        return result.categoryMap || {};
+        const result = await generateJson<{ normalizationMappings: { oldCategory: string, newCategory: string }[] }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
+        return result.normalizationMappings || [];
     } catch (error) {
         console.error("Lỗi khi chuẩn hóa category bằng AI:", error);
         throw error; // Ném lỗi ra để component có thể xử lý
     }
 };
 
-export const deduplicateEntitiesInCategoryWithAI = async (entities: { name: string; id: string }[]): Promise<Record<string, string>> => {
+export const deduplicateEntitiesInCategoryWithAI = async (entities: { name: string; id: string }[]): Promise<{ idToDelete: string, idToKeep: string }[]> => {
     if (entities.length < 2) {
-        return {};
+        return [];
     }
 
     const { prompt, schema } = getEntityDeduplicationPrompt(entities);
     try {
-        const result = await generateJson<{ deduplicationMap: Record<string, string> }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
-        return result.deduplicationMap || {};
+        const result = await generateJson<{ deduplicationPairs: { idToDelete: string, idToKeep: string }[] }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
+        return result.deduplicationPairs || [];
     } catch (error) {
         console.error("Lỗi khi gộp trùng lặp thực thể bằng AI:", error);
         throw error; // Ném lỗi ra để component có thể xử lý
