@@ -1,4 +1,4 @@
-import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat, CharacterMilestone } from './types';
+import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat, CharacterMilestone, CoreEntityType } from './types';
 import { EMPTY_GENERIC_MILESTONES } from './constants/genreMilestones';
 import { GENRES } from './constants/genres'; // Import a lista de gêneros
 
@@ -8,7 +8,7 @@ export const PERSONALITY_OPTIONS = [
     'Dũng Cảm, Bộc Trực',
     'Thận Trọng, Đa Nghi',
     'Lạnh Lùng, Ít Nói',
-    'Hài Hước, Thích Trêu Chọc',
+    'Hài Hước, Thích Ttrêu Chọc',
     'Nhân Hậu, Vị Tha',
     'Trầm Tĩnh, Thích Quan Sát',
     'Nhút Nhát, Hay Lo Sợ',
@@ -39,8 +39,23 @@ export const AI_RESPONSE_LENGTH_OPTIONS = ['Mặc định', 'Ngắn', 'Trung bì
 export const ENTITY_TYPE_OPTIONS = [
     'NPC', 
     'Địa điểm', 
-    'Phe phái/Thế lực', 
+    'Phe phái/Thế lực',
+    'Vật phẩm',
+    'Công pháp / Kỹ năng',
+    'Hệ thống sức mạnh / Lore',
+    'Cảnh giới',
+    'Khái niệm',
 ];
+
+// Danh sách các loại thực thể cốt lõi mà code có thể xử lý.
+export const CORE_ENTITY_TYPES: CoreEntityType[] = [
+    'NPC', 
+    'Vật phẩm',
+    'Địa điểm', 
+    'Phe phái/Thế lực',
+    'Hệ thống sức mạnh / Lore',
+];
+
 
 export const DEFAULT_STATS: CharacterStat[] = [
   { name: 'Sinh Lực', value: 100, maxValue: 100, isPercentage: true, description: 'Đại diện cho sức sống. Bị trừ khi bị thương. Về 0 sẽ chết/gục.', hasLimit: true },

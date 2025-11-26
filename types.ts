@@ -17,13 +17,16 @@ export interface CharacterMilestone {
   category: string; // Phân loại để dễ quản lý. VD: "Tu Luyện", "Thế Lực", "Thân Thể"
 }
 
+// Định nghĩa các loại thực thể cốt lõi mà hệ thống có thể xử lý.
+export type CoreEntityType = 'NPC' | 'Vật phẩm' | 'Địa điểm' | 'Phe phái/Thế lực' | 'Hệ thống sức mạnh / Lore';
+
 export interface InitialEntity {
   name: string;
-  type: string;
+  type: CoreEntityType; // BẮT BUỘC: Chỉ được thuộc nhóm cứng để code xử lý.
   personality?: string;
   description: string;
   tags?: string[];
-  customCategory?: string; // Phân loại động từ AI
+  customCategory?: string; // TÙY CHỌN: Chứa chuỗi tự do (VD: 'Cảnh giới', 'Mạng xã hội').
   locationId?: string; // Vị trí của thực thể
   details?: {
     subType?: string;

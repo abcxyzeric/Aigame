@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed, CoreEntityType } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
@@ -17,7 +17,7 @@ import NotificationModal from './common/NotificationModal';
 import { getSettings } from '../services/settingsService';
 import { resolveGenreArchetype } from '../utils/genreUtils';
 import { dispatchTags, ParsedTag } from '../utils/tagProcessors';
-import { processNarration } from '../utils/textProcessing';
+import { processNarration, detectEntityTypeAndCategory } from '../utils/textProcessing';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -219,21 +219,36 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     const status = gameState.playerStatus.find(s => s.name.toLowerCase().trim() === lowerCaseName);
     if (status) found = { title: status.name, description: status.description, type: `Trạng thái (${status.type === 'buff' ? 'Tích cực' : 'Tiêu cực'})` };
     if (!found) { const skill = gameState.character.skills.find(s => s.name.toLowerCase().trim() === lowerCaseName); if (skill) found = { title: skill.name, description: skill.description, type: 'Kỹ năng' }; }
-    if (!found) { const item = gameState.inventory.find(i => i.name.toLowerCase().trim() === lowerCaseName); if (item) found = { title: item.name, description: item.description, type: 'Vật phẩm', details: item.details }; }
-    if (!found) { const companion = gameState.companions.find(c => c.name.toLowerCase().trim() === lowerCaseName); if(companion) found = { title: companion.name, description: `${companion.description}\n\nTính cách: ${companion.personality || 'Chưa rõ'}`, type: 'Đồng hành' }; }
-    if (!found) { const quest = gameState.quests.find(q => q.name.toLowerCase().trim() === lowerCaseName); if(quest) found = { title: quest.name, description: quest.description, type: 'Nhiệm vụ' }; }
-    if (!found) { const npc = gameState.encounteredNPCs.find(n => n.name.toLowerCase().trim() === lowerCaseName); if (npc) found = { title: npc.name, description: `${npc.description}\n\nTính cách: ${npc.personality}\n\nSuy nghĩ về người chơi: "${npc.thoughtsOnPlayer}"`, type: 'NPC' }; }
-    if (!found) { const faction = gameState.encounteredFactions.find(f => f.name.toLowerCase().trim() === lowerCaseName); if (faction) found = { title: faction.name, description: faction.description, type: 'Phe phái/Thế lực' }; }
-    if (!found) { const discovered = gameState.discoveredEntities?.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (discovered) found = { title: discovered.name, description: discovered.description + (discovered.personality ? `\n\nTính cách: ${discovered.personality}`: ''), type: discovered.type, details: discovered.details }; }
-    if (!found) { const entity = gameState.worldConfig.initialEntities.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (entity) found = { title: entity.name, description: entity.description + (entity.personality ? `\n\nTính cách: ${entity.personality}`: ''), type: entity.type, details: entity.details }; }
+    if (!found) { const item = gameState.inventory.find(i => i.name.toLowerCase().trim() === lowerCaseName); if (item) found = { title: item.name, description: item.description, type: item.customCategory || 'Vật phẩm', details: item.details }; }
+    if (!found) { const companion = gameState.companions.find(c => c.name.toLowerCase().trim() === lowerCaseName); if(companion) found = { title: companion.name, description: `${companion.description}\n\nTính cách: ${companion.personality || 'Chưa rõ'}`, type: companion.customCategory || 'Đồng hành' }; }
+    if (!found) { const quest = gameState.quests.find(q => q.name.toLowerCase().trim() === lowerCaseName); if(quest) found = { title: quest.name, description: quest.description, type: quest.customCategory || 'Nhiệm vụ' }; }
+    if (!found) { const npc = gameState.encounteredNPCs.find(n => n.name.toLowerCase().trim() === lowerCaseName); if (npc) found = { title: npc.name, description: `${npc.description}\n\nTính cách: ${npc.personality}\n\nSuy nghĩ về người chơi: "${npc.thoughtsOnPlayer}"`, type: npc.customCategory || 'NPC' }; }
+    if (!found) { const faction = gameState.encounteredFactions.find(f => f.name.toLowerCase().trim() === lowerCaseName); if (faction) found = { title: faction.name, description: faction.description, type: faction.customCategory || 'Phe phái/Thế lực' }; }
+    if (!found) { const discovered = gameState.discoveredEntities?.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (discovered) found = { title: discovered.name, description: discovered.description + (discovered.personality ? `\n\nTính cách: ${discovered.personality}`: ''), type: discovered.customCategory || discovered.type, details: discovered.details }; }
+    if (!found) { const entity = gameState.worldConfig.initialEntities.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (entity) found = { title: entity.name, description: entity.description + (entity.personality ? `\n\nTính cách: ${entity.personality}`: ''), type: entity.customCategory || entity.type, details: entity.details }; }
 
     if (found) setEntityModalContent(found);
     else {
         setEntityModalContent({ title: name, description: "AI đang tìm kiếm thông tin...", type: "Đang tải" });
         try {
-            const newEntity = await aiService.generateEntityInfoOnTheFly(gameState, name);
+            // Bước 1: "Code-First Detection" - Đoán loại thực thể bằng code
+            const { type: detectedType, category: detectedCategory } = detectEntityTypeAndCategory(name);
+
+            // Bước 2 & 3: Gọi AI với thông tin đã được "đoán" trước (nếu có)
+            const newEntity = await aiService.generateEntityInfoOnTheFly(gameState, name, detectedType, detectedCategory);
+            
+            // Bước 4: Hợp nhất và xác thực kết quả
+            // Nếu code đã xác định một loại cốt lõi, hãy ưu tiên nó
+            if (detectedType) {
+                newEntity.type = detectedType;
+            }
+            // Nếu code có gợi ý danh mục và AI không tạo ra danh mục nào, hãy sử dụng gợi ý của code
+            if (detectedCategory && !newEntity.customCategory) {
+                newEntity.customCategory = detectedCategory;
+            }
+
             setGameState(prev => ({ ...prev, discoveredEntities: [...(prev.discoveredEntities || []), newEntity] }));
-            setEntityModalContent({ title: newEntity.name, description: newEntity.description + (newEntity.personality ? `\n\nTính cách: ${newEntity.personality}`: ''), type: newEntity.type, details: newEntity.details });
+            setEntityModalContent({ title: newEntity.name, description: newEntity.description + (newEntity.personality ? `\n\nTính cách: ${newEntity.personality}`: ''), type: newEntity.customCategory || newEntity.type, details: newEntity.details });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Lỗi không xác định";
             setEntityModalContent({ title: name, description: `Không thể tạo thông tin: ${errorMessage}`, type: "Lỗi" });

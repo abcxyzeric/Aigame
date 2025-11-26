@@ -1,4 +1,5 @@
 // utils/textProcessing.ts
+import { CoreEntityType } from '../types';
 
 /**
  * "Làm mờ" các từ khóa nhạy cảm trong văn bản để vượt qua bộ lọc an toàn khi cần thiết.
@@ -86,3 +87,52 @@ export const sanitizeEntityName = (name: string): string => {
     // Cắt bỏ phần sau dấu gạch ngang có khoảng trắng
     return name.split(/\s*-\s*/)[0].trim();
 };
+
+/**
+ * "Đoán" loại và danh mục chi tiết của một thực thể dựa trên tên của nó bằng regex.
+ * @param name - Tên của thực thể.
+ * @returns Một đối tượng chứa `type` (CoreEntityType) và `category` (string) đã được đoán.
+ */
+export function detectEntityTypeAndCategory(name: string): { type: CoreEntityType | null, category: string | null } {
+    const lowerName = name.toLowerCase();
+
+    // Cảnh giới
+    if (/\b(tầng|kỳ|viên mãn|cảnh)\b/.test(lowerName)) {
+        return { type: 'Hệ thống sức mạnh / Lore', category: 'Cảnh giới' };
+    }
+    // Vũ khí
+    if (/\b(kiếm|đao|thương|cung|nỏ|trượng|búa|rìu|chùy|giáo)\b/.test(lowerName)) {
+        return { type: 'Vật phẩm', category: 'Vũ khí' };
+    }
+    // Phòng cụ
+    if (/\b(giáp|khiên|mũ|nón|thuẫn)\b/.test(lowerName)) {
+        return { type: 'Vật phẩm', category: 'Phòng cụ' };
+    }
+    // Đan dược
+    if (/\b(đan|dược|thuốc|linh dịch|cao)\b/.test(lowerName)) {
+        return { type: 'Vật phẩm', category: 'Đan dược' };
+    }
+    // Thức uống đặc biệt
+    if (/\b(tửu|trà)\b/.test(lowerName)) {
+        return { type: 'Vật phẩm', category: 'Thức uống' };
+    }
+     // Nguyên liệu
+    if (/\b(thảo|cỏ|đá|ngọc|quả|hạt|tinh|hạch|gỗ|xương|lông)\b/.test(lowerName)) {
+        return { type: 'Vật phẩm', category: 'Nguyên liệu' };
+    }
+    // Thế lực
+    if (/\b(bang|phái|môn|giáo|tông|gia|tộc|cung|điện|lâu|các)\b/.test(lowerName) && !/\b(công pháp|tâm pháp)\b/.test(lowerName)) {
+        return { type: 'Phe phái/Thế lực', category: 'Thế lực' };
+    }
+    // Nền Tảng Số (Digital Platform)
+    if (/\b(app|web|mạng|diễn đàn|facebook|onlyfans|tiktok|twitter|instagram)\b/.test(lowerName)) {
+        return { type: 'Hệ thống sức mạnh / Lore', category: 'Nền Tảng Số' };
+    }
+    // Địa điểm
+     if (/\b(thành|làng|hang|động|sông|núi|rừng|thung lũng|quốc|cốc|viện|phủ|biển|hồ|đảo)\b/.test(lowerName)) {
+        return { type: 'Địa điểm', category: 'Địa điểm' };
+    }
+
+
+    return { type: null, category: null };
+}

@@ -262,7 +262,7 @@ export const getEntityDeduplicationPrompt = (entities: { name: string; id: strin
             deduplicationMap: {
                 type: Type.OBJECT,
                 description: `Một đối tượng map, với key là ID của mục cần XÓA và value là ID của mục cần GIỮ LẠI. Chỉ bao gồm các mục trùng lặp.`,
-                additionalProperties: { type: Type.STRING },
+                additionalProperties: Type.STRING, // FIX: Correctly define map values as strings
             }
         },
         required: ['deduplicationMap']

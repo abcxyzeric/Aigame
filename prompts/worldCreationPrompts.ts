@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
-import { WorldConfig, InitialEntity, AiPerformanceSettings, CharacterMilestone } from "../types";
-import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS } from '../constants';
+import { WorldConfig, InitialEntity, AiPerformanceSettings, CharacterMilestone, CoreEntityType } from "../types";
+import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, CORE_ENTITY_TYPES } from '../constants';
 import { getSettings } from "../services/settingsService";
 import { DEFAULT_AI_PERFORMANCE_SETTINGS } from "../constants";
 import { isFandomDataset, extractCleanTextFromDataset } from "../utils/datasetUtils";
@@ -68,12 +68,13 @@ const getWorldCreationSchema = (generateMilestones: boolean) => {
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING, description: "Tên của thực thể." },
-            type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
+            type: { type: Type.STRING, enum: CORE_ENTITY_TYPES, description: "Loại cốt lõi của thực thể." },
+            customCategory: { type: Type.STRING, description: "Phân loại chi tiết hơn do người dùng hoặc AI tạo." },
             personality: { type: Type.STRING, description: "Mô tả tính cách (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết về thực thể." },
             tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Quan trọng', 'Cổ đại', 'Học thuật') để phân loại thực thể." },
         },
-        required: ['name', 'type', 'description', 'tags']
+        required: ['name', 'type', 'description']
     };
 
     const statSchema = {
@@ -256,20 +257,47 @@ ${milestoneInstruction}
     return { prompt, schema, creativeCallConfig };
 };
 
-export const getGenerateEntityInfoOnTheFlyPrompt = (worldConfig: WorldConfig, history: any[], entityName: string) => {
+export const getGenerateEntityInfoOnTheFlyPrompt = (
+    worldConfig: WorldConfig, 
+    history: any[], 
+    entityName: string,
+    preDetectedType?: CoreEntityType | null,
+    preDetectedCategory?: string | null
+) => {
     const recentHistory = history.slice(-6).map(turn => `${turn.type === 'action' ? 'Người chơi' : 'AI'}: ${turn.content.replace(/<[^>]*>/g, '')}`).join('\n\n');
 
     const schema = {
         type: Type.OBJECT,
         properties: {
             name: { type: Type.STRING, description: "Tên chính xác của thực thể được cung cấp." },
-            type: { type: Type.STRING, enum: ENTITY_TYPE_OPTIONS, description: "Loại của thực thể." },
-            personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, có thể để trống cho các loại khác)." },
+            type: { 
+                type: Type.STRING, 
+                enum: CORE_ENTITY_TYPES, 
+                description: "Loại cốt lõi của thực thể. BẮT BUỘC phải là một trong các giá trị sau." 
+            },
+            customCategory: {
+                type: Type.STRING,
+                description: `Phân loại chi tiết và cụ thể hơn cho thực thể. Gợi ý: ${ENTITY_TYPE_OPTIONS.join(', ')}. Nếu không chắc, hãy để trống.`
+            },
+            personality: { type: Type.STRING, description: "Mô tả RẤT ngắn gọn tính cách (1 câu) (chỉ dành cho NPC, để trống cho các loại khác)." },
             description: { type: Type.STRING, description: "Mô tả chi tiết, hợp lý và sáng tạo về thực thể dựa trên bối cảnh." },
-            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn (VD: 'Quan trọng', 'Cổ đại', 'Học thuật') để phân loại thực thể." },
+            tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Một danh sách các tags mô tả ngắn gọn." },
         },
-        required: ['name', 'type', 'description', 'tags']
+        required: ['name', 'type', 'description']
     };
+    
+    let instructions = '';
+    if (preDetectedType) {
+        instructions = `Hệ thống đã tự động xác định loại cốt lõi (type) của thực thể này là "${preDetectedType}". Bạn KHÔNG ĐƯỢC thay đổi trường 'type'.\n` +
+                       (preDetectedCategory ? `Phân loại chi tiết (customCategory) được gợi ý là "${preDetectedCategory}". Bạn có thể tinh chỉnh nó nếu cần.\n` : '') +
+                       `Nhiệm vụ chính của bạn là viết một 'description' (mô tả) thật chi tiết và sáng tạo.`;
+    } else {
+        instructions = `Dựa vào bối cảnh, hãy thực hiện quy trình sau:
+1.  **Mô tả:** Viết một mô tả chi tiết, hợp lý và sáng tạo về thực thể này.
+2.  **Phân loại kép:**
+    a.  Chọn **loại cốt lõi (type)** phù hợp nhất từ danh sách CỐ ĐỊNH sau: ${CORE_ENTITY_TYPES.join(', ')}.
+    b.  Điền vào **phân loại chi tiết (customCategory)** một danh mục cụ thể hơn. Gợi ý: ${ENTITY_TYPE_OPTIONS.join(', ')}.`;
+    }
 
     const prompt = `Trong bối cảnh câu chuyện sau:
 - Thể loại: ${worldConfig.storyContext.genre}
@@ -277,13 +305,8 @@ export const getGenerateEntityInfoOnTheFlyPrompt = (worldConfig: WorldConfig, hi
 - Diễn biến gần đây:
 ${recentHistory}
 
-Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu. Dựa vào bối cảnh và diễn biến gần đây, hãy thực hiện quy trình sau:
-1.  **Phân tích & Mô tả:** Đầu tiên, hãy suy nghĩ và viết một mô tả chi tiết, hợp lý và sáng tạo về thực thể này là gì và vai trò của nó trong thế giới.
-2.  **Phân loại chính xác:** Dựa trên mô tả bạn vừa tạo, hãy xác định chính xác **loại (type)** của thực thể. Hãy lựa chọn cẩn thận từ danh sách sau: ${ENTITY_TYPE_OPTIONS.join(', ')}.
-
-Sau khi đã xác định rõ mô tả và loại, hãy tạo ra các thông tin chi tiết khác.
-- Hãy tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Quan trọng', 'Cổ đại', 'Học thuật') để phân loại thực thể này.
-- Trường 'details' không còn được sử dụng.
+Một thực thể có tên là "${entityName}" vừa được nhắc đến nhưng không có trong cơ sở dữ liệu.
+${instructions}
 Trả về một đối tượng JSON tuân thủ schema đã cho.`;
 
     const { aiPerformanceSettings } = getSettings();

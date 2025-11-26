@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 // FIX: The FandomFile type should be imported from the central types definition file, not from a service file.
-import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile, CharacterMilestone } from '../types';
+import { WorldConfig, InitialEntity, CharacterConfig, CharacterStat, FandomFile, CharacterMilestone, CoreEntityType } from '../types';
 import { 
     DEFAULT_WORLD_CONFIG, 
     GENDER_OPTIONS, 
@@ -134,7 +134,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     return config.initialEntities
         .map((entity, originalIndex) => ({ entity, originalIndex }))
         .filter(({ entity }) => {
-            const matchesFilter = entityTypeFilter === 'Tất cả' || entity.type === entityTypeFilter;
+            const displayType = entity.customCategory || entity.type;
+            const matchesFilter = entityTypeFilter === 'Tất cả' || displayType === entityTypeFilter;
             const matchesSearch = entity.name.toLowerCase().includes(entitySearchTerm.toLowerCase());
             return matchesFilter && matchesSearch;
         });
@@ -293,17 +294,37 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
     handleSimpleChange('coreRules', newList);
   }, [config.coreRules, handleSimpleChange]);
 
-  const handleEntityChange = useCallback((index: number, field: keyof InitialEntity, value: string) => {
+  const handleEntityChange = useCallback((index: number, field: keyof Omit<InitialEntity, 'type' | 'details'> | 'type_select', value: string) => {
     const newEntities = [...config.initialEntities];
-    const updatedEntity = { ...newEntities[index], [field]: value };
+    let updatedEntity = { ...newEntities[index] };
+
+    if (field === 'type_select') {
+        // 'value' is a string from the comprehensive ENTITY_TYPE_OPTIONS
+        updatedEntity.customCategory = value; // Store the user's specific choice as custom category
+
+        // Map the comprehensive type to a core type
+        if (value === 'NPC') updatedEntity.type = 'NPC';
+        else if (value === 'Vật phẩm' || value === 'Công pháp / Kỹ năng') updatedEntity.type = 'Vật phẩm';
+        else if (value === 'Địa điểm') updatedEntity.type = 'Địa điểm';
+        else if (value === 'Phe phái/Thế lực') updatedEntity.type = 'Phe phái/Thế lực';
+        else { // For 'Hệ thống sức mạnh / Lore', 'Cảnh giới', 'Khái niệm'
+            updatedEntity.type = 'Hệ thống sức mạnh / Lore';
+        }
+    } else {
+         (updatedEntity as any)[field] = value;
+    }
+    
     newEntities[index] = updatedEntity;
     handleSimpleChange('initialEntities', newEntities);
   }, [config.initialEntities, handleSimpleChange]);
 
+
   const addEntity = useCallback(() => {
+    const newType = 'NPC' as CoreEntityType;
     const newEntity: InitialEntity = {
       name: '',
-      type: ENTITY_TYPE_OPTIONS[0],
+      type: newType,
+      customCategory: newType,
       personality: '',
       description: '',
     };
@@ -1002,8 +1023,8 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                        </div>
                                        <FormRow label="Loại Thực Thể:" labelClassName="text-green-300">
                                            <StyledSelect 
-                                               value={entity.type} 
-                                               onChange={e => handleEntityChange(originalIndex, 'type', e.target.value)}
+                                               value={entity.customCategory || entity.type}
+                                               onChange={e => handleEntityChange(originalIndex, 'type_select', e.target.value)}
                                            >
                                                {ENTITY_TYPE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
                                            </StyledSelect>

@@ -1,5 +1,5 @@
 import { generate, generateJson } from '../core/geminiClient';
-import { WorldConfig, InitialEntity, GameState } from '../../types';
+import { WorldConfig, InitialEntity, GameState, CoreEntityType } from '../../types';
 import { 
     getGenerateGenrePrompt, 
     getGenerateSettingPrompt, 
@@ -118,8 +118,13 @@ export async function generateFandomGenesis(summaryContent: string, arcName: str
 
 // --- On-the-fly Entity Generation during Gameplay ---
 
-export const generateEntityInfoOnTheFly = (gameState: GameState, entityName: string): Promise<InitialEntity> => {
+export const generateEntityInfoOnTheFly = (
+    gameState: GameState, 
+    entityName: string,
+    preDetectedType?: CoreEntityType | null,
+    preDetectedCategory?: string | null
+): Promise<InitialEntity> => {
     const { worldConfig, history } = gameState;
-    const { prompt, schema, creativeCallConfig } = getGenerateEntityInfoOnTheFlyPrompt(worldConfig, history, entityName);
+    const { prompt, schema, creativeCallConfig } = getGenerateEntityInfoOnTheFlyPrompt(worldConfig, history, entityName, preDetectedType, preDetectedCategory);
     return generateJson<InitialEntity>(prompt, schema, undefined, 'gemini-2.5-flash', creativeCallConfig);
 };

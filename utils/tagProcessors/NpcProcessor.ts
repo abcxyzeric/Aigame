@@ -1,5 +1,5 @@
 // utils/tagProcessors/NpcProcessor.ts
-import { GameState, EncounteredNPC, VectorUpdate } from '../../types';
+import { GameState, EncounteredNPC, VectorUpdate, InitialEntity } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
 import { sanitizeEntityName } from '../textProcessing';
 
@@ -54,47 +54,75 @@ export function processNpcNewOrUpdate(currentState: GameState, params: any): { n
  * @returns Một đối tượng chứa trạng thái game mới và các yêu cầu cập nhật vector.
  */
 export function processNpcThoughtsUpdate(currentState: GameState, params: any): { newState: GameState, vectorUpdates: VectorUpdate[] } {
-    if (!params.name) { // thoughtsOnPlayer giờ là tùy chọn
+    if (!params.name) {
         console.warn('Bỏ qua thẻ [NPC_UPDATE] không hợp lệ (thiếu tên):', params);
         return { newState: currentState, vectorUpdates: [] };
     }
 
     const sanitizedName = sanitizeEntityName(params.name);
     const npcNameLower = sanitizedName.toLowerCase();
-    let npcFound = false;
+    
+    let updatedNpcs = [...(currentState.encounteredNPCs || [])];
     let finalNpcData: EncounteredNPC | null = null;
+    let vectorUpdates: VectorUpdate[] = [];
 
-    const updatedNpcs = (currentState.encounteredNPCs || []).map(npc => {
-        if (npc.name.toLowerCase() === npcNameLower) {
-            npcFound = true;
-            // Cập nhật cả suy nghĩ, vị trí và trạng thái vật lý
-            const updatedNpc = { 
-                ...npc, 
-                thoughtsOnPlayer: params.thoughtsOnPlayer || npc.thoughtsOnPlayer, // Giữ lại suy nghĩ cũ nếu không có cập nhật
-                locationId: currentState.currentLocationId, // Luôn cập nhật vị trí khi tương tác
-                physicalState: params.physicalState || npc.physicalState, // Cập nhật trạng thái vật lý
-            };
-            finalNpcData = updatedNpc;
-            return updatedNpc;
-        }
-        return npc;
-    });
+    // Giai đoạn 1: Tìm trong "Hồ sơ sống" (encounteredNPCs)
+    const existingNpcIndex = updatedNpcs.findIndex(npc => npc.name.toLowerCase() === npcNameLower);
 
-    if (!npcFound) {
-        console.warn(`Thẻ [NPC_UPDATE] được gọi cho NPC chưa tồn tại: "${sanitizedName}". Tự động tạo mới.`);
-        const newNpc: EncounteredNPC = {
-            name: sanitizedName,
-            description: 'Chưa rõ',
-            personality: 'Chưa rõ',
-            thoughtsOnPlayer: params.thoughtsOnPlayer || 'Chưa có',
-            locationId: currentState.currentLocationId, // Gán vị trí khi tạo mới
-            physicalState: params.physicalState || '',
+    if (existingNpcIndex > -1) {
+        // Trường hợp 1: NPC đã "sống", cập nhật nó.
+        const originalNpc = updatedNpcs[existingNpcIndex];
+        const updatedNpc = {
+            ...originalNpc,
+            thoughtsOnPlayer: params.thoughtsOnPlayer || originalNpc.thoughtsOnPlayer,
+            locationId: currentState.currentLocationId,
+            physicalState: params.physicalState || originalNpc.physicalState,
         };
-        updatedNpcs.push(newNpc);
-        finalNpcData = newNpc;
+        updatedNpcs[existingNpcIndex] = updatedNpc;
+        finalNpcData = updatedNpc;
+    } else {
+        // Giai đoạn 2: Tìm trong "Khai báo ban đầu" (initialEntities)
+        const initialEntityNpc = (currentState.worldConfig.initialEntities || [])
+            .find(entity => (entity.type === 'NPC' || !entity.type) && entity.name.toLowerCase() === npcNameLower);
+
+        if (initialEntityNpc) {
+            // Trường hợp 2: NPC cần "Nâng cấp", sao chép và hợp nhất.
+            const newEncounteredNpc: EncounteredNPC = {
+                // a. Sao chép toàn bộ dữ liệu gốc
+                name: initialEntityNpc.name,
+                description: initialEntityNpc.description,
+                personality: initialEntityNpc.personality || 'Chưa rõ',
+                tags: initialEntityNpc.tags || [],
+                customCategory: initialEntityNpc.customCategory,
+                
+                // b. Hợp nhất thông tin mới từ thẻ lệnh
+                thoughtsOnPlayer: params.thoughtsOnPlayer || 'Chưa có',
+                physicalState: params.physicalState || '',
+                locationId: currentState.currentLocationId,
+
+                // c. Khởi tạo các giá trị mặc định cho "hồ sơ sống"
+                memoryFlags: {}, 
+            };
+            updatedNpcs.push(newEncounteredNpc);
+            finalNpcData = newEncounteredNpc;
+        } else {
+            // Trường hợp 3: NPC hoàn toàn mới do AI sáng tạo ra.
+            console.warn(`Thẻ [NPC_UPDATE] được gọi cho NPC chưa tồn tại trong initialEntities: "${sanitizedName}". Tự động tạo mới.`);
+            const newNpc: EncounteredNPC = {
+                name: sanitizedName,
+                description: 'Chưa rõ',
+                personality: 'Chưa rõ',
+                thoughtsOnPlayer: params.thoughtsOnPlayer || 'Chưa có',
+                locationId: currentState.currentLocationId,
+                physicalState: params.physicalState || '',
+                memoryFlags: {},
+            };
+            updatedNpcs.push(newNpc);
+            finalNpcData = newNpc;
+        }
     }
 
-    let vectorUpdates: VectorUpdate[] = [];
+    // Luôn tạo yêu cầu cập nhật vector cho NPC đã được thay đổi hoặc tạo mới
     if (finalNpcData) {
         const vectorContent = `NPC: ${finalNpcData.name}\nMô tả: ${finalNpcData.description}\nTính cách: ${finalNpcData.personality}\nSuy nghĩ về người chơi: ${finalNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${finalNpcData.physicalState || 'Bình thường'}`;
         const vectorUpdate: VectorUpdate = {
@@ -104,7 +132,7 @@ export function processNpcThoughtsUpdate(currentState: GameState, params: any): 
         };
         vectorUpdates.push(vectorUpdate);
     }
-
+    
     return {
         newState: {
             ...currentState,
@@ -113,6 +141,7 @@ export function processNpcThoughtsUpdate(currentState: GameState, params: any): 
         vectorUpdates,
     };
 }
+
 
 /**
  * Xử lý logic thiết lập một "cờ ghi nhớ" (memory flag) cho một NPC.
