@@ -12,7 +12,8 @@ export const obfuscateText = (text: string): string => {
     const sensitiveKeywords = [
         'lồn', 'cặc', 'buồi', 'bướm', 'cu', 'địt', 'chịch', 'đụ', 'đéo',
         'âm đạo', 'dương vật', 'âm vật', 'tinh hoàn',
-        'đâm', 'thúc', 'đút', 'nện', 'liếm', 'mút', 'bú', 'sục', 'giao hợp', 'làm tình'
+        'đâm', 'thúc', 'đút', 'nện', 'liếm', 'mút', 'bú', 'sục', 'giao hợp', 'làm tình',
+        'giết', 'máu', 'chém', 'hiếp', 'dâm' // Thêm các từ khóa bạo lực và nhạy cảm
     ];
     // Regex này sẽ tìm các từ khóa dưới dạng một từ độc lập (word boundary \b)
     const regex = new RegExp(`\\b(${sensitiveKeywords.join('|')})\\b`, 'gi');

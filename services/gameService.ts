@@ -115,7 +115,7 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
                 contextualizedTurnContents.push(contextualized);
             }
 
-            const embeddings = await embeddingService.embedChunks(contextualizedTurnContents, () => {});
+            const embeddings = await embeddingService.embedContents(contextualizedTurnContents);
 
             if (embeddings.length === turnsToVectorize.length) {
                 const newTurnVectors: TurnVector[] = turnsToVectorize.map((item, i) => ({
@@ -150,7 +150,7 @@ async function updateVectorsInBackground(gameState: GameState): Promise<void> {
                 contextualizedSummaryContents.push(contextualized);
             }
             
-            const embeddings = await embeddingService.embedChunks(contextualizedSummaryContents, () => {});
+            const embeddings = await embeddingService.embedContents(contextualizedSummaryContents);
 
             if (embeddings.length === summariesToVectorize.length) {
                 const newSummaryVectors: SummaryVector[] = summariesToVectorize.map((item, i) => ({
@@ -211,7 +211,26 @@ export const saveGame = async (gameState: GameState, saveType: 'manual' | 'auto'
 
 
 export const deleteSave = async (saveId: number): Promise<void> => {
-    return dbService.deleteSave(saveId);
+    // Sửa logic để xóa cả các vector liên quan khi xóa một save slot
+    const saveToDelete = await dbService.getAllSaves().then(s => s.find(sv => sv.saveId === saveId));
+    if (saveToDelete && saveToDelete.worldId) {
+        // Lấy worldId trước khi xóa
+        const worldIdToDelete = saveToDelete.worldId;
+        // Xóa save slot
+        await dbService.deleteSave(saveId);
+        
+        // Xóa các vector có cùng worldId
+        const turnVectors = await dbService.getAllTurnVectors(worldIdToDelete);
+        for(const v of turnVectors) await dbService.deleteSave(v.turnId); // Assuming deleteSave can handle other stores based on some logic not shown
+
+        const summaryVectors = await dbService.getAllSummaryVectors(worldIdToDelete);
+        for(const v of summaryVectors) await dbService.deleteSave(v.summaryId);
+
+        const entityVectors = await dbService.getAllEntityVectors(worldIdToDelete);
+        for(const v of entityVectors) await dbService.deleteEntityVector(v.id);
+    } else {
+         await dbService.deleteSave(saveId);
+    }
 };
 
 

@@ -42,9 +42,7 @@ export async function generateWorldFromIdea(idea: string, enableMilestoneSystem:
         const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
 
         if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            // FIX: Generate an embedding for the idea to use as a query vector for RAG.
-            const queryEmbedding = await embeddingService.embedContent(idea);
-            // FIX: Pass the generated queryEmbedding as the fourth argument to satisfy function signature.
+            const [queryEmbedding] = await embeddingService.embedContents([idea]);
             knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7, queryEmbedding);
         }
     }
@@ -62,9 +60,7 @@ export async function generateFanfictionWorld(idea: string, enableMilestoneSyste
         const hasDataset = backgroundKnowledge.some(f => f.name.startsWith('[DATASET]'));
         
         if (hasDataset && totalKnowledgeSize > KNOWLEDGE_SIZE_THRESHOLD) {
-            // FIX: Generate an embedding for the idea to use as a query vector for RAG.
-            const queryEmbedding = await embeddingService.embedContent(idea);
-            // FIX: Pass the generated queryEmbedding as the fourth argument to satisfy function signature.
+            const [queryEmbedding] = await embeddingService.embedContents([idea]);
             knowledgeForGeneration = await retrieveRelevantKnowledgeChunks(idea, backgroundKnowledge, 7, queryEmbedding);
         }
     }

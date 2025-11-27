@@ -340,7 +340,7 @@ const FandomGenesisScreen: React.FC<FandomGenesisScreenProps> = ({ onBack }) => 
             }
 
             setTrainingStatusText(`Đang tạo embeddings cho ${textChunks.length} chunks...`);
-            const embeddings = await aiService.embedChunks(textChunks, (progress) => {
+            const embeddings = await aiService.embedContents(textChunks, (progress) => {
                 const currentChunk = Math.round(progress * textChunks.length);
                 setTrainingProgress({ current: currentChunk, total: textChunks.length });
                 setTrainingStatusText(`Đang tạo embedding cho chunk ${currentChunk}/${textChunks.length}...`);

@@ -27,7 +27,7 @@ export const generateReputationTiers = async (genre: string): Promise<string[]> 
 };
 
 // Hàm trợ giúp mới để triển khai logic trí nhớ kết hợp
-async function getInjectedMemories(gameState: GameState): Promise<string> {
+async function getInjectedMemories(gameState: GameState): Promise<{ memories: string; queryEmbedding: number[] | null }> {
     const { history, npcDossiers, worldId } = gameState;
     const { ragSettings } = getSettings();
     const NUM_RECENT_TURNS = 5;
@@ -35,7 +35,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
 
     if (!worldId) {
         console.warn("getInjectedMemories được gọi mà không có worldId. Bỏ qua truy xuất ký ức.");
-        return '';
+        return { memories: '', queryEmbedding: null };
     }
 
     // 1. Xác định các NPC trong hành động
@@ -77,7 +77,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
         if (DEBUG_MODE) {
             console.log(`%c[INJECTED DOSSIER]`, 'color: lightblue;', dossierContent || "Không có hồ sơ.");
         }
-        return dossierContent;
+        return { memories: dossierContent, queryEmbedding: null };
     }
 
     // 3. Sử dụng Phương pháp 3 (Hybrid Search) nếu không có NPC cụ thể nào
@@ -90,7 +90,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
         console.log('%c[QUERY]', 'color: cyan; font-weight: bold;', ragQueryText);
     }
     
-    const globalQueryEmbedding = await embeddingService.embedContent(ragQueryText);
+    const [globalQueryEmbedding] = await embeddingService.embedContents([ragQueryText]);
 
     // Hybrid Search cho các lượt chơi
     let relevantPastTurns = '';
@@ -138,7 +138,7 @@ async function getInjectedMemories(gameState: GameState): Promise<string> {
         console.log(`%c[FOUND TURNS: ${foundTurnsCount}]`, 'color: lightblue;', relevantPastTurns || "Không có.");
         console.log(`%c[FOUND MEMORIES: ${foundSummariesCount}]`, 'color: lightblue;', relevantMemories || "Không có.");
     }
-    return injectedString;
+    return { memories: injectedString, queryEmbedding: globalQueryEmbedding };
 }
 
 
@@ -160,19 +160,24 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
         console.log(`%c[SMART CONTEXT]`, 'color: #FFD700; font-weight: bold;', relevantContext);
     }
 
-    // Bước 2: Lấy bối cảnh trí nhớ được tiêm vào (Dossier hoặc RAG cho Lịch sử/Tóm tắt)
-    const injectedMemories = await getInjectedMemories(gameState);
+    // Bước 2: Lấy bối cảnh trí nhớ được tiêm vào (Dossier hoặc RAG) VÀ vector truy vấn (nếu có)
+    const { memories: injectedMemories, queryEmbedding: memoryQueryEmbedding } = await getInjectedMemories(gameState);
 
-    // Bước 3: RAG - Truy xuất lore/kiến thức liên quan từ các tệp kiến thức nền (luôn chạy)
+    // Bước 3: RAG - Truy xuất lore/kiến thức liên quan từ các tệp kiến thức nền
     let relevantKnowledge = '';
     const ragQueryTextForKnowledge = `${history.slice(-2).map(t => t.content).join(' ')}`;
-    const queryEmbeddingForKnowledge = await embeddingService.embedContent(ragQueryTextForKnowledge);
+    
+    // Tái sử dụng vector từ bước 2 nếu có, nếu không thì tạo vector mới.
+    const queryEmbeddingForKnowledge = memoryQueryEmbedding 
+        ? memoryQueryEmbedding 
+        : (await embeddingService.embedContents([ragQueryTextForKnowledge]))[0];
+        
     if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0) {
         relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryTextForKnowledge, worldConfig.backgroundKnowledge, 3, queryEmbeddingForKnowledge);
     }
     
     // Bước 4: Lắp ráp prompt cuối cùng với dữ liệu đã được lọc
-    const { prompt, systemInstruction } = getNextTurnPrompt(
+    const { prompt, systemInstruction } = await getNextTurnPrompt(
         gameState,
         relevantContext, // <- SỬ DỤNG NGỮ CẢNH ĐÃ LỌC
         relevantKnowledge,
