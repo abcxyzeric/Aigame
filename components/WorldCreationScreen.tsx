@@ -1023,7 +1023,7 @@ const WorldCreationScreen: React.FC<WorldCreationScreenProps> = ({ onBack, onSta
                                        </div>
                                        <FormRow label="Loại Thực Thể:" labelClassName="text-green-300">
                                            <StyledSelect 
-                                               value={entity.customCategory || entity.type}
+                                               value={ENTITY_TYPE_OPTIONS.includes(entity.customCategory || '') ? entity.customCategory : (ENTITY_TYPE_OPTIONS.includes(entity.type) ? entity.type : 'NPC')}
                                                onChange={e => handleEntityChange(originalIndex, 'type_select', e.target.value)}
                                            >
                                                {ENTITY_TYPE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}

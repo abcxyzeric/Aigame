@@ -1,12 +1,11 @@
 
-
 import React, { useState, useCallback } from 'react';
 import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
 import SettingsScreen from './components/SettingsScreen';
 import GameplayScreen from './components/GameplayScreen';
 import FandomGenesisScreen from './components/FandomGenesisScreen';
-import { WorldConfig, GameState, InitialEntity, NpcDossier } from './types';
+import { WorldConfig, GameState, InitialEntity, NpcDossier, EncounteredNPC } from './types';
 import { DEFAULT_STATS } from './constants';
 import { getSeason, generateWeather } from './utils/timeUtils';
 import { resolveGenreArchetype } from './utils/genreUtils';
@@ -48,6 +47,21 @@ const App: React.FC = () => {
     const initialSeason = getSeason(initialTime.month, archetype);
     const initialWeather = generateWeather(initialSeason, archetype);
 
+    // BƯỚC 1: Di trú dữ liệu NPC từ kiến tạo ban đầu
+    const initialNpcs = (worldConfigWithLore.initialEntities || [])
+      .filter(entity => entity.type === 'NPC')
+      .map((entity): EncounteredNPC => ({
+        name: entity.name,
+        description: entity.description,
+        personality: entity.personality || 'Chưa rõ',
+        thoughtsOnPlayer: 'Chưa có tương tác',
+        tags: entity.tags || [],
+        customCategory: entity.customCategory,
+        locationId: entity.locationId,
+        memoryFlags: {},
+        physicalState: '',
+      }));
+
     setGameState({ 
       worldId: Date.now(), // Tạo ID duy nhất cho thế giới mới
       worldConfig: worldConfigWithLore, 
@@ -61,7 +75,7 @@ const App: React.FC = () => {
       summaries: [], 
       playerStatus: [], 
       inventory: [],
-      encounteredNPCs: [],
+      encounteredNPCs: initialNpcs, // Sử dụng danh sách NPC đã được di trú
       encounteredFactions: [],
       discoveredEntities: [],
       companions: [],
@@ -78,6 +92,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleLoadSavedGame = useCallback((state: GameState) => {
+    // LOG DEBUG: Load game không tốn request
+    console.groupCollapsed('📂 [DEBUG STATS] Loading Saved Game');
+    console.log('%c✅ Không tốn request nào. (Dữ liệu được tải trực tiếp từ bộ nhớ)', 'color: #4ade80; font-weight: bold;');
+    console.groupEnd();
+
     const statsEnabled = state.worldConfig.enableStatsSystem === true;
     const milestonesEnabled = state.worldConfig.enableMilestoneSystem === true;
     

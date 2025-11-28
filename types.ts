@@ -206,6 +206,13 @@ export interface NpcDossier {
   archived: string[]; // Mảng các tóm tắt sự kiện cũ
 }
 
+// --- PIGGYBACK VECTORIZATION TYPES ---
+export interface PendingVectorItem {
+  id: string | number; // turnIndex cho Turn, name cho Entity
+  type: string; // 'Turn' | 'Entity' | 'NPC' | 'Item' ...
+  content: string; // Nội dung văn bản cần vector hóa
+}
+
 export interface GameState {
   worldId?: number; // Dấu vân tay định danh cho phiên chơi
   worldConfig: WorldConfig;
@@ -228,6 +235,9 @@ export interface GameState {
   weather: string;
   npcDossiers?: Record<string, NpcDossier>; // Hồ sơ tương tác với NPC, key là tên NPC (lowercase)
   currentLocationId?: string; // Vị trí hiện tại của người chơi
+  
+  // Hàng đợi các mục cần vector hóa (Ký gửi cho lượt sau)
+  pendingVectorBuffer?: PendingVectorItem[];
 }
 
 export interface SaveSlot extends GameState {

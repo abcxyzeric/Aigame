@@ -1,3 +1,4 @@
+
 import { Type } from "@google/genai";
 import { WorldConfig, InitialEntity, AiPerformanceSettings, CharacterMilestone, CoreEntityType } from "../types";
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, CORE_ENTITY_TYPES } from '../constants';
@@ -46,7 +47,7 @@ export const buildBackgroundKnowledgePrompt = (knowledge?: {name: string, conten
         prompt += arcs.map(a => `--- NGUỒN: ${a.name} ---\n${getCleanContent(a.content)}`).join('\n\n');
     }
 
-    prompt += '\n--- KẾT THÚC KIẾN THÚC NỀN ---';
+    prompt += '\n--- KẾT THÚC KIẾN THỨC NỀN ---';
     return prompt;
 };
 
@@ -104,7 +105,7 @@ const getWorldCreationSchema = (generateMilestones: boolean) => {
     const characterProperties: any = {
         name: { type: Type.STRING, description: "Tên nhân vật chính." },
         personality: { type: Type.STRING, description: "Luôn đặt giá trị này là 'Tuỳ chỉnh'." },
-        customPersonality: { type: Type.STRING, description: "Một đoạn văn mô tả chi tiết, có chiều sâu về tính cách nhân vật." },
+        customPersonality: { type: Type.STRING, description: "Một danh sách các tính từ ngắn gọn mô tả tính cách, ngăn cách bằng dấu phẩy (VD: Lạnh lùng, quyết đoán, thông minh). Không viết thành câu." },
         gender: { type: Type.STRING, enum: GENDER_OPTIONS, description: "Giới tính của nhân vật." },
         bio: { type: Type.STRING, description: "Tiểu sử sơ lược của nhân vật." },
         skills: { 
@@ -190,7 +191,7 @@ ${backgroundKnowledgePrompt}
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU Ý TƯỞNG VÀ TÀI LIỆU:** Phân tích kỹ ý tưởng chính. Nếu "KIẾN THỨC NỀN" được cung cấp, bạn BẮT BUỘC phải coi đó là nguồn thông tin chính. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập.
 2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của thế giới, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung, đảm bảo mô tả bối cảnh vẫn phong phú và không chỉ tập trung vào hệ thống sức mạnh.
-3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
+3.  **TÍNH CÁCH TÙY CHỈNH (CÔ ĐỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Trường \`customPersonality\` BẮT BUỘC phải là một danh sách các tính từ ngắn gọn, súc tích (VD: "Lạnh lùng, tàn nhẫn, thông minh tuyệt đỉnh"), TUYỆT ĐỐI KHÔNG viết thành văn xuôi dài dòng.
 4.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau. Ví dụ: tiểu sử nhân vật phải gắn liền với bối cảnh, và các thực thể ban đầu phải có vai trò rõ ràng trong câu chuyện sắp tới của nhân vật.
 5.  **CHẤT LƯỢNG CAO:** Hãy tạo ra một thế giới phong phú. Bối cảnh phải cực kỳ chi tiết. Nhân vật phải có chiều sâu. Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, phe phái) và mô tả chúng một cách sống động.
 6.  **HỆ THỐNG TAGS:** Với mỗi thực thể, hãy phân tích kỹ lưỡng và tạo ra một danh sách các 'tags' mô tả ngắn gọn (ví dụ: 'Quan trọng', 'Cổ đại', 'Học thuật') để phân loại chúng một cách chi tiết.
@@ -236,7 +237,7 @@ ${backgroundKnowledgePrompt}
 YÊU CẦU BẮT BUỘC:
 1.  **HIỂU SÂU TÁC PHẨM GỐC:** Phân tích ý tưởng để xác định tác phẩm gốc. Nếu "Kiến thức nền" được cung cấp, HÃY COI ĐÓ LÀ NGUỒN KIẾN THỨC DUY NHẤT VÀ TUYỆT ĐỐI. Nếu trong tài liệu có mô tả về hệ thống sức mạnh, địa danh, hay nhân vật, bạn BẮT BUỘC phải sử dụng chúng. Chỉ được sáng tạo thêm những chỗ tài liệu không đề cập. Nếu không có kiến thức nền, hãy vận dụng kiến thức của bạn về tác phẩm gốc làm nền tảng.
 2.  **MÔ TẢ HỆ THỐNG SỨC MẠNH:** Trong phần \`setting\` (Bối cảnh chi tiết của thế giới), bạn BẮT BUỘC phải mô tả một **hệ thống sức mạnh** (ví dụ: ma thuật, tu luyện, công nghệ...) rõ ràng và chi tiết. Hệ thống này phải logic và phù hợp với thể loại của tác phẩm gốc, đồng thời được tích hợp một cách tự nhiên vào mô tả bối cảnh chung.
-3.  **TÍNH CÁCH TÙY CHỈNH (QUAN TRỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Sau đó, viết một mô tả tính cách chi tiết, độc đáo và có chiều sâu vào trường \`customPersonality\`.
+3.  **TÍNH CÁCH TÙY CHỈNH (CÔ ĐỌNG):** Trong đối tượng \`character\`, BẮT BUỘC đặt trường \`personality\` thành giá trị chuỗi 'Tuỳ chỉnh'. Trường \`customPersonality\` BẮT BUỘC phải là một danh sách các tính từ ngắn gọn, súc tích (VD: "Lạnh lùng, tàn nhẫn, thông minh tuyệt đỉnh"), TUYỆT ĐỐI KHÔNG viết thành văn xuôi dài dòng.
 4.  **SÁNG TẠO DỰA TRÊN Ý TƯỞNG:** Tích hợp ý tưởng cụ thể của người chơi (VD: 'nếu nhân vật A không chết', 'nhân vật B xuyên không vào thế giới X') để tạo ra một dòng thời gian hoặc một kịch bản hoàn toàn mới và độc đáo. Câu chuyện phải có hướng đi riêng, khác với nguyên tác.
 5.  **CHI TIẾT VÀ LIÊN KẾT:** Các yếu tố bạn tạo ra (Bối cảnh, Nhân vật mới, Thực thể) PHẢI có sự liên kết chặt chẽ với nhau và với thế giới gốc. Nhân vật chính có thể là nhân vật gốc được thay đổi hoặc một nhân vật hoàn toàn mới phù hợp với bối cảnh.
 6.  **CHẤT LƯỢNG CAO:** Tạo ra 5 đến 8 thực thể ban đầu (initialEntities) đa dạng (NPC, địa điểm, phe phái) và mô tả chúng một cách sống động, phù hợp với cả thế giới gốc và ý tưởng mới.

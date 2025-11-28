@@ -1,3 +1,4 @@
+
 // utils/arrayUtils.ts
 
 /**
@@ -18,12 +19,39 @@ export const mergeAndDeduplicateByName = <T extends { name: string }>(original: 
     });
     
     // Sau đó, thêm/cập nhật các mục từ mảng updates.
-    // Thao tác này sẽ ghi đè lên các mục đã có với cùng 'name', hoặc thêm mới nếu chưa có.
     [...updates].forEach(item => {
         if (item && item.name) {
-             const existingItem = itemMap.get(item.name.toLowerCase()) || {};
-            // Hợp nhất sâu hơn: giữ lại các thuộc tính cũ nếu thuộc tính mới không tồn tại
-            itemMap.set(item.name.toLowerCase(), { ...existingItem, ...item });
+             const key = item.name.toLowerCase();
+             const existingItem = itemMap.get(key);
+
+             if (existingItem) {
+                // Logic gộp thông minh: Ngăn chặn chuỗi rỗng ghi đè lên dữ liệu có thật
+                const merged = { ...existingItem };
+                
+                // Duyệt qua các key của item mới
+                Object.keys(item).forEach(k => {
+                    const propKey = k as keyof T;
+                    const newValue = item[propKey];
+                    
+                    // Chỉ cập nhật nếu giá trị mới hợp lệ (không phải null/undefined)
+                    if (newValue !== undefined && newValue !== null) {
+                        if (typeof newValue === 'string') {
+                            // Nếu là chuỗi, chỉ ghi đè nếu chuỗi mới KHÔNG RỖNG
+                            // Điều này ngăn chặn việc description='...' bị ghi đè bởi description=''
+                            if (newValue.trim() !== '') {
+                                merged[propKey] = newValue;
+                            }
+                        } else {
+                            // Với các kiểu khác (số, boolean...), cập nhật bình thường
+                            merged[propKey] = newValue;
+                        }
+                    }
+                });
+                itemMap.set(key, merged);
+             } else {
+                // Nếu chưa tồn tại, dùng trực tiếp item mới
+                itemMap.set(key, { ...item });
+             }
         }
     });
 

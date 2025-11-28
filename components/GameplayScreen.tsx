@@ -1,5 +1,7 @@
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed, CoreEntityType } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed, PendingVectorItem } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
@@ -17,7 +19,7 @@ import NotificationModal from './common/NotificationModal';
 import { getSettings } from '../services/settingsService';
 import { resolveGenreArchetype } from '../utils/genreUtils';
 import { dispatchTags, ParsedTag } from '../utils/tagProcessors';
-import { processNarration, detectEntityTypeAndCategory } from '../utils/textProcessing';
+import { processNarration } from '../utils/textProcessing';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
@@ -219,36 +221,21 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     const status = gameState.playerStatus.find(s => s.name.toLowerCase().trim() === lowerCaseName);
     if (status) found = { title: status.name, description: status.description, type: `Trạng thái (${status.type === 'buff' ? 'Tích cực' : 'Tiêu cực'})` };
     if (!found) { const skill = gameState.character.skills.find(s => s.name.toLowerCase().trim() === lowerCaseName); if (skill) found = { title: skill.name, description: skill.description, type: 'Kỹ năng' }; }
-    if (!found) { const item = gameState.inventory.find(i => i.name.toLowerCase().trim() === lowerCaseName); if (item) found = { title: item.name, description: item.description, type: item.customCategory || 'Vật phẩm', details: item.details }; }
-    if (!found) { const companion = gameState.companions.find(c => c.name.toLowerCase().trim() === lowerCaseName); if(companion) found = { title: companion.name, description: `${companion.description}\n\nTính cách: ${companion.personality || 'Chưa rõ'}`, type: companion.customCategory || 'Đồng hành' }; }
-    if (!found) { const quest = gameState.quests.find(q => q.name.toLowerCase().trim() === lowerCaseName); if(quest) found = { title: quest.name, description: quest.description, type: quest.customCategory || 'Nhiệm vụ' }; }
-    if (!found) { const npc = gameState.encounteredNPCs.find(n => n.name.toLowerCase().trim() === lowerCaseName); if (npc) found = { title: npc.name, description: `${npc.description}\n\nTính cách: ${npc.personality}\n\nSuy nghĩ về người chơi: "${npc.thoughtsOnPlayer}"`, type: npc.customCategory || 'NPC' }; }
-    if (!found) { const faction = gameState.encounteredFactions.find(f => f.name.toLowerCase().trim() === lowerCaseName); if (faction) found = { title: faction.name, description: faction.description, type: faction.customCategory || 'Phe phái/Thế lực' }; }
-    if (!found) { const discovered = gameState.discoveredEntities?.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (discovered) found = { title: discovered.name, description: discovered.description + (discovered.personality ? `\n\nTính cách: ${discovered.personality}`: ''), type: discovered.customCategory || discovered.type, details: discovered.details }; }
-    if (!found) { const entity = gameState.worldConfig.initialEntities.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (entity) found = { title: entity.name, description: entity.description + (entity.personality ? `\n\nTính cách: ${entity.personality}`: ''), type: entity.customCategory || entity.type, details: entity.details }; }
+    if (!found) { const item = gameState.inventory.find(i => i.name.toLowerCase().trim() === lowerCaseName); if (item) found = { title: item.name, description: item.description, type: 'Vật phẩm', details: item.details }; }
+    if (!found) { const companion = gameState.companions.find(c => c.name.toLowerCase().trim() === lowerCaseName); if(companion) found = { title: companion.name, description: `${companion.description}\n\nTính cách: ${companion.personality || 'Chưa rõ'}`, type: 'Đồng hành' }; }
+    if (!found) { const quest = gameState.quests.find(q => q.name.toLowerCase().trim() === lowerCaseName); if(quest) found = { title: quest.name, description: quest.description, type: 'Nhiệm vụ' }; }
+    if (!found) { const npc = gameState.encounteredNPCs.find(n => n.name.toLowerCase().trim() === lowerCaseName); if (npc) found = { title: npc.name, description: `${npc.description}\n\nTính cách: ${npc.personality}\n\nSuy nghĩ về người chơi: "${npc.thoughtsOnPlayer}"`, type: 'NPC' }; }
+    if (!found) { const faction = gameState.encounteredFactions.find(f => f.name.toLowerCase().trim() === lowerCaseName); if (faction) found = { title: faction.name, description: faction.description, type: 'Phe phái/Thế lực' }; }
+    if (!found) { const discovered = gameState.discoveredEntities?.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (discovered) found = { title: discovered.name, description: discovered.description + (discovered.personality ? `\n\nTính cách: ${discovered.personality}`: ''), type: discovered.type, details: discovered.details }; }
+    if (!found) { const entity = gameState.worldConfig.initialEntities.find(e => e.name.toLowerCase().trim() === lowerCaseName); if (entity) found = { title: entity.name, description: entity.description + (entity.personality ? `\n\nTính cách: ${entity.personality}`: ''), type: entity.type, details: entity.details }; }
 
     if (found) setEntityModalContent(found);
     else {
         setEntityModalContent({ title: name, description: "AI đang tìm kiếm thông tin...", type: "Đang tải" });
         try {
-            // Bước 1: "Code-First Detection" - Đoán loại thực thể bằng code
-            const { type: detectedType, category: detectedCategory } = detectEntityTypeAndCategory(name);
-
-            // Bước 2 & 3: Gọi AI với thông tin đã được "đoán" trước (nếu có)
-            const newEntity = await aiService.generateEntityInfoOnTheFly(gameState, name, detectedType, detectedCategory);
-            
-            // Bước 4: Hợp nhất và xác thực kết quả
-            // Nếu code đã xác định một loại cốt lõi, hãy ưu tiên nó
-            if (detectedType) {
-                newEntity.type = detectedType;
-            }
-            // Nếu code có gợi ý danh mục và AI không tạo ra danh mục nào, hãy sử dụng gợi ý của code
-            if (detectedCategory && !newEntity.customCategory) {
-                newEntity.customCategory = detectedCategory;
-            }
-
+            const newEntity = await aiService.generateEntityInfoOnTheFly(gameState, name);
             setGameState(prev => ({ ...prev, discoveredEntities: [...(prev.discoveredEntities || []), newEntity] }));
-            setEntityModalContent({ title: newEntity.name, description: newEntity.description + (newEntity.personality ? `\n\nTính cách: ${newEntity.personality}`: ''), type: newEntity.customCategory || newEntity.type, details: newEntity.details });
+            setEntityModalContent({ title: newEntity.name, description: newEntity.description + (newEntity.personality ? `\n\nTính cách: ${newEntity.personality}`: ''), type: newEntity.type, details: newEntity.details });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Lỗi không xác định";
             setEntityModalContent({ title: name, description: `Không thể tạo thông tin: ${errorMessage}`, type: "Lỗi" });
@@ -308,12 +295,21 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
-        // Bước 2: Truyền thời gian đã trích xuất vào dịch vụ AI
+        
+        // --- GIAI ĐOẠN 1: GỌI AI ĐỂ XỬ LÝ LƯỢT ĐI ---
+        // Tại đây, getNextTurn sẽ tự động xử lý Hàng đợi Vector (Piggyback) và lưu vào DB.
+        // Sau đó nó trả về nội dung lượt mới.
         const { narration, tags } = await aiService.getNextTurn(tempGameState, extractedTime);
         const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
 
         setGameState(prev => {
             
+            // --- GIAI ĐOẠN 2: CẬP NHẬT STATE & CHUẨN BỊ BUFFER MỚI ---
+            
+            // A. Reset Buffer cũ:
+            // Vì getNextTurn đã xử lý buffer cũ, ta có thể xóa nó đi.
+            let updatedBuffer: PendingVectorItem[] = [];
+
             // 1. Thêm lượt tường thuật mới vào lịch sử
             const stateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
             
@@ -321,18 +317,38 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
             const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
             
-            // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
+            // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái
+            // Lưu ý: Dispatcher trả về vectorUpdates dưới dạng { id, type, content }
             const { finalState, vectorUpdates } = dispatchTags(stateWithNarration, stateChangingTags);
             
-            // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
-            if (finalState.worldId) {
-                aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+            // --- GIAI ĐOẠN 3: NẠP DỮ LIỆU MỚI VÀO BUFFER (CHO LƯỢT SAU) ---
+            
+            // a. Thêm lượt chơi vừa xong (Narration) vào Buffer
+            const contextTurn = newAction; // Lượt Action của người chơi làm ngữ cảnh
+            const turnItem = gameService.createTurnVectorItem(
+                finalState.history.length - 1, // Index của Narration Turn
+                narrationTurn.content,
+                contextTurn.content
+            );
+            updatedBuffer.push(turnItem);
+
+            // b. Thêm các cập nhật thực thể (từ dispatchTags) vào Buffer
+            if (vectorUpdates && vectorUpdates.length > 0) {
+                const entityItems: PendingVectorItem[] = vectorUpdates.map(u => ({
+                    id: u.id,
+                    type: u.type,
+                    content: u.content
+                }));
+                updatedBuffer.push(...entityItems);
             }
+
+            // c. Gán buffer mới vào State
+            finalState.pendingVectorBuffer = updatedBuffer;
             
             // 4. Cập nhật gợi ý
             finalState.suggestions = suggestions;
             
-            // 5. Cập nhật Hồ sơ NPC
+            // 5. Cập nhật Hồ sơ NPC (Logic cũ giữ nguyên)
             const lastActionIndex = prev.history.length;
             const lastNarrationIndex = prev.history.length + 1;
             const allKnownNpcNames = new Set([
@@ -363,8 +379,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // Lên lịch nén hồ sơ như một tác vụ nền
             compressDossiersForTurn(finalState, newAction, narrationTurn);
             
-            // 6. Lưu game và trả về trạng thái cuối cùng
+            // 6. Lưu game (Bao gồm cả Buffer mới)
+            // SaveGame bây giờ chỉ ghi vào IndexedDB, KHÔNG gọi API nữa.
             gameService.saveGame(finalState, 'auto');
+            
             return finalState;
         });
 
@@ -422,12 +440,30 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       // Bắt đầu với trạng thái ban đầu và áp dụng các thẻ khởi tạo
       const { finalState, vectorUpdates } = dispatchTags(gameState, stateChangingTags);
       
-      // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
-      if (finalState.worldId) {
-        aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+      // --- XỬ LÝ BUFFER CHO LƯỢT ĐẦU ---
+      // Với lượt đầu tiên, chúng ta cũng cần nạp buffer để lượt 2 xử lý.
+      let updatedBuffer: PendingVectorItem[] = [];
+      
+      // 1. Thêm lượt tường thuật đầu tiên vào Buffer
+      const turnItem = gameService.createTurnVectorItem(
+          0, // Index 0
+          narrationTurn.content,
+          "" // Không có lượt trước
+      );
+      updatedBuffer.push(turnItem);
+
+      // 2. Thêm các cập nhật thực thể ban đầu vào Buffer
+      if (vectorUpdates && vectorUpdates.length > 0) {
+          const entityItems: PendingVectorItem[] = vectorUpdates.map(u => ({
+              id: u.id,
+              type: u.type,
+              content: u.content
+          }));
+          updatedBuffer.push(...entityItems);
       }
 
       let updatedGameState = finalState;
+      updatedGameState.pendingVectorBuffer = updatedBuffer; // Gán buffer
       
       // Tính toán mùa và thời tiết sau khi thời gian được thiết lập
       const archetype = resolveGenreArchetype(updatedGameState.worldConfig.storyContext.genre);

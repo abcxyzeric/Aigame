@@ -1,4 +1,5 @@
-import { generateJson } from '../core/geminiClient';
+
+import { generateJson, setDebugContext } from '../core/geminiClient';
 import { GameState, DynamicStateUpdateResponse, EncyclopediaEntriesUpdateResponse, CharacterStateUpdateResponse } from '../../types';
 import { 
     getDynamicStateUpdatePrompt, 
@@ -10,6 +11,7 @@ import {
 } from '../../prompts/analysisPrompts';
 
 export const updateDynamicStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<DynamicStateUpdateResponse | null> => {
+    setDebugContext('Phase 2 - Dynamic State Update');
     const { prompt, schema } = getDynamicStateUpdatePrompt(gameState, lastNarration);
     try {
         return await generateJson<DynamicStateUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
@@ -20,6 +22,7 @@ export const updateDynamicStateFromNarration = async (gameState: GameState, last
 };
 
 export const updateEncyclopediaEntriesFromNarration = async (gameState: GameState, lastNarration: string): Promise<EncyclopediaEntriesUpdateResponse | null> => {
+    setDebugContext('Phase 2 - Encyclopedia Update');
     const { prompt, schema } = getEncyclopediaUpdatePrompt(gameState, lastNarration);
     try {
         return await generateJson<EncyclopediaEntriesUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
@@ -30,6 +33,7 @@ export const updateEncyclopediaEntriesFromNarration = async (gameState: GameStat
 };
 
 export const updateCharacterStateFromNarration = async (gameState: GameState, lastNarration: string): Promise<CharacterStateUpdateResponse | null> => {
+    setDebugContext('Phase 2 - Character State Update');
     const { prompt, schema } = getCharacterStateUpdatePrompt(gameState, lastNarration);
     try {
         const response = await generateJson<CharacterStateUpdateResponse>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
@@ -50,6 +54,7 @@ export const normalizeCategoriesWithAI = async (allEntities: { name: string, cus
         return [];
     }
 
+    setDebugContext('Encyclopedia - Category Normalization');
     const { prompt, schema } = getCategoryNormalizationPrompt(customCategories);
     try {
         const result = await generateJson<{ normalizationMappings: { oldCategory: string, newCategory: string }[] }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);
@@ -65,6 +70,7 @@ export const deduplicateEntitiesInCategoryWithAI = async (entities: { name: stri
         return [];
     }
 
+    setDebugContext('Encyclopedia - Entity Deduplication');
     const { prompt, schema } = getEntityDeduplicationPrompt(entities);
     try {
         const result = await generateJson<{ deduplicationPairs: { idToDelete: string, idToKeep: string }[] }>(prompt, schema, undefined, 'gemini-2.5-flash', analyticalCallConfig);

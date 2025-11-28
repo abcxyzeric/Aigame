@@ -39,12 +39,8 @@ export const AI_RESPONSE_LENGTH_OPTIONS = ['Mặc định', 'Ngắn', 'Trung bì
 export const ENTITY_TYPE_OPTIONS = [
     'NPC', 
     'Địa điểm', 
-    'Phe phái/Thế lực',
+    'Phe phái/Thế lực', 
     'Vật phẩm',
-    'Công pháp / Kỹ năng',
-    'Hệ thống sức mạnh / Lore',
-    'Cảnh giới',
-    'Khái niệm',
 ];
 
 // Danh sách các loại thực thể cốt lõi mà code có thể xử lý.

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type SafetySetting } from "@google/genai";
 import { getSettings } from '../settingsService';
 import { AiPerformanceSettings, SafetySettingsConfig } from '../../types';
@@ -5,6 +6,41 @@ import { DEFAULT_AI_PERFORMANCE_SETTINGS } from '../../constants';
 import { processNarration } from '../../utils/textProcessing';
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
+
+// --- REQUEST TRACKING SYSTEM (NEW) ---
+let currentDebugContext = 'Unknown Source';
+const requestStats: Record<string, number> = {};
+const totalSessionRequests = { count: 0 };
+
+export const setDebugContext = (context: string) => {
+    currentDebugContext = context;
+};
+
+export const resetRequestStats = () => {
+    for (const key in requestStats) delete requestStats[key];
+};
+
+const incrementRequestCount = (model: string) => {
+    if (!DEBUG_MODE) return;
+    const key = `[${currentDebugContext}] ${model}`;
+    requestStats[key] = (requestStats[key] || 0) + 1;
+    totalSessionRequests.count++;
+};
+
+export const printRequestStats = (actionName: string) => {
+    if (!DEBUG_MODE) return;
+    const totalTurnRequests = Object.values(requestStats).reduce((a, b) => a + b, 0);
+    console.group(`📊 [DEBUG STATS] Báo cáo tài nguyên cho: ${actionName}`);
+    if (totalTurnRequests === 0) {
+        console.log('%c✅ Không tốn request nào.', 'color: #4ade80; font-weight: bold;');
+    } else {
+        console.table(requestStats);
+        console.log(`%cTổng request lượt này: ${totalTurnRequests}`, 'color: #fbbf24; font-weight: bold;');
+    }
+    console.log(`%cTổng request toàn phiên chơi: ${totalSessionRequests.count}`, 'color: #60a5fa;');
+    console.groupEnd();
+};
+// -------------------------------------
 
 let ai: GoogleGenAI | null = null;
 let currentApiKey: string | null = null;
@@ -133,32 +169,37 @@ function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetyS
 }
 
 
-export async function generate(prompt: string, systemInstruction?: string): Promise<string> {
+export async function generate(prompt: string, systemInstruction?: string, retryCount: number = 0): Promise<string> {
     const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
-    const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
+    // Mặc định là 0 (không thử lại) nếu không được chỉ định, tối đa là retryCount + 1 lần chạy
+    const maxAttempts = 1 + retryCount;
     let lastError: Error | null = null;
   
     const finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
 
+    incrementRequestCount('gemini-2.5-flash (Text)'); // TRACKING
+
     if (DEBUG_MODE) {
-        console.groupCollapsed('🚀 [DEBUG] Gemini Request (generate)');
+        console.groupCollapsed(`🚀 [DEBUG] Gemini Request (${currentDebugContext})`);
         console.log('%c[PAYLOAD]', 'color: cyan; font-weight: bold;', {
             model: 'gemini-2.5-flash',
+            context: currentDebugContext, // Log context
             contents: '...', // Omitted for brevity, see preview
             config: {
                 safetySettings: activeSafetySettings,
                 maxOutputTokens: perfSettings.maxOutputTokens,
                 thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
-            }
+            },
+            retries: retryCount
         });
         console.log('%c[PROMPT PREVIEW]', 'color: lightblue;', finalContents);
         console.groupEnd();
     }
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
+    for (let i = 0; i < maxAttempts; i++) {
       try {
         const aiInstance = getAiInstance();
   
@@ -175,7 +216,7 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         const candidate = response.candidates?.[0];
 
         if (DEBUG_MODE) {
-            console.groupCollapsed('✅ [DEBUG] Gemini Response (generate)');
+            console.groupCollapsed(`✅ [DEBUG] Gemini Response (${currentDebugContext}) - Attempt ${i+1}`);
             console.log('%c[TOKEN USAGE]', 'color: yellow;', response.usageMetadata);
             console.log('%c[FINISH REASON]', 'color: yellow;', candidate?.finishReason);
             console.log('%c[SAFETY RATINGS]', 'color: orange;', candidate?.safetyRatings);
@@ -195,7 +236,7 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
         console.error(`Error in generate attempt ${i + 1}:`, error);
         lastError = handleApiError(error, safetySettings);
         
-        if (i < MAX_RETRIES - 1) {
+        if (i < maxAttempts - 1) {
             const rawMessage = lastError.message.toLowerCase();
             if (/429|rate limit|resource_exhausted|503/.test(rawMessage)) {
                 const delay = 1500 * Math.pow(2, i);
@@ -205,29 +246,31 @@ export async function generate(prompt: string, systemInstruction?: string): Prom
                 console.warn(`Error on attempt ${i + 1}. Trying next key immediately...`);
             }
             continue;
-        } else {
-            throw new Error(`AI không thể tạo phản hồi sau ${MAX_RETRIES} lần thử. Lỗi cuối cùng: ${lastError.message}. Gợi ý: Lỗi này có thể do một hoặc nhiều API key trong danh sách của bạn không hợp lệ, hết hạn mức, hoặc chưa kích hoạt thanh toán. Vui lòng kiểm tra lại các key trong mục Cài Đặt.`);
         }
       }
     }
   
-    throw lastError || new Error(`AI không thể tạo phản hồi sau ${MAX_RETRIES} lần thử. Vui lòng kiểm tra lại API key và thử lại.`);
+    throw lastError || new Error(`AI không thể tạo phản hồi sau ${maxAttempts} lần thử. Vui lòng kiểm tra lại API key và thử lại.`);
 }
 
-export async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>): Promise<T> {
+export async function generateJson<T>(prompt: string, schema: any, systemInstruction?: string, model: 'gemini-2.5-flash' | 'gemini-2.5-pro' = 'gemini-2.5-flash', overrideConfig?: Partial<AiPerformanceSettings>, retryCount: number = 0): Promise<T> {
     const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
   
-    const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
+    // Mặc định là 0 (không thử lại) nếu không được chỉ định
+    const maxAttempts = 1 + retryCount;
     let lastError: Error | null = null;
   
     const finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
 
+    incrementRequestCount(`${model} (JSON)`); // TRACKING
+
     if (DEBUG_MODE) {
-        console.groupCollapsed('🚀 [DEBUG] Gemini Request (generateJson)');
+        console.groupCollapsed(`🚀 [DEBUG] Gemini Request (generateJson - ${currentDebugContext})`);
         console.log('%c[PAYLOAD]', 'color: cyan; font-weight: bold;', {
             model: model,
+            context: currentDebugContext, // Log context
             contents: '...', // Omitted for brevity, see preview
             config: {
                 responseMimeType: "application/json",
@@ -235,13 +278,14 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
                 safetySettings: activeSafetySettings,
                 maxOutputTokens: overrideConfig?.maxOutputTokens ?? perfSettings.maxOutputTokens,
                 thinkingConfig: { thinkingBudget: overrideConfig?.thinkingBudget ?? perfSettings.thinkingBudget }
-            }
+            },
+            retries: retryCount
         });
         console.log('%c[PROMPT PREVIEW]', 'color: lightblue;', finalContents);
         console.groupEnd();
     }
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
+    for (let i = 0; i < maxAttempts; i++) {
       try {
         const aiInstance = getAiInstance();
         
@@ -261,7 +305,7 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         const jsonString = response.text;
 
         if (DEBUG_MODE) {
-            console.groupCollapsed('✅ [DEBUG] Gemini Response (generateJson)');
+            console.groupCollapsed(`✅ [DEBUG] Gemini Response (generateJson - ${currentDebugContext}) - Attempt ${i+1}`);
             console.log('%c[TOKEN USAGE]', 'color: yellow;', response.usageMetadata);
             console.log('%c[FINISH REASON]', 'color: yellow;', candidate?.finishReason);
             console.log('%c[SAFETY RATINGS]', 'color: orange;', candidate?.safetyRatings);
@@ -299,7 +343,7 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
         console.error(`Error in generateJson attempt ${i + 1}:`, error);
         lastError = handleApiError(error, safetySettings);
         
-        if (i < MAX_RETRIES - 1) {
+        if (i < maxAttempts - 1) {
             const rawMessage = lastError.message.toLowerCase();
             if (/429|rate limit|resource_exhausted|503/.test(rawMessage)) {
                 const delay = 1500 * Math.pow(2, i);
@@ -309,13 +353,11 @@ export async function generateJson<T>(prompt: string, schema: any, systemInstruc
                 console.warn(`Error on attempt ${i + 1}. Trying next key immediately...`);
             }
             continue;
-        } else {
-            throw new Error(`AI không thể tạo phản hồi JSON sau ${MAX_RETRIES} lần thử. Lỗi cuối cùng: ${lastError.message}. Gợi ý: Lỗi này có thể do một hoặc nhiều API key trong danh sách của bạn không hợp lệ, hết hạn mức, hoặc chưa kích hoạt thanh toán. Vui lòng kiểm tra lại các key trong mục Cài Đặt.`);
         }
       }
     }
   
-    throw lastError || new Error(`AI không thể tạo phản hồi JSON sau ${MAX_RETRIES} lần thử. Vui lòng kiểm tra lại API key và thử lại.`);
+    throw lastError || new Error(`AI không thể tạo phản hồi JSON sau ${maxAttempts} lần thử. Vui lòng kiểm tra lại API key và thử lại.`);
 }
 
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
@@ -327,6 +369,8 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const MAX_RETRIES = 2; // Giới hạn cứng số lần thử lại là 2
     let lastError: Error | null = null;
     
+    incrementRequestCount('text-embedding-004 (Batch)'); // TRACKING
+
     for (let i = 0; i < MAX_RETRIES; i++) {
         try {
             const aiInstance = getAiInstance(); // Rotates key
@@ -337,7 +381,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
             const embeddings = result.embeddings;
             if (embeddings && embeddings.length === texts.length && embeddings.every(e => e.values)) {
                 if (DEBUG_MODE) {
-                    console.log(`✅ [DEBUG] Successfully generated ${embeddings.length} embeddings.`);
+                    console.log(`✅ [DEBUG] Successfully generated ${embeddings.length} embeddings (${currentDebugContext}).`);
                 }
                 return embeddings.map(e => e.values);
             }

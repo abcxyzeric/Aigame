@@ -105,18 +105,15 @@ export async function compressNpcDossier(gameState: GameState, npcName: string):
 
 
 /**
- * Enriches a given text snippet with surrounding context to make it self-contained.
- * @param text The text to contextualize.
- * @param context The surrounding context (e.g., previous turns, location).
- * @returns The context-enriched text.
+ * Tối ưu hóa: Hàm này hiện tại CHỈ thực hiện việc trả về văn bản đầu vào.
+ * Đã loại bỏ hoàn toàn việc gọi AI để tiết kiệm tài nguyên.
+ * Nó vẫn được giữ lại để duy trì chữ ký hàm (function signature) cho các module khác.
  */
 export async function contextualizeText(text: string, context: string): Promise<string> {
-    if (!text.trim() || !context.trim()) {
-        return text;
-    }
-    const { prompt, systemInstruction } = getContextualizePrompt(text, context);
-    // Use a lighter model for this processing task
-    return await generate(prompt, systemInstruction);
+    if (!text.trim()) return "";
+    // Trả về text nguyên bản hoặc kết hợp đơn giản nếu cần thiết ở nơi gọi
+    // Ở đây ta trả về text vì việc nối chuỗi đã được thực hiện ở gameService
+    return text;
 }
 
 

@@ -1,3 +1,4 @@
+
 import { Type } from "@google/genai";
 import { AiPerformanceSettings, EncyclopediaData, GameState, GameTurn } from "../../types";
 
@@ -63,7 +64,7 @@ export const getRetrieveRelevantKnowledgePrompt = (context: string, detailFiles:
             relevant_files: {
                 type: Type.ARRAY,
                 description: `Một danh sách chứa tên của ${topK} (hoặc ít hơn) tệp kiến thức CHI TIẾT liên quan nhất từ 'Danh sách tệp' dựa trên 'Tình huống hiện tại'.`,
-                items: { type: Type.STRING }
+                items: { type: Type.STRING } 
             }
         }, required: ['relevant_files']
     };

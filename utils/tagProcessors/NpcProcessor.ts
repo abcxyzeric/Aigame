@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/NpcProcessor.ts
 import { GameState, EncounteredNPC, VectorUpdate, InitialEntity } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
@@ -18,10 +19,13 @@ export function processNpcNewOrUpdate(currentState: GameState, params: any): { n
 
     const sanitizedName = sanitizeEntityName(params.name);
 
-    const newNpcData: EncounteredNPC = {
+    // FIX: Sử dụng 'any' để cho phép truyền undefined cho description/personality.
+    // Điều này báo hiệu cho hàm mergeAndDeduplicateByName biết không được ghi đè dữ liệu cũ.
+    const newNpcData: any = {
         name: sanitizedName,
-        description: params.description || '',
-        personality: params.personality || '',
+        // Nếu không có giá trị, để undefined (thay vì gán chuỗi rỗng || '')
+        description: params.description, 
+        personality: params.personality,
         thoughtsOnPlayer: params.thoughtsOnPlayer || 'Chưa có',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
         customCategory: params.category,
@@ -31,7 +35,8 @@ export function processNpcNewOrUpdate(currentState: GameState, params: any): { n
 
     const updatedNpcs = mergeAndDeduplicateByName(currentState.encounteredNPCs || [], [newNpcData]);
     
-    const vectorContent = `NPC: ${newNpcData.name}\nMô tả: ${newNpcData.description}\nTính cách: ${newNpcData.personality}\nSuy nghĩ về người chơi: ${newNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${newNpcData.physicalState || 'Bình thường'}`;
+    // Khi tạo vector, sử dụng fallback an toàn để tránh in ra 'undefined'
+    const vectorContent = `NPC: ${newNpcData.name}\nMô tả: ${newNpcData.description || 'Chưa rõ'}\nTính cách: ${newNpcData.personality || 'Chưa rõ'}\nSuy nghĩ về người chơi: ${newNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${newNpcData.physicalState || 'Bình thường'}`;
     const vectorUpdate: VectorUpdate = {
         id: newNpcData.name,
         type: 'NPC',

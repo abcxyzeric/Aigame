@@ -1,8 +1,11 @@
-import { GameState, SaveSlot, TurnVector, SummaryVector } from '../types';
+
+
+import { GameState, SaveSlot, TurnVector, SummaryVector, PendingVectorItem } from '../types';
 import * as dbService from './dbService';
 import * as embeddingService from './ai/embeddingService';
 import * as ragService from './ai/ragService';
 import { getSettings } from './settingsService';
+import { setDebugContext, resetRequestStats, printRequestStats } from './core/geminiClient';
 
 const LEGACY_SAVES_STORAGE_KEY = 'ai_rpg_all_saves';
 const MAX_MANUAL_SAVES = 5;
@@ -84,91 +87,44 @@ const trimSaves = async (): Promise<void> => {
 };
 
 export const loadAllSaves = async (): Promise<SaveSlot[]> => {
+    // Console log để xác nhận việc load danh sách save không tốn request
+    console.groupCollapsed('📂 [DEBUG STATS] Load Saves List');
+    console.log('%c✅ Không tốn request nào. (Chỉ đọc từ IndexedDB)', 'color: #4ade80; font-weight: bold;');
+    console.groupEnd();
     return dbService.getAllSaves();
 };
 
-async function updateVectorsInBackground(gameState: GameState): Promise<void> {
-    const { ragSettings } = getSettings();
-    const worldId = gameState.worldId;
-
-    if (!worldId) {
-        console.error("Không thể cập nhật vector: worldId không tồn tại trong gameState.");
-        return;
+/**
+ * Tạo một PendingVectorItem cho lượt chơi vừa xong để đưa vào hàng đợi.
+ * Hàm này thay thế cho việc gọi AI contextization và embedding ngay lập tức.
+ * @param turnIndex Index của lượt chơi trong history.
+ * @param content Nội dung của lượt chơi.
+ * @param previousTurnContent Nội dung của lượt trước đó (để gộp ngữ cảnh).
+ */
+export function createTurnVectorItem(turnIndex: number, content: string, previousTurnContent?: string): PendingVectorItem {
+    let combinedContent = content;
+    if (previousTurnContent) {
+        // Dùng thuật toán nối chuỗi thay vì gọi AI, giống logic cũ nhưng giờ chỉ chuẩn bị text
+        combinedContent = `[Ngữ cảnh trước đó: ${previousTurnContent.substring(0, 300)}...]\n[Nội dung chính: ${content}]`;
     }
+    
+    return {
+        id: turnIndex,
+        type: 'Turn',
+        content: combinedContent
+    };
+}
 
-    try {
-        // --- Contextualize and Update Turn Vectors ---
-        const allTurnVectors = await dbService.getAllTurnVectors(worldId);
-        const vectorizedTurnIndices = new Set(allTurnVectors.map(v => v.turnIndex));
-        const turnsToVectorize = gameState.history.map((turn, index) => ({ turn, index }))
-            .filter(item => !vectorizedTurnIndices.has(item.index));
-
-        if (turnsToVectorize.length > 0) {
-            const contextualizedTurnContents: string[] = [];
-            for (const item of turnsToVectorize) {
-                // Create context from the previous turn, if it exists.
-                const contextTurn = item.index > 0 ? gameState.history[item.index - 1] : null;
-                const contextString = contextTurn
-                    ? `Bối cảnh diễn ra ngay sau: "${contextTurn.type === 'action' ? 'Người chơi' : 'AI'}: ${contextTurn.content.substring(0, 200)}..."`
-                    : `Bối cảnh: Lượt chơi đầu tiên.`;
-                const contextualized = await ragService.contextualizeText(item.turn.content, contextString);
-                contextualizedTurnContents.push(contextualized);
-            }
-
-            const embeddings = await embeddingService.embedContents(contextualizedTurnContents);
-
-            if (embeddings.length === turnsToVectorize.length) {
-                const newTurnVectors: TurnVector[] = turnsToVectorize.map((item, i) => ({
-                    turnId: Date.now() + i,
-                    worldId: worldId, // Đóng dấu worldId
-                    turnIndex: item.index,
-                    content: contextualizedTurnContents[i], // Store the contextualized content
-                    embedding: embeddings[i],
-                }));
-
-                for (const vector of newTurnVectors) {
-                    await dbService.addTurnVector(vector);
-                }
-            }
-        }
-
-        // --- Contextualize and Update Summary Vectors ---
-        const allSummaryVectors = await dbService.getAllSummaryVectors(worldId);
-        const vectorizedSummaryIndices = new Set(allSummaryVectors.map(v => v.summaryIndex));
-        const summariesToVectorize = gameState.summaries.map((summary, index) => ({ summary, index }))
-            .filter(item => !vectorizedSummaryIndices.has(item.index));
-
-        if (summariesToVectorize.length > 0) {
-            const contextualizedSummaryContents: string[] = [];
-            for (const item of summariesToVectorize) {
-                 // Create context from the turns that were used to generate this summary.
-                const historyIndexForSummary = (item.index + 1) * (ragSettings.summaryFrequency * 2);
-                const startIndex = Math.max(0, historyIndexForSummary - (ragSettings.summaryFrequency * 2));
-                const relevantTurns = gameState.history.slice(startIndex, historyIndexForSummary);
-                const contextString = relevantTurns.map(t => t.content.substring(0, 150)).join(' ... ');
-                const contextualized = await ragService.contextualizeText(item.summary, `Bối cảnh được tóm tắt từ: "${contextString}..."`);
-                contextualizedSummaryContents.push(contextualized);
-            }
-            
-            const embeddings = await embeddingService.embedContents(contextualizedSummaryContents);
-
-            if (embeddings.length === summariesToVectorize.length) {
-                const newSummaryVectors: SummaryVector[] = summariesToVectorize.map((item, i) => ({
-                    summaryId: Date.now() + (turnsToVectorize?.length || 0) + i,
-                    worldId: worldId, // Đóng dấu worldId
-                    summaryIndex: item.index,
-                    content: contextualizedSummaryContents[i], // Store the contextualized content
-                    embedding: embeddings[i],
-                }));
-                
-                for (const vector of newSummaryVectors) {
-                    await dbService.addSummaryVector(vector);
-                }
-            }
-        }
-
-    } catch (error) {
-        console.error("Lỗi khi cập nhật vectors trong nền:", error);
+/**
+ * Hàm cũ: vectorizePendingTurns.
+ * Hiện tại đã được thay thế bằng cơ chế "Ký gửi Vector" (Piggyback).
+ * Hàm này được giữ lại nhưng để trống để tránh lỗi undefined nếu còn sót nơi gọi (dù đã xóa ở GameplayScreen).
+ * Logic vector hóa thực tế đã chuyển sang `gameLoopService.ts` -> `getNextTurn`.
+ */
+export async function vectorizePendingTurns(gameState: GameState): Promise<void> {
+    // No-op. Logic has moved to Piggyback Vectorization strategy.
+    if (process.env.NODE_ENV === 'development') {
+        console.warn("vectorizePendingTurns is deprecated. Use pendingVectorBuffer in GameState instead.");
     }
 }
 
@@ -200,8 +156,8 @@ export const saveGame = async (gameState: GameState, saveType: 'manual' | 'auto'
     await dbService.addSave(newSave);
     await trimSaves();
 
-    // Run vector updates in the background without waiting for it to complete.
-    updateVectorsInBackground(newSave); // Truyền newSave để đảm bảo có worldId
+    // Log xác nhận việc lưu bản ghi
+    console.log(`%c💾 [GAME SAVED] Đã lưu game (${saveType}) thành công vào IndexedDB (0 Request).`, 'color: #3b82f6;');
 
   } catch (error) {
     console.error('Error saving game state:', error);
