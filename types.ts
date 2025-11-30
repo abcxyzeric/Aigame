@@ -115,6 +115,7 @@ export interface AiPerformanceSettings {
   maxOutputTokens: number;
   thinkingBudget: number;
   jsonBuffer: number;
+  selectedModel?: string;
 }
 
 export interface AppSettings {

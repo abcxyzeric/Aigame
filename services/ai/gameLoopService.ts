@@ -17,7 +17,7 @@ import { resetRequestStats, printRequestStats, setDebugContext } from '../core/g
 
 const DEBUG_MODE = true; // Bật/tắt chế độ debug chi tiết trong Console (F12)
 
-export const startGame = async (config: WorldConfig): Promise<{ narration: string; tags: ParsedTag[] }> => {
+export const startGame = async (config: WorldConfig): Promise<{ narration: string; tags: ParsedTag[]; worldSim?: string; thinking?: string }> => {
     resetRequestStats(); // Reset cho lượt mới
     setDebugContext('World Init (Start Game)');
     
@@ -26,7 +26,34 @@ export const startGame = async (config: WorldConfig): Promise<{ narration: strin
     const rawResponse = await generate(prompt, systemInstruction, 2);
     
     printRequestStats('Khởi tạo Thế giới'); // In báo cáo
-    return parseResponse(rawResponse);
+    
+    const parsed = parseResponse(rawResponse);
+    
+    // --- CLEANUP LOGIC ---
+    let finalNarration = parsed.narration;
+
+    // 1. Regex Clean up: Remove leaked XML blocks and tags if they leaked into narration
+    finalNarration = finalNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+    finalNarration = finalNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
+    finalNarration = finalNarration.replace(/<\/?thinking>/gi, '');
+    finalNarration = finalNarration.replace(/<\/?world_sim>/gi, '');
+    
+    // 2. Remove specific artifacts mentions by user or explicitly generated headers
+    finalNarration = finalNarration.replace(/\[TIN TỨC THẾ GIỚI\]/gi, '');
+    finalNarration = finalNarration.trim();
+
+    // 3. Append World Sim if valid (MERGE STRATEGY)
+    // Logic: Narration + Separator + World News (Content only, no Header)
+    if (parsed.worldSim) {
+        const simContent = parsed.worldSim.trim();
+        // Check for EMPTY, EMPTY., or just whitespace
+        if (simContent && !/^EMPTY\.?$/i.test(simContent)) {
+            finalNarration = `${finalNarration}\n\n----------------\n\n${simContent}`;
+        }
+    }
+
+    // Return undefined for worldSim so the UI modal doesn't pop up
+    return { ...parsed, narration: finalNarration, worldSim: undefined };
 };
 
 export const generateReputationTiers = async (genre: string): Promise<string[]> => {
@@ -157,7 +184,7 @@ async function getInjectedMemories(gameState: GameState, queryEmbedding: number[
 }
 
 
-export const getNextTurn = async (gameState: GameState, codeExtractedTime?: TimePassed): Promise<{ narration: string; tags: ParsedTag[] }> => {
+export const getNextTurn = async (gameState: GameState, codeExtractedTime?: TimePassed): Promise<{ narration: string; tags: ParsedTag[]; worldSim?: string; thinking?: string }> => {
     resetRequestStats(); // Reset số liệu thống kê request cho lượt mới
     const { history, worldConfig } = gameState;
     
@@ -286,5 +313,31 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
     const rawResponse = await generate(prompt, systemInstruction, 2);
     
     printRequestStats('Xử Lý Lượt Chơi (Bao gồm Piggyback)'); // In báo cáo thống kê request
-    return parseResponse(rawResponse);
+    
+    const parsed = parseResponse(rawResponse);
+
+    // --- CLEANUP LOGIC ---
+    let finalNarration = parsed.narration;
+
+    // 1. Regex Clean up: Remove leaked XML blocks and tags
+    finalNarration = finalNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+    finalNarration = finalNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
+    finalNarration = finalNarration.replace(/<\/?thinking>/gi, '');
+    finalNarration = finalNarration.replace(/<\/?world_sim>/gi, '');
+
+    // 2. Remove specific artifacts
+    finalNarration = finalNarration.replace(/\[TIN TỨC THẾ GIỚI\]/gi, '');
+    finalNarration = finalNarration.trim();
+
+    // 3. Append World Sim if valid (MERGE STRATEGY)
+    if (parsed.worldSim) {
+        const simContent = parsed.worldSim.trim();
+        // Check for EMPTY, EMPTY., or just whitespace
+        if (simContent && !/^EMPTY\.?$/i.test(simContent)) {
+            finalNarration = `${finalNarration}\n\n----------------\n\n${simContent}`;
+        }
+    }
+
+    // Return undefined for worldSim to ensure component doesn't show separate modal
+    return { ...parsed, narration: finalNarration, worldSim: undefined };
 };

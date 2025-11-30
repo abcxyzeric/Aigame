@@ -174,24 +174,49 @@ export async function generate(prompt: string, systemInstruction?: string, retry
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
+    // Ưu tiên sử dụng model từ cài đặt
+    let selectedModel = perfSettings.selectedModel || 'gemini-2.5-flash';
+    
+    // AUTO-FIX: Chuyển đổi model cũ sang tên chuẩn mới để tránh lỗi 404
+    if (selectedModel === 'gemini-2.5-pro-preview-02-05') {
+        selectedModel = 'gemini-2.5-pro';
+    }
+
+    const isProModel = selectedModel.includes('pro');
+    
+    // CẤU HÌNH HIỆU SUẤT ĐỘNG (DYNAMIC PERFORMANCE CONFIG)
+    // Nếu là Model Pro: Sử dụng cấu hình "Mức cao" cố định để tận dụng sức mạnh, bỏ qua settings của người dùng để tránh lỗi.
+    // Nếu là Model Flash: Sử dụng cấu hình từ Settings của người dùng.
+    let effectiveMaxTokens = perfSettings.maxOutputTokens;
+    let effectiveThinkingBudget = perfSettings.thinkingBudget;
+
+    if (isProModel) {
+        // Cấu hình tối ưu cho 2.5 Pro (Gameplay)
+        // Max Output cao để hỗ trợ kể chuyện dài và Thinking Budget đủ lớn để suy luận sâu.
+        // Các giá trị này được chọn để an toàn, tránh lỗi 400 (Bad Request) do budget > maxTokens hoặc quá tải.
+        effectiveMaxTokens = 32768; 
+        effectiveThinkingBudget = 16384; 
+    }
+
     // Mặc định là 0 (không thử lại) nếu không được chỉ định, tối đa là retryCount + 1 lần chạy
     const maxAttempts = 1 + retryCount;
     let lastError: Error | null = null;
   
     const finalContents = systemInstruction ? `${systemInstruction}\n\n---\n\n${prompt}` : prompt;
 
-    incrementRequestCount('gemini-2.5-flash (Text)'); // TRACKING
+    incrementRequestCount(`${selectedModel} (Text)`); // TRACKING
 
     if (DEBUG_MODE) {
         console.groupCollapsed(`🚀 [DEBUG] Gemini Request (${currentDebugContext})`);
         console.log('%c[PAYLOAD]', 'color: cyan; font-weight: bold;', {
-            model: 'gemini-2.5-flash',
+            model: selectedModel,
+            isProOverride: isProModel,
             context: currentDebugContext, // Log context
             contents: '...', // Omitted for brevity, see preview
             config: {
                 safetySettings: activeSafetySettings,
-                maxOutputTokens: perfSettings.maxOutputTokens,
-                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
+                maxOutputTokens: effectiveMaxTokens,
+                thinkingConfig: { thinkingBudget: effectiveThinkingBudget }
             },
             retries: retryCount
         });
@@ -204,12 +229,12 @@ export async function generate(prompt: string, systemInstruction?: string, retry
         const aiInstance = getAiInstance();
   
         const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: selectedModel,
             contents: finalContents,
             config: {
                 safetySettings: activeSafetySettings as unknown as SafetySetting[],
-                maxOutputTokens: perfSettings.maxOutputTokens,
-                thinkingConfig: { thinkingBudget: perfSettings.thinkingBudget }
+                maxOutputTokens: effectiveMaxTokens,
+                thinkingConfig: { thinkingBudget: effectiveThinkingBudget }
             }
         });
         

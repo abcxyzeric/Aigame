@@ -1,3 +1,4 @@
+
 import React from 'react';
 import Icon from './common/Icon';
 import Button from './common/Button';
@@ -11,6 +12,13 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const updates = [
+    {
+      version: "1.7.0 (Cập nhật Model & Mô phỏng Thế giới)",
+      notes: [
+        "**Tích hợp Gemini 2.5 Pro:** Đã bổ sung tùy chọn model Gemini 2.5 Pro vào phần Cài đặt. Người chơi giờ đây có thể linh hoạt chuyển đổi giữa tốc độ phản hồi cực nhanh của bản Flash hoặc khả năng tư duy sâu sắc, văn phong chau chuốt vượt trội của bản Pro để có trải nghiệm dẫn truyện đỉnh cao nhất.",
+        "**Hệ thống 'Cutscene' Thế giới:** Đôi khi vào cuối lượt chơi, AI sẽ kích hoạt một đoạn mô phỏng ngắn (Cutscene) về các sự kiện đang diễn ra ở những nơi khác trong thế giới (tin đồn, biến động phe phái, sự kiện ngầm...). Điều này giúp thế giới game trở nên sống động, rộng lớn và vận hành độc lập ngay cả khi không có sự can thiệp trực tiếp của bạn."
+      ]
+    },
     {
       version: "1.6.5 (Đại tu Bách Khoa Toàn Thư & Tối ưu hóa Dữ liệu)",
       notes: [

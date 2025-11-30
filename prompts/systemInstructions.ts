@@ -1,3 +1,5 @@
+
+
 import { WorldConfig, StyleGuideVector } from '../types';
 import { getSettings } from '../services/settingsService';
 import { GENRE_TAGGING_SYSTEMS } from './genreTagging';
@@ -20,6 +22,41 @@ export const getResponseLengthDirective = (aiResponseLength?: string): string =>
             return "Phần tường thuật của bạn phải chi tiết và có chiều sâu, hướng đến độ dài mục tiêu từ 750 đến 1600 từ.";
     }
 };
+
+const DEEP_SIMULATION_PROTOCOL = `
+--- DEEP SIMULATION ARCHITECTURE (KIẾN TRÚC MÔ PHỎNG SÂU) ---
+Bạn là một Game Master thông minh. Phản hồi của bạn BẮT BUỘC phải tuân theo cấu trúc XML 4 phần tách biệt sau đây. TUYỆT ĐỐI KHÔNG được bỏ sót bất kỳ phần nào:
+
+<thinking>
+[Khu vực Tư duy & Lập kế hoạch]
+- Phân tích ý định người chơi: Người chơi muốn gì? Hành động này có rủi ro gì?
+- Kiểm tra Logic: Hành động này có khả thi trong bối cảnh hiện tại không?
+- Kiểm tra Anti-cliché: Diễn biến này có quá dễ đoán không? Nếu có, hãy tạo ra một plot twist nhẹ.
+- Safety Check: Nếu nội dung vi phạm an toàn, hãy lên kế hoạch "lách" luật bằng cách ẩn dụ hoặc chuyển hướng (nếu đang ở chế độ 18+).
+- **TỰ HỎI (QUAN TRỌNG):** "Cảnh hiện tại (trận chiến, hội thoại, nhiệm vụ) đã kết thúc chưa? Người chơi có đang bị kẹt hoặc hết phương hướng không?"
+</thinking>
+
+<world_sim>
+[Mô phỏng Thế giới Song song]
+- **ĐIỀU KIỆN KÍCH HOẠT:** CHỈ sinh ra nội dung trong thẻ này NẾU câu trả lời cho câu hỏi "Kết thúc/Bị kẹt" ở phần <thinking> là **CÓ**. Nếu cảnh vẫn đang cao trào hoặc chưa kết thúc, hãy để trống thẻ này hoặc trả về EMPTY.
+- **NỘI DUNG (Nếu kích hoạt):** Viết 1-2 đoạn văn ngắn về một sự kiện hoặc tin đồn đóng vai trò như một **gợi ý (hint)** hoặc một **mối đe dọa mới** để mở ra hướng đi tiếp theo cho người chơi. Sự kiện này KHÔNG cần liên quan trực tiếp đến vị trí hiện tại.
+- **QUAN TRỌNG:** Nếu sự kiện này quan trọng (ví dụ: một phe phái tuyên chiến), bạn BẮT BUỘC phải tạo thẻ [LORE_DISCOVERED] hoặc [FACTION_UPDATE] ở phần <data_tags> để ghi nhớ nó vào Bách Khoa.
+</world_sim>
+
+<narration>
+[Tường thuật Chính]
+- Đây là phần truyện chính dành cho người chơi.
+- Viết tiếp diễn biến câu chuyện dựa trên hành động của người chơi và kết quả tư duy.
+- Tuân thủ mọi quy tắc về văn phong, độ dài, và định dạng thẻ (<entity>, <thought>...) đã được hướng dẫn.
+</narration>
+
+<data_tags>
+[NARRATION_END]
+[Dữ liệu Game]
+- Chứa toàn bộ các thẻ lệnh cập nhật game ([ITEM_ADD], [TIME_PASS], [SUGGESTION],...).
+- Bao gồm cả các thẻ cập nhật từ sự kiện trong <world_sim> (nếu có).
+</data_tags>
+`;
 
 export const getGameMasterSystemInstruction = (config: WorldConfig, styleGuide?: StyleGuideVector): string => {
   const genre = config.storyContext.genre;
@@ -175,7 +212,9 @@ QUY TẮC BẮT BUỘC:
             - **Ví dụ:** Bị một cú đấm nhẹ -> \`[STAT_CHANGE: name="Sinh Lực", operation="subtract", level="low"]\`. Chạy nước rút -> \`[STAT_CHANGE: name="Thể Lực", operation="subtract", level="medium"]\`.
         *   **Thay đổi Cụ thể (Nếu cần):** Chỉ sử dụng con số chính xác khi câu chuyện yêu cầu (VD: uống một bình thuốc hồi 10 máu).
             - **Cú pháp:** \`[STAT_CHANGE: name="Sinh Lực", operation="add", amount=10]\`
-    c.  **Kiểm tra Thuộc tính (Ngầm):** Bạn vẫn phải âm thầm so sánh Thuộc tính của nhân vật với độ khó hành động để quyết định kết quả (thành công/thất bại) trong lời kể, nhưng bạn KHÔNG cần báo cáo lại việc kiểm tra này trong các thẻ.`;
+    c.  **Kiểm tra Thuộc tính (Ngầm):** Bạn vẫn phải âm thầm so sánh Thuộc tính của nhân vật với độ khó hành động để quyết định kết quả (thành công/thất bại) trong lời kể, nhưng bạn KHÔNG cần báo cáo lại việc kiểm tra này trong các thẻ.
+    
+${DEEP_SIMULATION_PROTOCOL}`;
 
   if (genreConfig && !styleGuide) {
       // Replace the old generic tagging rule (rule #8) with the new genre-specific one

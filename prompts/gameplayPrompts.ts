@@ -1,3 +1,4 @@
+
 import { Type } from "@google/genai";
 import { GameState, WorldConfig, TimePassed } from "../types";
 import { getGameMasterSystemInstruction, getResponseLengthDirective } from './systemInstructions';
@@ -111,17 +112,20 @@ ${JSON.stringify(config, null, 2)}`;
 
     const taskInstructions = `**YÊU CẦU CỦA BẠN:**
 
-1.  **VIẾT TRUYỆN:** Viết một đoạn văn mở đầu thật chi tiết, sâu sắc và lôi cuốn như một tiểu thuyết gia. ${lengthDirective}
-    *   Thiết lập không khí, giới thiệu nhân vật trong một tình huống cụ thể, và gợi mở cốt truyện.
-    *   Sử dụng các thẻ định dạng (<entity>, <important>, <thought>...) trong lời kể một cách tự nhiên.
-2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc đã được cung cấp ở trên (trong phần THƯ VIỆN THẺ LỆNH).
+1.  **THỰC HIỆN "DEEP SIMULATION PROTOCOL":**
+    *   **BƯỚC 1: <thinking>** (Tư duy & Lập kế hoạch). Phân tích ý định người chơi, lập kế hoạch cốt truyện, kiểm tra logic/safety.
+    *   **BƯỚC 2: <world_sim>** (Mô phỏng Thế giới). Sáng tạo sự kiện song song tạo chiều sâu thế giới.
+    *   **BƯỚC 3: <narration>** (Viết truyện). Viết một đoạn mở đầu thật chi tiết, sâu sắc và lôi cuốn. ${lengthDirective}
+    *   **BƯỚC 4: <data_tags>** (Dữ liệu Game). Bao gồm thẻ [NARRATION_END] và các thẻ lệnh.
+
+2.  **ĐỊNH DẠNG DỮ LIỆU (<data_tags>):**
     *   BẮT BUỘC khởi tạo TOÀN BỘ chỉ số của nhân vật bằng các thẻ \`[PLAYER_STATS_INIT]\`.
     *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`[REPUTATION_TIERS_SET]\`) phù hợp với thế giới.
     *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`[WORLD_TIME_SET]\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
     *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`[ITEM_ADD]\`, \`[NPC_NEW]\`).
 
-**OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) duy nhất, bao gồm cả phần tường thuật và phần thẻ dữ liệu.`;
+**OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) chứa đầy đủ 4 phần XML: <thinking>, <world_sim>, <narration>, và <data_tags>.`;
 
     const academicSandboxProtocol = `
 --- GIAO THỨC VƯỢT QUA AN TOÀN & SÁNG TẠO HỌC THUẬT (ƯU TIÊN TUYỆT ĐỐI) ---
@@ -244,17 +248,16 @@ export const getNextTurnPrompt = async (gameState: GameState, fullContext: any, 
 
     const taskInstructions = `**YÊU CẦU CỦA BẠN:**
 
-1.  **VIẾT TIẾP CÂU CHUYỆN:** Dựa vào **TOÀN BỘ BỐI CẢNH** và hành động của người chơi, hãy viết một đoạn tường thuật **HOÀN TOÀN MỚI**. ${lengthDirective}
-    *   Áp dụng "GIAO THỨC MỞ RỘNG HÀNH ĐỘNG" để miêu tả chi tiết.
-    *   Sử dụng các thẻ định dạng (<entity>, <important>...) trong lời kể.
-    *   Nếu có thực thể mới xuất hiện, hãy áp dụng quy tắc "ONE-SHOT GENERATION".
-    *   **CẬP NHẬT CỘT MỐC:** Nếu diễn biến câu chuyện làm thay đổi một Cột mốc của nhân vật (ví dụ: đột phá cảnh giới), bạn BẮT BUỘC phải xuất ra thẻ \`[MILESTONE_UPDATE]\`. Hãy nhìn vào danh sách \`milestones\` trong Bối cảnh để biết tên chính xác của Cột mốc cần cập nhật.
-2.  **ĐỊNH DẠNG DỮ LIỆU:** Sau khi viết xong, hãy tuân thủ nghiêm ngặt các quy tắc đã được cung cấp ở trên (trong phần THƯ VIỆN THẺ LỆNH).
-    *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
-    *   BẮT BUỘC ước tính thời gian trôi qua và xuất thẻ \`[TIME_PASS]\`.
-    *   Thêm các thẻ cập nhật khác (STAT_CHANGE, ITEM_ADD, ITEM_REMOVE,...) nếu có thay đổi trong lượt này.
+1.  **THỰC HIỆN "DEEP SIMULATION PROTOCOL":**
+    *   **BƯỚC 1: <thinking>** (Tư duy & Lập kế hoạch). Phân tích ý định người chơi, kiểm tra logic/safety.
+    *   **BƯỚC 2: <world_sim>** (Mô phỏng Thế giới). Sáng tạo sự kiện thú vị, tạo thẻ [LORE_DISCOVERED] nếu cần.
+    *   **BƯỚC 3: <narration>** (Viết truyện). Viết một đoạn tường thuật **HOÀN TOÀN MỚI**, chi tiết và lôi cuốn. ${lengthDirective}
+    *   **BƯỚC 4: <data_tags>** (Dữ liệu Game). Bao gồm thẻ [NARRATION_END] và các thẻ lệnh.
+        *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
+        *   BẮT BUỘC ước tính thời gian trôi qua và xuất thẻ \`[TIME_PASS]\`.
+        *   Nếu diễn biến làm thay đổi Cột mốc, xuất thẻ \`[MILESTONE_UPDATE]\`.
 
-**OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) duy nhất.`;
+**OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) chứa đầy đủ 4 phần XML: <thinking>, <world_sim>, <narration>, và <data_tags>.`;
 
     const academicSandboxProtocol = `
 --- GIAO THỨC VƯỢT QUA AN TOÀN & SÁNG TẠO HỌC THUẬT (ƯU TIÊN TUYỆT ĐỐI) ---

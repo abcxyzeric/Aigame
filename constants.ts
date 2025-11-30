@@ -1,3 +1,4 @@
+
 import { WorldConfig, HarmCategory, HarmBlockThreshold, SafetySettingsConfig, SafetySetting, RagSettings, AiPerformanceSettings, CharacterStat, CharacterMilestone, CoreEntityType } from './types';
 import { EMPTY_GENERIC_MILESTONES } from './constants/genreMilestones';
 import { GENRES } from './constants/genres'; // Import a lista de gêneros
@@ -129,4 +130,5 @@ export const DEFAULT_AI_PERFORMANCE_SETTINGS: AiPerformanceSettings = {
   maxOutputTokens: 8000,
   thinkingBudget: 1200,
   jsonBuffer: 1024,
+  selectedModel: 'gemini-2.5-flash',
 };

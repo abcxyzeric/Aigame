@@ -2,8 +2,6 @@
 import { Type } from "@google/genai";
 import { WorldConfig, InitialEntity, AiPerformanceSettings, CharacterMilestone, CoreEntityType } from "../types";
 import { PERSONALITY_OPTIONS, GENDER_OPTIONS, DIFFICULTY_OPTIONS, ENTITY_TYPE_OPTIONS, CORE_ENTITY_TYPES } from '../constants';
-import { getSettings } from "../services/settingsService";
-import { DEFAULT_AI_PERFORMANCE_SETTINGS } from "../constants";
 import { isFandomDataset, extractCleanTextFromDataset } from "../utils/datasetUtils";
 import { GENRES } from "../constants/genres";
 
@@ -206,11 +204,12 @@ ${milestoneInstruction}
 
     const schema = getWorldCreationSchema(generateMilestones);
 
-    const { aiPerformanceSettings } = getSettings();
-    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    // CẤU HÌNH HIỆU SUẤT CAO CHO WORLD CREATION (ĐỘC LẬP VỚI CÀI ĐẶT NGƯỜI DÙNG)
+    // World Creation luôn cần model Pro và token cao để tạo JSON chi tiết.
+    // Chúng ta KHÔNG dùng `aiPerformanceSettings` ở đây để tránh bị giới hạn bởi thanh trượt của người dùng.
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
-        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
+        maxOutputTokens: 32768, // Đủ lớn cho cấu trúc thế giới phức tạp
+        thinkingBudget: 16384,  // Tư duy sâu cho World Creation
     };
     
     return { prompt, schema, creativeCallConfig };
@@ -248,11 +247,10 @@ ${milestoneInstruction}
 
     const schema = getWorldCreationSchema(generateMilestones);
     
-    const { aiPerformanceSettings } = getSettings();
-    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    // CẤU HÌNH HIỆU SUẤT CAO CHO WORLD CREATION (ĐỘC LẬP VỚI CÀI ĐẶT NGƯỜI DÙNG)
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
-        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
+        maxOutputTokens: 32768, // Đủ lớn cho cấu trúc thế giới phức tạp
+        thinkingBudget: 16384,  // Tư duy sâu cho World Creation
     };
 
     return { prompt, schema, creativeCallConfig };
@@ -310,11 +308,11 @@ Một thực thể có tên là "${entityName}" vừa được nhắc đến nh�
 ${instructions}
 Trả về một đối tượng JSON tuân thủ schema đã cho.`;
 
-    const { aiPerformanceSettings } = getSettings();
-    const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
+    // CẤU HÌNH HIỆU SUẤT CAO CHO ENTITY CREATION (On-the-fly)
+    // Tự động sinh thực thể cũng cần suy luận tốt để khớp với bối cảnh
     const creativeCallConfig: Partial<AiPerformanceSettings> = {
-        maxOutputTokens: perfSettings.maxOutputTokens + (perfSettings.jsonBuffer || 0),
-        thinkingBudget: perfSettings.thinkingBudget + (perfSettings.jsonBuffer || 0)
+        maxOutputTokens: 4096, // Đủ cho một thực thể
+        thinkingBudget: 1024,  // Suy nghĩ vừa đủ
     };
 
     return { prompt, schema, creativeCallConfig };

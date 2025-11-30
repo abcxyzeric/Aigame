@@ -1,7 +1,6 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed, PendingVectorItem } from '../types';
+import { GameTurn, GameState, TemporaryRule, ActionSuggestion, StatusEffect, InitialEntity, GameItem, Companion, Quest, EncounteredNPC, EncounteredFaction, TimePassed } from '../types';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import * as gameService from '../services/gameService';
@@ -155,6 +154,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [entityModalContent, setEntityModalContent] = useState<{ title: string; description: string; type: string; details?: InitialEntity['details']; } | null>(null);
   
+  // --- New State for World Simulation ---
+  const [latestWorldNews, setLatestWorldNews] = useState<string | null>(null);
+  const [isWorldNewsOpen, setIsWorldNewsOpen] = useState(false);
+  
   const turnsPerPage = 5;
   const [currentPage, setCurrentPage] = useState(() => {
     if (initialGameState.history.length === 0) return 0;
@@ -295,21 +298,19 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
 
     try {
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
-        
-        // --- GIAI ĐOẠN 1: GỌI AI ĐỂ XỬ LÝ LƯỢT ĐI ---
-        // Tại đây, getNextTurn sẽ tự động xử lý Hàng đợi Vector (Piggyback) và lưu vào DB.
-        // Sau đó nó trả về nội dung lượt mới.
-        const { narration, tags } = await aiService.getNextTurn(tempGameState, extractedTime);
+        // Bước 2: Truyền thời gian đã trích xuất vào dịch vụ AI
+        const { narration, tags, worldSim, thinking } = await aiService.getNextTurn(tempGameState, extractedTime);
         const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
+
+        if (worldSim) {
+            setLatestWorldNews(worldSim);
+        }
+        if (thinking) {
+            console.log('%c[AI THINKING]', 'color: #8b5cf6; font-style: italic;', thinking);
+        }
 
         setGameState(prev => {
             
-            // --- GIAI ĐOẠN 2: CẬP NHẬT STATE & CHUẨN BỊ BUFFER MỚI ---
-            
-            // A. Reset Buffer cũ:
-            // Vì getNextTurn đã xử lý buffer cũ, ta có thể xóa nó đi.
-            let updatedBuffer: PendingVectorItem[] = [];
-
             // 1. Thêm lượt tường thuật mới vào lịch sử
             const stateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
             
@@ -317,38 +318,18 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
             const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
             
-            // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái
-            // Lưu ý: Dispatcher trả về vectorUpdates dưới dạng { id, type, content }
+            // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
             const { finalState, vectorUpdates } = dispatchTags(stateWithNarration, stateChangingTags);
             
-            // --- GIAI ĐOẠN 3: NẠP DỮ LIỆU MỚI VÀO BUFFER (CHO LƯỢT SAU) ---
-            
-            // a. Thêm lượt chơi vừa xong (Narration) vào Buffer
-            const contextTurn = newAction; // Lượt Action của người chơi làm ngữ cảnh
-            const turnItem = gameService.createTurnVectorItem(
-                finalState.history.length - 1, // Index của Narration Turn
-                narrationTurn.content,
-                contextTurn.content
-            );
-            updatedBuffer.push(turnItem);
-
-            // b. Thêm các cập nhật thực thể (từ dispatchTags) vào Buffer
-            if (vectorUpdates && vectorUpdates.length > 0) {
-                const entityItems: PendingVectorItem[] = vectorUpdates.map(u => ({
-                    id: u.id,
-                    type: u.type,
-                    content: u.content
-                }));
-                updatedBuffer.push(...entityItems);
+            // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
+            if (finalState.worldId) {
+                aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
             }
-
-            // c. Gán buffer mới vào State
-            finalState.pendingVectorBuffer = updatedBuffer;
             
             // 4. Cập nhật gợi ý
             finalState.suggestions = suggestions;
             
-            // 5. Cập nhật Hồ sơ NPC (Logic cũ giữ nguyên)
+            // 5. Cập nhật Hồ sơ NPC
             const lastActionIndex = prev.history.length;
             const lastNarrationIndex = prev.history.length + 1;
             const allKnownNpcNames = new Set([
@@ -379,10 +360,8 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // Lên lịch nén hồ sơ như một tác vụ nền
             compressDossiersForTurn(finalState, newAction, narrationTurn);
             
-            // 6. Lưu game (Bao gồm cả Buffer mới)
-            // SaveGame bây giờ chỉ ghi vào IndexedDB, KHÔNG gọi API nữa.
+            // 6. Lưu game và trả về trạng thái cuối cùng
             gameService.saveGame(finalState, 'auto');
-            
             return finalState;
         });
 
@@ -431,39 +410,28 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     setIsLoading(true);
     setNotificationModal(prev => ({ ...prev, isOpen: false }));
     try {
-      const { narration, tags } = await aiService.startGame(gameState.worldConfig);
+      const { narration, tags, worldSim, thinking } = await aiService.startGame(gameState.worldConfig);
       
       const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
       const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
       const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
 
+      if (worldSim) {
+          setLatestWorldNews(worldSim);
+      }
+      if (thinking) {
+          console.log('%c[AI THINKING - START]', 'color: #8b5cf6; font-style: italic;', thinking);
+      }
+
       // Bắt đầu với trạng thái ban đầu và áp dụng các thẻ khởi tạo
       const { finalState, vectorUpdates } = dispatchTags(gameState, stateChangingTags);
       
-      // --- XỬ LÝ BUFFER CHO LƯỢT ĐẦU ---
-      // Với lượt đầu tiên, chúng ta cũng cần nạp buffer để lượt 2 xử lý.
-      let updatedBuffer: PendingVectorItem[] = [];
-      
-      // 1. Thêm lượt tường thuật đầu tiên vào Buffer
-      const turnItem = gameService.createTurnVectorItem(
-          0, // Index 0
-          narrationTurn.content,
-          "" // Không có lượt trước
-      );
-      updatedBuffer.push(turnItem);
-
-      // 2. Thêm các cập nhật thực thể ban đầu vào Buffer
-      if (vectorUpdates && vectorUpdates.length > 0) {
-          const entityItems: PendingVectorItem[] = vectorUpdates.map(u => ({
-              id: u.id,
-              type: u.type,
-              content: u.content
-          }));
-          updatedBuffer.push(...entityItems);
+      // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
+      if (finalState.worldId) {
+        aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
       }
 
       let updatedGameState = finalState;
-      updatedGameState.pendingVectorBuffer = updatedBuffer; // Gán buffer
       
       // Tính toán mùa và thời tiết sau khi thời gian được thiết lập
       const archetype = resolveGenreArchetype(updatedGameState.worldConfig.storyContext.genre);
@@ -775,6 +743,12 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         title={notificationModal.title}
         messages={notificationModal.messages}
       />
+      <NotificationModal
+        isOpen={isWorldNewsOpen}
+        onClose={() => setIsWorldNewsOpen(false)}
+        title="Tin tức Thế giới"
+        messages={latestWorldNews ? [latestWorldNews] : ['Không có tin tức mới.']}
+      />
       <TemporaryRulesModal isOpen={isTempRulesModalOpen} onClose={() => setIsTempRulesModalOpen(false)} onSave={handleSaveTemporaryRules} initialRules={gameState.worldConfig.temporaryRules} />
       <MemoryModal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} memories={gameState.memories} summaries={gameState.summaries} />
       <StoryLogModal isOpen={isStoryLogModalOpen} onClose={() => setIsStoryLogModalOpen(false)} history={currentTurns} title={`Diễn Biến Trang ${currentPage + 1}/${totalPages}`} initialScrollTop={storyLogInitialScrollTop} />
@@ -800,10 +774,22 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
                   <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate max-w-[150px] sm:max-w-[350px]">{gameState.worldConfig.storyContext.worldName || gameState.worldConfig.storyContext.genre}</h1>
                   <p className="text-xs text-slate-400">Lượt: {narrationTurns.length}</p>
                 </div>
-                 <div className="lg:hidden z-[60]">
-                    <button onClick={() => setIsSidePanelOpen(true)} className="p-2 text-slate-300 hover:bg-slate-700 rounded-full transition">
-                        <Icon name="ellipsisVertical" className="w-5 h-5" />
-                    </button>
+                 <div className="flex items-center gap-2">
+                    {latestWorldNews && (
+                        <button 
+                            onClick={() => setIsWorldNewsOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition animate-pulse shadow-lg shadow-red-500/30"
+                            title="Có tin tức thế giới mới!"
+                        >
+                            <Icon name="world" className="w-4 h-4" />
+                            <span className="hidden sm:inline">Tin Mới!</span>
+                        </button>
+                    )}
+                    <div className="lg:hidden z-[60]">
+                        <button onClick={() => setIsSidePanelOpen(true)} className="p-2 text-slate-300 hover:bg-slate-700 rounded-full transition">
+                            <Icon name="ellipsisVertical" className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
                 <div className="hidden lg:block w-[100px]"></div>
               </div>
