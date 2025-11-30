@@ -4,7 +4,7 @@ import { GameState, WorldConfig, TimePassed } from "../types";
 import { getGameMasterSystemInstruction, getResponseLengthDirective } from './systemInstructions';
 import { buildNsfwPayload, buildPronounPayload, buildTimePayload, buildReputationPayload } from '../utils/promptBuilders';
 import { getSettings } from "../services/settingsService";
-import { obfuscateText } from "../../utils/textProcessing";
+import { obfuscateText } from "../utils/textProcessing";
 
 // Helper function to build NPC Memory Flag context
 const buildNpcMemoryFlagContext = (gameState: GameState, playerActionContent: string): string => {
