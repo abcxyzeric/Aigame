@@ -165,40 +165,115 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     };
 
     const handleSaveEdit = () => {
-        if (!editFormData) return;
-        const updatedItem = {
+        if (!editFormData || !activeItem) return;
+        
+        // Chuẩn hóa tags từ chuỗi về mảng
+        const updatedData = {
             ...editFormData,
-            tags: (editFormData.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+            tags: typeof editFormData.tags === 'string' ? editFormData.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : editFormData.tags,
         };
         
         setGameState(prev => {
-            const newState = JSON.parse(JSON.stringify(prev)); // Deep copy to ensure re-render
-            let updated = false;
+            const newState = JSON.parse(JSON.stringify(prev)); // Deep copy state
+            
+            // Map tên danh sách với mảng dữ liệu thực tế trong newState
+            // Lưu ý: Các mảng con phải được khởi tạo nếu chưa có
+            if (!newState.character) newState.character = {};
+            if (!newState.worldConfig) newState.worldConfig = {};
 
-            const updateList = (list: any[] | undefined) => {
-                if(updated || !list) return list;
-                const itemIndex = list.findIndex(item => item.name === updatedItem.name);
-                if (itemIndex > -1) {
-                    list[itemIndex] = { ...list[itemIndex], ...updatedItem };
-                    updated = true;
-                }
-                return list;
+            const listsMap: Record<string, any[]> = {
+                'encounteredNPCs': newState.encounteredNPCs || [],
+                'companions': newState.companions || [],
+                'inventory': newState.inventory || [],
+                'skills': newState.character.skills || [],
+                'encounteredFactions': newState.encounteredFactions || [],
+                'quests': newState.quests || [],
+                'discoveredEntities': newState.discoveredEntities || [],
+                'initialEntities': newState.worldConfig.initialEntities || []
             };
 
-            // This logic is complex, needs to check all possible locations of the entity
-            updateList(newState.encounteredNPCs);
-            updateList(newState.companions);
-            updateList(newState.inventory);
-            updateList(newState.character.skills);
-            updateList(newState.encounteredFactions);
-            updateList(newState.quests);
-            updateList(newState.discoveredEntities);
-            updateList(newState.worldConfig.initialEntities);
+            // BƯỚC 1: Tìm nguồn (Source List) dựa trên tên cũ (activeItem.name)
+            let sourceListName = '';
+            let sourceIndex = -1;
+
+            for (const [key, list] of Object.entries(listsMap)) {
+                const idx = list.findIndex((item: any) => item.name === activeItem.name);
+                if (idx > -1) {
+                    sourceListName = key;
+                    sourceIndex = idx;
+                    break;
+                }
+            }
+
+            if (sourceListName === '' || sourceIndex === -1) {
+                console.error("Không tìm thấy item gốc để cập nhật.");
+                return newState;
+            }
+
+            // BƯỚC 2: Xác định đích (Target List) dựa trên Type mới
+            let targetListName = sourceListName;
+            const newType = updatedData.type;
+
+            // Logic ánh xạ Type -> List Name
+            if (newType === 'NPC') targetListName = 'encounteredNPCs';
+            else if (newType === 'Vật phẩm') targetListName = 'inventory';
+            else if (newType === 'Công pháp / Kỹ năng') targetListName = 'skills';
+            else if (newType === 'Phe phái/Thế lực') targetListName = 'encounteredFactions';
+            else if (newType === 'Địa điểm' || newType === 'Hệ thống sức mạnh / Lore') {
+                // Nếu đang ở initialEntities thì giữ nguyên, ngược lại đưa vào discoveredEntities
+                if (sourceListName === 'initialEntities') targetListName = 'initialEntities';
+                else targetListName = 'discoveredEntities';
+            }
+            // Quest không có trong dropdown chọn Type nên thường giữ nguyên, trừ khi logic khác can thiệp
+            else if (sourceListName === 'quests') targetListName = 'quests'; 
+
+            // Xử lý đặc biệt: Companion nếu chọn type là NPC sẽ chuyển thành NPC thường
+            // Hack: Nếu source là 'companions' và target tính ra là 'encounteredNPCs' (do mặc định NPC), ép lại thành 'companions' để tránh bị move nhầm
+            if (sourceListName === 'companions' && targetListName === 'encounteredNPCs') {
+                targetListName = 'companions';
+            }
             
+            // BƯỚC 3: Thực hiện Di chuyển
+            if (sourceListName === targetListName) {
+                // Cập nhật tại chỗ
+                listsMap[sourceListName][sourceIndex] = { ...listsMap[sourceListName][sourceIndex], ...updatedData };
+            } else {
+                // Xóa cũ
+                const [removedItem] = listsMap[sourceListName].splice(sourceIndex, 1);
+                
+                // Chuẩn hóa dữ liệu cho đích
+                const newItem = { ...removedItem, ...updatedData };
+                
+                // Đảm bảo các trường bắt buộc
+                if (targetListName === 'inventory') {
+                    newItem.quantity = newItem.quantity || 1;
+                } else if (targetListName === 'encounteredNPCs' || targetListName === 'companions') {
+                    newItem.personality = newItem.personality || 'Chưa rõ';
+                    // newItem.thoughtsOnPlayer = newItem.thoughtsOnPlayer || 'Chưa có';
+                }
+                
+                // Dọn dẹp trường thừa
+                if (targetListName !== 'inventory') delete newItem.quantity;
+                if (targetListName !== 'quests') delete newItem.status;
+
+                // Thêm mới
+                listsMap[targetListName].push(newItem);
+            }
+
+            // Gán lại các danh sách vào newState để đảm bảo cập nhật
+            newState.encounteredNPCs = listsMap['encounteredNPCs'];
+            newState.companions = listsMap['companions'];
+            newState.inventory = listsMap['inventory'];
+            newState.character.skills = listsMap['skills'];
+            newState.encounteredFactions = listsMap['encounteredFactions'];
+            newState.quests = listsMap['quests'];
+            newState.discoveredEntities = listsMap['discoveredEntities'];
+            newState.worldConfig.initialEntities = listsMap['initialEntities'];
+
             return newState;
         });
         
-        setActiveItem(updatedItem);
+        setActiveItem(updatedData);
         setIsEditing(false);
     };
 
