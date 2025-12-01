@@ -210,53 +210,68 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                 return newState;
             }
 
-            // BƯỚC 2: Xác định đích (Target List) dựa trên Type mới
-            let targetListName = sourceListName;
-            const newType = updatedData.type;
+            // BƯỚC 2: Xác định đích (Target List)
+            // Ưu tiên sử dụng _targetList từ dropdown nếu có
+            let targetListName = updatedData._targetList;
 
-            // Logic ánh xạ Type -> List Name
-            if (newType === 'NPC') targetListName = 'encounteredNPCs';
-            else if (newType === 'Vật phẩm') targetListName = 'inventory';
-            else if (newType === 'Công pháp / Kỹ năng') targetListName = 'skills';
-            else if (newType === 'Phe phái/Thế lực') targetListName = 'encounteredFactions';
-            else if (newType === 'Địa điểm' || newType === 'Hệ thống sức mạnh / Lore') {
-                // Nếu đang ở initialEntities thì giữ nguyên, ngược lại đưa vào discoveredEntities
-                if (sourceListName === 'initialEntities') targetListName = 'initialEntities';
-                else targetListName = 'discoveredEntities';
+            // Nếu không có _targetList (người dùng không chọn chuyển), giữ nguyên nguồn
+            if (!targetListName) {
+                targetListName = sourceListName;
             }
-            // Quest không có trong dropdown chọn Type nên thường giữ nguyên, trừ khi logic khác can thiệp
-            else if (sourceListName === 'quests') targetListName = 'quests'; 
 
-            // Xử lý đặc biệt: Companion nếu chọn type là NPC sẽ chuyển thành NPC thường
-            // Hack: Nếu source là 'companions' và target tính ra là 'encounteredNPCs' (do mặc định NPC), ép lại thành 'companions' để tránh bị move nhầm
-            if (sourceListName === 'companions' && targetListName === 'encounteredNPCs') {
-                targetListName = 'companions';
-            }
-            
-            // BƯỚC 3: Thực hiện Di chuyển
+            // BƯỚC 3: Thực hiện Di chuyển và Thanh lọc (Sanitization)
             if (sourceListName === targetListName) {
                 // Cập nhật tại chỗ
-                listsMap[sourceListName][sourceIndex] = { ...listsMap[sourceListName][sourceIndex], ...updatedData };
+                let item = listsMap[sourceListName][sourceIndex];
+                let newItem = { ...item, ...updatedData };
+                
+                // Vẫn cần thanh lọc nhẹ để đảm bảo sạch sẽ nếu lỡ có rác
+                if (targetListName !== 'quests') delete newItem.status;
+                if (targetListName !== 'inventory') delete newItem.quantity;
+
+                listsMap[sourceListName][sourceIndex] = newItem;
             } else {
                 // Xóa cũ
                 const [removedItem] = listsMap[sourceListName].splice(sourceIndex, 1);
                 
-                // Chuẩn hóa dữ liệu cho đích
-                const newItem = { ...removedItem, ...updatedData };
+                // Chuẩn hóa dữ liệu cho đích (Pre-save Sanitization)
+                let newItem = { ...removedItem, ...updatedData };
                 
-                // Đảm bảo các trường bắt buộc
-                if (targetListName === 'inventory') {
+                // --- LOGIC THANH LỌC QUAN TRỌNG ---
+                if (targetListName === 'quests') {
+                    // Đích là Nhiệm vụ:
+                    // - BẮT BUỘC có status
+                    newItem.status = newItem.status || 'đang tiến hành';
+                    // - Xóa rác
+                    delete newItem.quantity;
+                    delete newItem.personality;
+                    delete newItem.thoughtsOnPlayer;
+                } 
+                else if (targetListName === 'inventory') {
+                    // Đích là Vật phẩm:
+                    // - BẮT BUỘC có quantity
                     newItem.quantity = newItem.quantity || 1;
-                } else if (targetListName === 'encounteredNPCs' || targetListName === 'companions') {
+                    // - BẮT BUỘC XÓA status (để không hiện bên tab Quest)
+                    delete newItem.status;
+                    delete newItem.personality;
+                    delete newItem.thoughtsOnPlayer;
+                } 
+                else if (targetListName === 'encounteredNPCs' || targetListName === 'companions') {
+                    // Đích là NPC/Đồng hành:
+                    // - BẮT BUỘC XÓA status và quantity
+                    delete newItem.status;
+                    delete newItem.quantity;
+                    // - Đảm bảo các trường NPC
                     newItem.personality = newItem.personality || 'Chưa rõ';
-                    // newItem.thoughtsOnPlayer = newItem.thoughtsOnPlayer || 'Chưa có';
+                } 
+                else {
+                    // Các đích khác (Lore, Địa điểm, Skills...):
+                    // - Luôn xóa status và quantity để an toàn
+                    delete newItem.status;
+                    delete newItem.quantity;
                 }
-                
-                // Dọn dẹp trường thừa
-                if (targetListName !== 'inventory') delete newItem.quantity;
-                if (targetListName !== 'quests') delete newItem.status;
 
-                // Thêm mới
+                // Thêm mới vào đích
                 listsMap[targetListName].push(newItem);
             }
 
@@ -754,32 +769,51 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                                 <select
                                                     className="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-slate-200"
                                                     onChange={(e) => {
-                                                        const target = e.target.value;
-                                                        if (!target) return;
+                                                        const targetList = e.target.value;
+                                                        if (!targetList) return;
                                                         
-                                                        const fixedMap: Record<string, string> = {
-                                                            'characters': 'NPC',
-                                                            'items': 'Vật phẩm',
-                                                            'skills': 'Công pháp / Kỹ năng',
-                                                            'factions': 'Phe phái/Thế lực',
-                                                            'locations': 'Địa điểm',
-                                                            'concepts': 'Hệ thống sức mạnh / Lore'
-                                                        };
+                                                        // Cập nhật _targetList để handleSaveEdit sử dụng làm đích đến
+                                                        handleFormChange('_targetList', targetList);
 
-                                                        if (fixedMap[target]) {
-                                                            handleFormChange('type', fixedMap[target]);
+                                                        // Logic cập nhật UI hiển thị loại (Type) tương ứng với đích đến
+                                                        if (targetList === 'encounteredNPCs') {
+                                                            handleFormChange('type', 'NPC');
+                                                            handleFormChange('customCategory', '');
+                                                        } else if (targetList === 'companions') {
+                                                            handleFormChange('type', 'NPC'); // Companion về bản chất là NPC
+                                                            handleFormChange('customCategory', '');
+                                                        } else if (targetList === 'inventory') {
+                                                            handleFormChange('type', 'Vật phẩm');
+                                                            handleFormChange('customCategory', '');
+                                                        } else if (targetList === 'quests') {
+                                                            handleFormChange('type', 'Nhiệm vụ'); // Type giả lập cho UI
+                                                            handleFormChange('status', 'đang tiến hành'); // Set default status
+                                                            handleFormChange('customCategory', '');
+                                                        } else if (targetList === 'encounteredFactions') {
+                                                            handleFormChange('type', 'Phe phái/Thế lực');
+                                                            handleFormChange('customCategory', '');
+                                                        } else if (targetList === 'discoveredEntities') {
+                                                            // Mặc định cho Lore/Địa điểm/Danh mục động
+                                                            // Không đổi type nếu đang ở danh mục động, chỉ clear customCategory nếu chọn mục chung
                                                             handleFormChange('customCategory', '');
                                                         } else {
-                                                            handleFormChange('customCategory', target);
+                                                            // Đây là danh mục động (custom category)
+                                                            // Gán customCategory = tên danh mục
+                                                            handleFormChange('customCategory', targetList);
+                                                            // Target list thực tế sẽ là discoveredEntities (nơi chứa các custom entity)
+                                                            handleFormChange('_targetList', 'discoveredEntities');
                                                         }
                                                     }}
                                                     value=""
                                                 >
                                                     <option value="">-- Chọn đích đến --</option>
-                                                    <optgroup label="Danh mục Cố định">
-                                                        {fixedTabsConfig.filter(t => t.key !== 'knowledge' && t.key !== 'quests').map(t => (
-                                                            <option key={t.key} value={t.key}>{t.label}</option>
-                                                        ))}
+                                                    <optgroup label="Danh sách Chính">
+                                                        <option value="encounteredNPCs">Nhân vật (NPC)</option>
+                                                        <option value="companions">Đồng hành</option>
+                                                        <option value="inventory">Vật phẩm</option>
+                                                        <option value="quests">Nhiệm vụ</option>
+                                                        <option value="encounteredFactions">Thế lực</option>
+                                                        <option value="discoveredEntities">Lore / Địa điểm</option>
                                                     </optgroup>
                                                     <optgroup label="Danh mục Động (AI tạo)">
                                                         {dynamicCategories.map(cat => (
@@ -787,7 +821,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                                         ))}
                                                     </optgroup>
                                                 </select>
-                                                <p className="text-xs text-slate-500 mt-1">Chọn tab đích để di chuyển thực thể. Dữ liệu sẽ tự động chuyển đổi loại (type) tương ứng.</p>
+                                                <p className="text-xs text-slate-500 mt-1">Chọn tab đích để di chuyển thực thể. Dữ liệu sẽ tự động được chuẩn hóa (thêm/bớt thuộc tính) cho phù hợp.</p>
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
