@@ -1,7 +1,6 @@
 
-
 import { generate, generateJson } from '../core/geminiClient';
-import { GameState, WorldConfig, TimePassed, PendingVectorItem } from '../../types';
+import { GameState, WorldConfig, TimePassed, PendingVectorItem, GameTurn } from '../../types';
 import { ParsedTag } from '../../utils/tagProcessors';
 import { getStartGamePrompt, getNextTurnPrompt, getGenerateReputationTiersPrompt } from '../../prompts/gameplayPrompts';
 import * as ragService from './ragService';
@@ -29,30 +28,35 @@ export const startGame = async (config: WorldConfig): Promise<{ narration: strin
     
     const parsed = parseResponse(rawResponse);
     
-    // --- CLEANUP LOGIC ---
+    // --- MERGING & CLEANUP LOGIC ---
     let finalNarration = parsed.narration;
 
-    // 1. Regex Clean up: Remove leaked XML blocks and tags if they leaked into narration
-    finalNarration = finalNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-    finalNarration = finalNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
+    // 1. Vệ sinh đặc biệt (Sanitization): Loại bỏ tàn dư thẻ XML và Suy nghĩ
+    // Xóa tàn dư thẻ XML đóng/mở (đôi khi regex extraction vẫn để lọt thẻ đóng)
     finalNarration = finalNarration.replace(/<\/?thinking>/gi, '');
     finalNarration = finalNarration.replace(/<\/?world_sim>/gi, '');
     
-    // 2. Remove specific artifacts mentions by user or explicitly generated headers
+    // Xóa các dòng giải thích của AI (Bullet points đậm - thường thấy ở model Pro)
+    finalNarration = finalNarration.replace(/^\s*\*\s*\*\*.*?:.*/gm, ''); // Matches "* **Dieu kien...: ..."
+    finalNarration = finalNarration.replace(/^\s*\*\s*Điều kiện kích hoạt.*/gmi, '');
+    finalNarration = finalNarration.replace(/^\s*\*\s*Sự kiện.*/gmi, '');
+
+    // 2. Loại bỏ các header/footer thừa bên trong narration
     finalNarration = finalNarration.replace(/\[TIN TỨC THẾ GIỚI\]/gi, '');
+    
+    // 3. Xóa các dòng kẻ ngang thừa thãi ở đầu/cuối của narration
+    finalNarration = finalNarration.replace(/^(\s*[-=_]{3,}\s*)+/g, ''); // Đầu
+    finalNarration = finalNarration.replace(/(\s*[-=_]{3,}\s*)+$/g, ''); // Cuối
+    
     finalNarration = finalNarration.trim();
 
-    // 3. Append World Sim if valid (MERGE STRATEGY)
-    // Logic: Narration + Separator + World News (Content only, no Header)
+    // 4. Hợp nhất World Sim (Merging Strategy)
+    // Nếu có worldSim (đã được vệ sinh ở TagParser), gộp vào cuối narration
     if (parsed.worldSim) {
-        const simContent = parsed.worldSim.trim();
-        // Check for EMPTY, EMPTY., or just whitespace
-        if (simContent && !/^EMPTY\.?$/i.test(simContent)) {
-            finalNarration = `${finalNarration}\n\n----------------\n\n${simContent}`;
-        }
+        finalNarration = `${finalNarration}\n\n----------------\n\n${parsed.worldSim}`;
     }
 
-    // Return undefined for worldSim so the UI modal doesn't pop up
+    // Return undefined for worldSim so the UI modal doesn't pop up separately
     return { ...parsed, narration: finalNarration, worldSim: undefined };
 };
 
@@ -184,9 +188,10 @@ async function getInjectedMemories(gameState: GameState, queryEmbedding: number[
 }
 
 
-export const getNextTurn = async (gameState: GameState, codeExtractedTime?: TimePassed): Promise<{ narration: string; tags: ParsedTag[]; worldSim?: string; thinking?: string }> => {
+export const getNextTurn = async (gameState: GameState, codeExtractedTime?: TimePassed): Promise<{ narration: string; tags: ParsedTag[]; worldSim?: string; thinking?: string; newSummary?: string }> => {
     resetRequestStats(); // Reset số liệu thống kê request cho lượt mới
     const { history, worldConfig } = gameState;
+    const { ragSettings } = getSettings();
     
     const lastPlayerAction = history[history.length - 1];
     if (!lastPlayerAction || lastPlayerAction.type !== 'action') {
@@ -284,11 +289,6 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
     let relevantKnowledge = '';
     
     // queryEmbeddingForKnowledge chính là queryEmbedding ta đã tạo (nếu có)
-    // Nếu queryEmbedding là null (do history <= 10), nhưng có backgroundKnowledge, thì lẽ ra phải tạo.
-    // Tuy nhiên, logic Conditional RAG nói rằng giai đoạn đầu không cần RAG.
-    // Nếu muốn bắt buộc RAG kiến thức nền ngay từ đầu, ta cần điều chỉnh điều kiện `shouldEmbed`.
-    // Ở trên đã thêm điều kiện `worldConfig.backgroundKnowledge.length > 0` vào `shouldEmbed`, nên queryEmbedding sẽ có.
-        
     if (worldConfig.backgroundKnowledge && worldConfig.backgroundKnowledge.length > 0 && queryEmbedding) {
         setDebugContext('RAG - Knowledge Retrieval');
         relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryText, worldConfig.backgroundKnowledge, 3, queryEmbedding);
@@ -316,28 +316,56 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
     
     const parsed = parseResponse(rawResponse);
 
-    // --- CLEANUP LOGIC ---
+    // --- MERGING & CLEANUP LOGIC ---
     let finalNarration = parsed.narration;
 
-    // 1. Regex Clean up: Remove leaked XML blocks and tags
-    finalNarration = finalNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-    finalNarration = finalNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
+    // 1. Vệ sinh đặc biệt (Sanitization): Loại bỏ tàn dư thẻ XML và Suy nghĩ
+    // Xóa tàn dư thẻ XML đóng/mở (đôi khi regex extraction vẫn để lọt thẻ đóng)
     finalNarration = finalNarration.replace(/<\/?thinking>/gi, '');
     finalNarration = finalNarration.replace(/<\/?world_sim>/gi, '');
+    
+    // Xóa các dòng giải thích của AI (Bullet points đậm - thường thấy ở model Pro)
+    finalNarration = finalNarration.replace(/^\s*\*\s*\*\*.*?:.*/gm, ''); // Matches "* **Dieu kien...: ..."
+    finalNarration = finalNarration.replace(/^\s*\*\s*Điều kiện kích hoạt.*/gmi, '');
+    finalNarration = finalNarration.replace(/^\s*\*\s*Sự kiện.*/gmi, '');
 
-    // 2. Remove specific artifacts
+    // 2. Loại bỏ các header/footer thừa
     finalNarration = finalNarration.replace(/\[TIN TỨC THẾ GIỚI\]/gi, '');
+    
+    // 3. Xóa các dòng kẻ ngang thừa thãi
+    finalNarration = finalNarration.replace(/^(\s*[-=_]{3,}\s*)+/g, ''); // Đầu
+    finalNarration = finalNarration.replace(/(\s*[-=_]{3,}\s*)+$/g, ''); // Cuối
+    
     finalNarration = finalNarration.trim();
 
-    // 3. Append World Sim if valid (MERGE STRATEGY)
+    // 4. Append World Sim if valid (MERGE STRATEGY)
     if (parsed.worldSim) {
-        const simContent = parsed.worldSim.trim();
-        // Check for EMPTY, EMPTY., or just whitespace
-        if (simContent && !/^EMPTY\.?$/i.test(simContent)) {
-            finalNarration = `${finalNarration}\n\n----------------\n\n${simContent}`;
+        finalNarration = `${finalNarration}\n\n----------------\n\n${parsed.worldSim}`;
+    }
+
+    // 5. Automatic Summarization Logic
+    let newSummary: string | undefined;
+    const totalTurns = history.length + 2; // history (old) + user action (1) + ai response (1)
+    
+    if (ragSettings.summaryFrequency > 0 && totalTurns % ragSettings.summaryFrequency === 0) {
+        setDebugContext('Auto Summary (Flash)');
+        // Create a temporary history array including the just-generated narration
+        const currentTurnObj: GameTurn = { type: 'narration', content: finalNarration };
+        const tempHistory = [...history, lastPlayerAction, currentTurnObj];
+        
+        // Use only the recent turns for the summary
+        const recentTurns = tempHistory.slice(-ragSettings.summaryFrequency);
+        
+        try {
+            newSummary = await ragService.generateSummary(recentTurns, worldConfig);
+            if (DEBUG_MODE) {
+                console.log(`%c[AUTO SUMMARY]`, 'color: #a855f7;', `Generated summary for last ${ragSettings.summaryFrequency} turns.`);
+            }
+        } catch (e) {
+            console.error("Failed to generate auto summary:", e);
         }
     }
 
     // Return undefined for worldSim to ensure component doesn't show separate modal
-    return { ...parsed, narration: finalNarration, worldSim: undefined };
+    return { ...parsed, narration: finalNarration, worldSim: undefined, newSummary };
 };

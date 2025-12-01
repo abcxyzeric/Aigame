@@ -299,7 +299,7 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
     try {
         const tempGameState = { ...gameState, history: [...gameState.history, newAction] };
         // Bước 2: Truyền thời gian đã trích xuất vào dịch vụ AI
-        const { narration, tags, worldSim, thinking } = await aiService.getNextTurn(tempGameState, extractedTime);
+        const { narration, tags, worldSim, thinking, newSummary } = await aiService.getNextTurn(tempGameState, extractedTime);
         const narrationTurn: GameTurn = { type: 'narration', content: processNarration(narration) };
 
         if (worldSim) {
@@ -310,16 +310,28 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         }
 
         setGameState(prev => {
-            
             // 1. Thêm lượt tường thuật mới vào lịch sử
-            const stateWithNarration = { ...prev, history: [...prev.history, narrationTurn] };
+            let updatedState = { ...prev, history: [...prev.history, narrationTurn] };
             
+            // Handle new summary if generated
+            if (newSummary) {
+                narrationTurn.metadata = { isSummaryTurn: true }; // Mark this turn as generating a summary
+                updatedState.summaries = [...(updatedState.summaries || []), newSummary];
+                // Also create a PendingVectorItem for the summary
+                if (!updatedState.pendingVectorBuffer) updatedState.pendingVectorBuffer = [];
+                updatedState.pendingVectorBuffer.push({
+                    id: updatedState.summaries.length - 1, // Index of the new summary
+                    type: 'Summary',
+                    content: newSummary
+                });
+            }
+
             // 2. Tách thẻ Gợi ý ra để xử lý riêng
             const suggestions = tags.filter(t => t.tagName === 'SUGGESTION').map(t => t.params as ActionSuggestion);
             const stateChangingTags = tags.filter(t => t.tagName !== 'SUGGESTION');
             
             // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
-            const { finalState, vectorUpdates } = dispatchTags(stateWithNarration, stateChangingTags);
+            const { finalState, vectorUpdates } = dispatchTags(updatedState, stateChangingTags);
             
             // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
             if (finalState.worldId) {
@@ -742,12 +754,6 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
         onClose={() => setNotificationModal(prev => ({ ...prev, isOpen: false }))}
         title={notificationModal.title}
         messages={notificationModal.messages}
-      />
-      <NotificationModal
-        isOpen={isWorldNewsOpen}
-        onClose={() => setIsWorldNewsOpen(false)}
-        title="Tin tức Thế giới"
-        messages={latestWorldNews ? [latestWorldNews] : ['Không có tin tức mới.']}
       />
       <TemporaryRulesModal isOpen={isTempRulesModalOpen} onClose={() => setIsTempRulesModalOpen(false)} onSave={handleSaveTemporaryRules} initialRules={gameState.worldConfig.temporaryRules} />
       <MemoryModal isOpen={isMemoryModalOpen} onClose={() => setIsMemoryModalOpen(false)} memories={gameState.memories} summaries={gameState.summaries} />

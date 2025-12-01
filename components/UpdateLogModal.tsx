@@ -13,6 +13,13 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
+        version: "1.7.1 (Nâng cấp Quản lý Dữ liệu)",
+        notes: [
+            "**Di chuyển Dữ liệu Linh hoạt:** Tính năng 'Chỉnh sửa / Di chuyển' trong Bách Khoa Toàn Thư được nâng cấp mạnh mẽ. Giờ đây bạn có thể di chuyển bất kỳ thực thể nào vào các Tab Động (do AI tạo) một cách dễ dàng thông qua menu chọn nhanh.",
+            "**Tự động Chuyển đổi Loại:** Khi di chuyển một thực thể vào Tab Động (ví dụ: chuyển từ 'NPC' sang 'Yêu Thú'), hệ thống sẽ tự động cập nhật phân loại của thực thể đó để tương thích với Tab mới, giúp dữ liệu luôn ngăn nắp."
+        ]
+    },
+    {
       version: "1.7.0 (Cập nhật Model & Mô phỏng Thế giới)",
       notes: [
         "**Tích hợp Gemini 2.5 Pro:** Đã bổ sung tùy chọn model Gemini 2.5 Pro vào phần Cài đặt. Người chơi giờ đây có thể linh hoạt chuyển đổi giữa tốc độ phản hồi cực nhanh của bản Flash hoặc khả năng tư duy sâu sắc, văn phong chau chuốt vượt trội của bản Pro để có trải nghiệm dẫn truyện đỉnh cao nhất.",

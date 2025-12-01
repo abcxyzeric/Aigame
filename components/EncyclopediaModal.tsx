@@ -6,6 +6,7 @@ import Button from './common/Button';
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
 import NotificationModal from './common/NotificationModal';
+import { CORE_ENTITY_TYPES, ENTITY_TYPE_OPTIONS } from '../constants';
 
 
 interface EncyclopediaModalProps {
@@ -26,12 +27,12 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
         onClick={onClick}
         className={`flex items-center justify-start gap-2 px-3 py-3 text-xs sm:text-sm font-semibold transition-colors duration-200 focus:outline-none w-full text-left rounded-md ${
             active
-                ? 'text-purple-300 bg-slate-900/50'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-        }`}
+                ? 'text-purple-300 bg-slate-900/50 whitespace-normal' // Active: wrap text
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 truncate' // Inactive: truncate
+        } md:truncate`}
     >
         <Icon name={iconName} className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
-        <span className="truncate">{children}</span>
+        <span>{children}</span>
     </button>
 );
 
@@ -154,6 +155,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             ...activeItem,
             status: (activeItem as Quest).status || 'đang tiến hành',
             tags: ((activeItem as any).tags || []).join(', '),
+            type: (activeItem as any).type || 'Hệ thống sức mạnh / Lore' // Default if missing
         });
         setIsEditing(true);
     };
@@ -485,6 +487,13 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                 messages={notification.messages}
             />
             <input type="file" ref={importFileRef} onChange={handleImport} className="hidden" accept=".json" />
+            
+            {/* Category Suggestions Datalist */}
+            <datalist id="category-suggestions">
+                {dynamicCategories.map((cat, index) => (
+                    <option key={index} value={cat} />
+                ))}
+            </datalist>
 
             <div 
                 className="bg-slate-800 border border-slate-700 rounded-lg shadow-2xl w-full max-w-6xl relative animate-fade-in-up flex flex-col"
@@ -574,13 +583,14 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                         <h3 className="text-2xl font-bold text-purple-300 mb-2">{activeItem.name}</h3>
                                         {activeTab !== 'knowledge' && (
                                             <div className="flex gap-2">
-                                                <Button onClick={handleStartEdit} variant="secondary" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="pencil" className="w-4 h-4 mr-1"/>Chỉnh sửa</Button>
+                                                <Button onClick={handleStartEdit} variant="secondary" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="pencil" className="w-4 h-4 mr-1"/>Chỉnh sửa / Di chuyển</Button>
                                                 <Button onClick={handleDelete} variant="warning" className="!w-auto !py-1 !px-3 !text-sm"><Icon name="trash" className="w-4 h-4 mr-1"/>Xóa</Button>
                                             </div>
                                         )}
                                     </div>
                                     
                                     {('type' in activeItem && activeItem.type) && <p className="text-sm text-slate-400 mb-2">Loại: {activeItem.type}</p>}
+                                    {('customCategory' in activeItem && (activeItem as any).customCategory) && <p className="text-sm text-sky-400 mb-2">Phân loại: {(activeItem as any).customCategory}</p>}
                                     
                                     {activeTab === 'quests' && (activeItem as Quest).status && (
                                         <span className={`text-sm font-semibold px-3 py-1 rounded-full mb-4 inline-block ${
@@ -660,10 +670,80 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                                             <label className="block text-sm font-medium text-slate-300 mb-1">Tags (phân cách bởi dấu phẩy)</label>
                                             <input type="text" value={editFormData.tags} onChange={e => handleFormChange('tags', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
                                         </div>}
-                                         {'customCategory' in editFormData && <div>
-                                            <label className="block text-sm font-medium text-slate-300 mb-1">Phân loại tùy chỉnh</label>
-                                            <input type="text" value={editFormData.customCategory || ''} onChange={e => handleFormChange('customCategory', e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" />
-                                        </div>}
+                                        
+                                        <div className="border-t border-slate-700 pt-4 mt-4">
+                                            <h4 className="text-sm font-bold text-yellow-300 mb-3">Di Chuyển & Phân Loại</h4>
+                                            
+                                            <div className="mb-4">
+                                                <label className="block text-sm font-medium text-slate-300 mb-1">Chuyển nhanh vào Tab:</label>
+                                                <select
+                                                    className="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-slate-200"
+                                                    onChange={(e) => {
+                                                        const target = e.target.value;
+                                                        if (!target) return;
+                                                        
+                                                        const fixedMap: Record<string, string> = {
+                                                            'characters': 'NPC',
+                                                            'items': 'Vật phẩm',
+                                                            'skills': 'Công pháp / Kỹ năng',
+                                                            'factions': 'Phe phái/Thế lực',
+                                                            'locations': 'Địa điểm',
+                                                            'concepts': 'Hệ thống sức mạnh / Lore'
+                                                        };
+
+                                                        if (fixedMap[target]) {
+                                                            handleFormChange('type', fixedMap[target]);
+                                                            handleFormChange('customCategory', '');
+                                                        } else {
+                                                            handleFormChange('customCategory', target);
+                                                        }
+                                                    }}
+                                                    value=""
+                                                >
+                                                    <option value="">-- Chọn đích đến --</option>
+                                                    <optgroup label="Danh mục Cố định">
+                                                        {fixedTabsConfig.filter(t => t.key !== 'knowledge' && t.key !== 'quests').map(t => (
+                                                            <option key={t.key} value={t.key}>{t.label}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                    <optgroup label="Danh mục Động (AI tạo)">
+                                                        {dynamicCategories.map(cat => (
+                                                            <option key={cat} value={cat}>{cat}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                </select>
+                                                <p className="text-xs text-slate-500 mt-1">Chọn tab đích để di chuyển thực thể. Dữ liệu sẽ tự động chuyển đổi loại (type) tương ứng.</p>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {'type' in editFormData && (
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-300 mb-1">Loại Thực Thể (Gốc)</label>
+                                                        <select 
+                                                            value={editFormData.type} 
+                                                            onChange={e => handleFormChange('type', e.target.value)} 
+                                                            className="w-full bg-slate-900 border border-slate-600 rounded-md p-2"
+                                                        >
+                                                            {CORE_ENTITY_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                
+                                                {'customCategory' in editFormData && (
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-slate-300 mb-1">Tên Tab Động (Tùy chỉnh)</label>
+                                                        <input 
+                                                            type="text" 
+                                                            list="category-suggestions"
+                                                            value={editFormData.customCategory || ''} 
+                                                            onChange={e => handleFormChange('customCategory', e.target.value)} 
+                                                            className="w-full bg-slate-900 border border-slate-600 rounded-md p-2" 
+                                                            placeholder="Nhập tên mới..."
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="flex gap-4 mt-6">
                                         <Button onClick={handleSaveEdit} variant="primary" className="!w-auto !py-2 !px-4 !text-sm">Lưu Thay Đổi</Button>

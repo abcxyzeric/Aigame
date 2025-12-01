@@ -1,3 +1,4 @@
+
 import { generate, generateJson } from '../core/geminiClient';
 import { GameState, GameTurn, FandomDataset, WorldConfig, VectorUpdate, EntityVector } from '../../types';
 import { 
@@ -37,7 +38,8 @@ export async function generateSummary(turns: GameTurn[], worldConfig: WorldConfi
 
     const prompt = `Dựa vào đoạn hội thoại và diễn biến sau, hãy viết một đoạn tóm tắt ngắn gọn (3-4 câu) về các sự kiện chính, các nhân vật mới xuất hiện, và các thông tin quan trọng đã được tiết lộ. Tóm tắt này sẽ được dùng làm ký ức dài hạn.\n\n--- LỊCH SỬ CẦN TÓM TẮT ---\n${historyText}`;
 
-    const summary = await generate(prompt, systemInstruction);
+    // Force using 'gemini-2.5-flash' for summarization
+    const summary = await generate(prompt, systemInstruction, 0, 'gemini-2.5-flash');
     return summary.replace(/<[^>]*>/g, '');
 }
 
@@ -71,7 +73,7 @@ export async function compressNpcDossier(gameState: GameState, npcName: string):
 
     try {
         const prompt = getSummarizeNpcDossierPrompt(npcName, interactionHistoryText);
-        const summaryText = await generate(prompt);
+        const summaryText = await generate(prompt, undefined, 0, 'gemini-2.5-flash');
         // Tách tóm tắt thành các gạch đầu dòng riêng lẻ
         const newArchivedFacts = summaryText.split('\n').map(s => s.trim()).filter(s => s.startsWith('- ')).map(s => s.substring(2).trim());
 
@@ -123,7 +125,7 @@ export async function generateRagQueryFromTurns(turns: GameTurn[]): Promise<stri
     
     const prompt = `Tóm tắt ngắn gọn (1-2 câu) các sự kiện, nhân vật, và địa điểm chính trong đoạn hội thoại sau để tạo câu truy vấn tìm kiếm thông tin liên quan: \n\n${historyText}`;
 
-    const summary = await generate(prompt);
+    const summary = await generate(prompt, undefined, 0, 'gemini-2.5-flash');
     return summary.replace(/<[^>]*>/g, '');
 }
 
@@ -131,7 +133,7 @@ export async function retrieveRelevantSummaries(context: string, allSummaries: s
     if (allSummaries.length === 0) return "";
     
     const { prompt, schema } = getRetrieveRelevantSummariesPrompt(context, allSummaries, topK);
-    const result = await generateJson<{ relevant_summaries: string[] }>(prompt, schema);
+    const result = await generateJson<{ relevant_summaries: string[] }>(prompt, schema, undefined, 'gemini-2.5-flash');
     return (result.relevant_summaries || []).join('\n\n');
 }
 
@@ -251,7 +253,7 @@ export async function distillKnowledgeForWorldCreation(
         const batch = textChunks.slice(i, i + BATCH_SIZE_DISTILL);
         const batchPromises = batch.map(chunk => {
             const prompt = getDistillKnowledgePrompt(idea, chunk);
-            return generate(prompt);
+            return generate(prompt, undefined, 0, 'gemini-2.5-flash');
         });
 
         try {
@@ -269,7 +271,7 @@ export async function distillKnowledgeForWorldCreation(
 
     const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
     const finalReducePrompt = getDistillKnowledgePrompt(idea, combinedSummaries, true);
-    const finalSummary = await generate(finalReducePrompt);
+    const finalSummary = await generate(finalReducePrompt, undefined, 0, 'gemini-2.5-flash');
     
     return [{
         name: `tom_tat_dai_cuong_tu_${knowledge.length}_tep.txt`,
@@ -340,7 +342,7 @@ ${text}
 --- KẾT THÚC VĂN BẢN GỐC ---`;
 
     try {
-        const sanitizedText = await generate(prompt, systemInstruction);
+        const sanitizedText = await generate(prompt, systemInstruction, 0, 'gemini-2.5-flash');
         // Fallback: if sanitization fails and returns empty, return a generic safe message
         // to avoid sending empty context to the main AI.
         return sanitizedText.trim() || "Các sự kiện gần đây đã diễn ra.";

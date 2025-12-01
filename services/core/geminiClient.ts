@@ -169,13 +169,13 @@ function createDetailedErrorFromResponse(candidate: any, safetySettings: SafetyS
 }
 
 
-export async function generate(prompt: string, systemInstruction?: string, retryCount: number = 0): Promise<string> {
+export async function generate(prompt: string, systemInstruction?: string, retryCount: number = 0, modelOverride?: string): Promise<string> {
     const { safetySettings, aiPerformanceSettings } = getSettings();
     const activeSafetySettings = safetySettings.enabled ? safetySettings.settings : UNRESTRICTED_SAFETY_SETTINGS;
     const perfSettings = aiPerformanceSettings || DEFAULT_AI_PERFORMANCE_SETTINGS;
     
-    // Ưu tiên sử dụng model từ cài đặt
-    let selectedModel = perfSettings.selectedModel || 'gemini-2.5-flash';
+    // Ưu tiên sử dụng model từ tham số override, sau đó mới đến cài đặt
+    let selectedModel = modelOverride || perfSettings.selectedModel || 'gemini-2.5-flash';
     
     // AUTO-FIX: Chuyển đổi model cũ sang tên chuẩn mới để tránh lỗi 404
     if (selectedModel === 'gemini-2.5-pro-preview-02-05') {

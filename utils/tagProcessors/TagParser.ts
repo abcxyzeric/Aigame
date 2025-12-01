@@ -1,4 +1,5 @@
 
+
 // utils/tagProcessors/TagParser.ts
 import { ParsedTag } from './types';
 
@@ -34,62 +35,75 @@ function parseKeyValue(content: string): Record<string, any> {
 
 /**
  * Tách phản hồi thô của AI thành các phần: Tư duy, Mô phỏng Thế giới, Tường thuật và Danh sách thẻ lệnh.
- * Hỗ trợ cả định dạng XML mới và định dạng cũ (fallback).
+ * Sử dụng chiến lược "Trích Xuất" (Extraction) nghiêm ngặt để loại bỏ rác văn bản ngoài thẻ.
  * @param rawText - Toàn bộ văn bản phản hồi từ AI.
  * @returns Một đối tượng chứa `narration`, `tags`, `worldSim`, và `thinking`.
  */
 export function parseResponse(rawText: string): { narration: string; tags: ParsedTag[]; worldSim?: string; thinking?: string } {
     let thinking = '';
-    let worldSim = '';
+    let worldSim: string | undefined = undefined;
     let narration = '';
     let tagsPart = '';
     const tags: ParsedTag[] = [];
 
-    // --- PHASE 1: Thử phân tích theo cấu trúc XML (Deep Simulation Architecture) ---
+    // --- PHASE 1: CHIẾN LƯỢC TRÍCH XUẤT (Extraction Strategy - Ưu tiên cao nhất) ---
+    // Sử dụng Regex để bắt nội dung nằm TRONG thẻ. Mọi thứ bên ngoài thẻ sẽ tự động bị loại bỏ.
     
-    // Extract Thinking
-    const thinkingMatch = rawText.match(/<thinking>([\s\S]*?)<\/thinking>/i);
-    if (thinkingMatch) {
-        thinking = thinkingMatch[1].trim();
-    }
-
-    // Extract World Sim
-    const worldSimMatch = rawText.match(/<world_sim>([\s\S]*?)<\/world_sim>/i);
-    if (worldSimMatch) {
-        worldSim = worldSimMatch[1].trim();
-    }
-
-    // Extract Narration (Primary Method)
+    // Regex đã được gia cố để bắt nội dung đa dòng ([\s\S]*?) và không tham lam
     const narrationMatch = rawText.match(/<narration>([\s\S]*?)<\/narration>/i);
-    if (narrationMatch) {
-        narration = narrationMatch[1].trim();
-    }
-
-    // Extract Data Tags (Primary Method)
     const dataTagsMatch = rawText.match(/<data_tags>([\s\S]*?)<\/data_tags>/i);
-    if (dataTagsMatch) {
-        tagsPart = dataTagsMatch[1].trim();
-    }
+    const thinkingMatch = rawText.match(/<thinking>([\s\S]*?)<\/thinking>/i);
+    const worldSimMatch = rawText.match(/<world_sim>([\s\S]*?)<\/world_sim>/i);
 
-    // --- PHASE 2: Fallback Logic (Nếu AI không tuân thủ cấu trúc XML hoàn toàn) ---
+    if (narrationMatch) {
+        // 1. Trích xuất Narration
+        narration = narrationMatch[1].trim();
 
-    // Fallback cho Narration & Tags nếu không dùng thẻ <narration> hoặc <data_tags>
-    if (!narration && !tagsPart) {
+        // 2. Trích xuất Thinking (Log only)
+        if (thinkingMatch) {
+            thinking = thinkingMatch[1].trim();
+        }
+
+        // 3. Trích xuất và Vệ sinh World Sim
+        if (worldSimMatch) {
+            let content = worldSimMatch[1].trim();
+            
+            // Xóa các mẫu giải thích của AI (thường bắt đầu bằng "* **")
+            // Ví dụ: "* **Điều kiện kích hoạt:**..."
+            content = content.replace(/^\s*\*\s*\*\*.*?:.*/gm, '');
+            content = content.replace(/^\s*\*\s*Điều kiện kích hoạt.*/gmi, '');
+            content = content.replace(/^\s*\*\s*Sự kiện.*/gmi, '');
+            
+            content = content.trim();
+
+            // Kiểm tra nghiêm ngặt: Nếu là "EMPTY", "NONE", hoặc rỗng thì bỏ qua
+            if (content && !/^EMPTY\.?$/i.test(content) && content !== 'NONE') {
+                worldSim = content;
+            }
+        }
+
+        // 4. Trích xuất Data Tags
+        if (dataTagsMatch) {
+            tagsPart = dataTagsMatch[1].trim();
+        }
+    } else {
+        // --- PHASE 2: CHIẾN LƯỢC DỰ PHÒNG (Fallback Strategy) ---
+        // Chỉ chạy khi AI quên viết thẻ <narration> (hiếm gặp nhưng cần xử lý để tránh crash)
+        
         // Tách phần tường thuật và phần thẻ lệnh dựa trên thẻ [NARRATION_END]
         const separatorRegex = /(\[NARRATION_END\]|NARRATION_END)/i;
         const separatorMatch = rawText.match(separatorRegex);
 
         if (separatorMatch && typeof separatorMatch.index === 'number') {
-            // Nếu có thẻ phân tách, phần trước đó là narration (sau khi loại bỏ thinking/world_sim nếu có)
             let tempNarration = rawText.substring(0, separatorMatch.index).trim();
-            // Loại bỏ các thẻ XML đã extracted để tránh lặp lại
+            // Xóa thủ công các thẻ khác nếu chúng tồn tại trong văn bản thô
             tempNarration = tempNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
             tempNarration = tempNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
             narration = tempNarration.trim();
 
             tagsPart = rawText.substring(separatorMatch.index + separatorMatch[0].length).trim();
         } else {
-            // Dự phòng: Tìm thẻ lệnh đầu tiên để cắt
+            // Dự phòng cuối cùng: Tìm thẻ lệnh đầu tiên để cắt
             const firstTagMatch = rawText.match(/\n\s*\[\w+:/);
             if (firstTagMatch && typeof firstTagMatch.index === 'number') {
                 let tempNarration = rawText.substring(0, firstTagMatch.index).trim();
@@ -99,7 +113,7 @@ export function parseResponse(rawText: string): { narration: string; tags: Parse
 
                 tagsPart = rawText.substring(firstTagMatch.index).trim();
             } else {
-                // Nếu không tìm thấy thẻ lệnh nào, toàn bộ là narration
+                // Toàn bộ là narration
                 let tempNarration = rawText.trim();
                 tempNarration = tempNarration.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
                 tempNarration = tempNarration.replace(/<world_sim>[\s\S]*?<\/world_sim>/gi, '');
@@ -107,10 +121,6 @@ export function parseResponse(rawText: string): { narration: string; tags: Parse
                 tagsPart = '';
             }
         }
-    } else if (narration && !tagsPart) {
-        // Trường hợp có <narration> nhưng quên <data_tags>, tìm thẻ lệnh sau </narration>
-        const afterNarration = rawText.split(/<\/narration>/i)[1] || '';
-        tagsPart = afterNarration.trim();
     }
 
     // Phân tích các thẻ lệnh từ phần tagsPart
