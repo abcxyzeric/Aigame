@@ -1,4 +1,4 @@
-import { SaveSlot, FandomFile, TurnVector, SummaryVector, EntityVector } from '../types';
+import { SaveSlot, FandomFile, TurnVector, SummaryVector, EntityVector, GraphNode, GraphEdge } from '../types';
 
 const DB_NAME = 'ai-rpg-simulator-db';
 const SAVES_STORE_NAME = 'saves';
@@ -6,7 +6,9 @@ const FANDOM_STORE_NAME = 'fandom_files';
 const TURN_VECTORS_STORE_NAME = 'turn_vectors';
 const SUMMARY_VECTORS_STORE_NAME = 'summary_vectors';
 const ENTITY_VECTORS_STORE_NAME = 'entity_vectors';
-const DB_VERSION = 5; // Tăng phiên bản DB
+const GRAPH_NODES_STORE_NAME = 'graph_nodes'; // New store
+const GRAPH_EDGES_STORE_NAME = 'graph_edges'; // New store
+const DB_VERSION = 6; // Tăng phiên bản DB
 
 let db: IDBDatabase;
 
@@ -54,7 +56,6 @@ function openDB(): Promise<IDBDatabase> {
                 dbInstance.createObjectStore(ENTITY_VECTORS_STORE_NAME, { keyPath: 'id' });
             }
         case 4:
-            // Nâng cấp từ v4 lên v5: Thêm chỉ mục 'worldId'
             if (dbInstance.objectStoreNames.contains(TURN_VECTORS_STORE_NAME)) {
                 const store = request.transaction!.objectStore(TURN_VECTORS_STORE_NAME);
                 if (!store.indexNames.contains('worldId')) {
@@ -72,6 +73,18 @@ function openDB(): Promise<IDBDatabase> {
                  if (!store.indexNames.contains('worldId')) {
                     store.createIndex('worldId', 'worldId', { unique: false });
                 }
+            }
+        case 5:
+            // Nâng cấp từ v5 lên v6: Thêm Graph Nodes và Edges
+            if (!dbInstance.objectStoreNames.contains(GRAPH_NODES_STORE_NAME)) {
+                const store = dbInstance.createObjectStore(GRAPH_NODES_STORE_NAME, { keyPath: ['worldId', 'id'] });
+                store.createIndex('worldId', 'worldId', { unique: false });
+            }
+            if (!dbInstance.objectStoreNames.contains(GRAPH_EDGES_STORE_NAME)) {
+                const store = dbInstance.createObjectStore(GRAPH_EDGES_STORE_NAME, { keyPath: ['worldId', 'source', 'target', 'relation'] });
+                store.createIndex('worldId', 'worldId', { unique: false });
+                store.createIndex('source', 'source', { unique: false });
+                store.createIndex('target', 'target', { unique: false });
             }
             break;
       }
@@ -117,7 +130,10 @@ export async function getAllSaves(): Promise<SaveSlot[]> {
 export async function deleteSave(saveId: number): Promise<void> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction([SAVES_STORE_NAME, TURN_VECTORS_STORE_NAME, SUMMARY_VECTORS_STORE_NAME, ENTITY_VECTORS_STORE_NAME], 'readwrite');
+        const transaction = db.transaction(
+            [SAVES_STORE_NAME, TURN_VECTORS_STORE_NAME, SUMMARY_VECTORS_STORE_NAME, ENTITY_VECTORS_STORE_NAME, GRAPH_NODES_STORE_NAME, GRAPH_EDGES_STORE_NAME], 
+            'readwrite'
+        );
         
         // Xóa save slot
         transaction.objectStore(SAVES_STORE_NAME).delete(saveId);
@@ -139,6 +155,8 @@ export async function deleteSave(saveId: number): Promise<void> {
         deleteFromStore(TURN_VECTORS_STORE_NAME);
         deleteFromStore(SUMMARY_VECTORS_STORE_NAME);
         deleteFromStore(ENTITY_VECTORS_STORE_NAME);
+        deleteFromStore(GRAPH_NODES_STORE_NAME);
+        deleteFromStore(GRAPH_EDGES_STORE_NAME);
 
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => {
@@ -278,5 +296,89 @@ export async function deleteEntityVector(id: string): Promise<void> {
         const request = store.delete(id);
         request.onsuccess = () => resolve();
         request.onerror = () => reject('Không thể xóa vector thực thể.');
+    });
+}
+
+// --- Graph Store Functions ---
+
+export async function addGraphNodes(nodes: (GraphNode & { worldId: number })[]): Promise<void> {
+    if (nodes.length === 0) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(GRAPH_NODES_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(GRAPH_NODES_STORE_NAME);
+        let completed = 0;
+        let errors = false;
+
+        nodes.forEach(node => {
+            const request = store.put(node);
+            request.onsuccess = () => {
+                completed++;
+                if (completed === nodes.length) resolve();
+            };
+            request.onerror = () => {
+                errors = true;
+                console.error("Error adding graph node:", request.error);
+            };
+        });
+        
+        transaction.oncomplete = () => {
+             if (!errors && completed !== nodes.length) resolve(); // Resolve if transaction completes
+        };
+        transaction.onerror = () => reject('Error storing graph nodes');
+    });
+}
+
+export async function addGraphEdges(edges: (GraphEdge & { worldId: number })[]): Promise<void> {
+    if (edges.length === 0) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(GRAPH_EDGES_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(GRAPH_EDGES_STORE_NAME);
+        let completed = 0;
+        
+        edges.forEach(edge => {
+            store.put(edge);
+        });
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject('Error storing graph edges');
+    });
+}
+
+export async function getGraphEdgesBySource(worldId: number, sourceId: string): Promise<GraphEdge[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(GRAPH_EDGES_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(GRAPH_EDGES_STORE_NAME);
+        const index = store.index('source');
+        // Composite key search isn't directly supported by simple index, 
+        // we get all by source then filter by worldId.
+        // Optimization: Create a compound index if performance degrades.
+        const request = index.getAll(sourceId);
+
+        request.onsuccess = () => {
+            const edges = (request.result as (GraphEdge & { worldId: number })[])
+                .filter(e => e.worldId === worldId);
+            resolve(edges);
+        };
+        request.onerror = () => reject('Error fetching graph edges');
+    });
+}
+
+export async function getGraphEdgesByTarget(worldId: number, targetId: string): Promise<GraphEdge[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(GRAPH_EDGES_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(GRAPH_EDGES_STORE_NAME);
+        const index = store.index('target');
+        const request = index.getAll(targetId);
+
+        request.onsuccess = () => {
+            const edges = (request.result as (GraphEdge & { worldId: number })[])
+                .filter(e => e.worldId === worldId);
+            resolve(edges);
+        };
+        request.onerror = () => reject('Error fetching graph edges');
     });
 }

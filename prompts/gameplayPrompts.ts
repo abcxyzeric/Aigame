@@ -1,4 +1,6 @@
 
+
+
 import { Type } from "@google/genai";
 import { GameState, WorldConfig, TimePassed } from "../types";
 import { getGameMasterSystemInstruction, getResponseLengthDirective } from './systemInstructions';
@@ -36,7 +38,9 @@ const buildNpcMemoryFlagContext = (gameState: GameState, playerActionContent: st
 };
 
 
-const getTagInstructions = () => `
+const getTagInstructions = (customCategories: string[] = []) => {
+    const customCatsString = customCategories.length > 0 ? `\n**DANH MỤC NGƯỜI CHƠI ĐÃ TẠO (ƯU TIÊN DÙNG):** ${customCategories.join(', ')}` : "";
+    return `
 --- THƯ VIỆN THẺ LỆNH (BẮT BUỘC TUÂN THỦ) ---
 Sau khi viết xong phần tường thuật, bạn PHẢI xuống dòng và viết chính xác thẻ '[NARRATION_END]'.
 Sau thẻ đó, bạn PHẢI liệt kê TOÀN BỘ các thay đổi về dữ liệu game bằng cách sử dụng các thẻ định dạng sau. Mỗi thẻ trên một dòng riêng.
@@ -48,6 +52,11 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
 - Ví dụ ĐÚNG: \`[ITEM_ADD: target="player", name="Kiếm Sắt", quantity=1, description="Một thanh kiếm bình thường."]\`
 - Ví dụ SAI: \`[ITEM_ADD: name='Kiếm Sắt', quantity=1,]\` (Sai dấu ngoặc đơn và có dấu phẩy thừa)
 
+**TÍNH NĂNG PHÂN LOẠI THÔNG MINH (CATEGORY):**
+Với các thẻ tạo thực thể ([ITEM_ADD], [NPC_NEW], [LORE_DISCOVERED]...), bạn hãy thêm tham số \`category="..."\` để phân loại chi tiết.
+${customCatsString}
+Nếu thực thể phù hợp với một trong các danh mục trên, hãy sử dụng chính xác tên đó. Nếu không, hãy tự sáng tạo category phù hợp (VD: Pháp Bảo, Thần Thú, Địa Danh Cổ, Mecha, Cyberware...).
+
 **--- CÁC THẺ BẮT BUỘC (MỌI LƯỢT CHƠI) ---**
 [SUGGESTION: description="Một hành động gợi ý", successRate=80, risk="Mô tả rủi ro", reward="Mô tả phần thưởng"] (BẮT BUỘC có 4 thẻ này)
 [TIME_PASS: duration="short"] (BẮT BUỘC. Dùng "short", "medium", "long" để ước lượng)
@@ -57,7 +66,7 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
     [STAT_CHANGE: name="Sinh Lực", operation="subtract", level="low"] (Dùng logic mờ: "low", "medium", "high")
     [STAT_CHANGE: name="Sinh Lực", operation="add", amount=10] (Dùng con số cụ thể nếu cần)
 *   **Vật phẩm:**
-    [ITEM_ADD: target="player", name="Thuốc Hồi Phục", quantity=1, description="Một bình thuốc nhỏ.", tags="y tế, tiêu hao"] (BẮT BUỘC có 'description' và 'tags' cho vật phẩm mới)
+    [ITEM_ADD: target="player", name="Thuốc Hồi Phục", quantity=1, description="Một bình thuốc nhỏ.", category="Đan Dược", tags="y tế, tiêu hao"] (BẮT BUỘC có 'description' và 'tags' cho vật phẩm mới)
     [ITEM_REMOVE: target="player", name="Chìa Khóa Cũ", quantity=1]
     **NGUYÊN TẮC XÁC ĐỊNH MẤT VẬT PHẨM (Contextual Item Loss Logic):** Đừng chỉ tìm kiếm từ khóa 'cho' hay 'tặng'. Hãy phân tích HÀNH ĐỘNG và KẾT QUẢ của tình huống:
     - **Câu hỏi cốt lõi:** "Sau hành động này, vật phẩm có còn nằm trong quyền kiểm soát của Người Chơi không?"
@@ -79,17 +88,19 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
     [REPUTATION_CHANGED: score=-10, reason="Ăn trộm"]
 *   **Ký ức Dữ liệu Cứng (Mối quan hệ):**
     [MEM_FLAG: npc="Tên NPC", flag="hasContactInfo", value=true] (Lưu một cột mốc quan hệ vĩnh viễn với NPC)
+*   **Cảm xúc NPC (EQ - Lightweight):**
+    [NPC_EMOTION: name="Tên NPC", state="Giận dữ", value=80] (Sử dụng thẻ này để đánh dấu trạng thái cảm xúc của NPC ngay trong lúc tường thuật. 'state' là tính từ mô tả, 'value' là cường độ 0-100)
 
 **--- CÁC THẺ ÍT DÙNG HƠN (ĐỊNH NGHĨA & CẬP NHẬT) ---**
 [SKILL_LEARNED: name="Hỏa Cầu Thuật", description="Tạo ra một quả cầu lửa nhỏ."]
 [QUEST_NEW: name="Tìm kho báu", description="Tìm kho báu được giấu trong Hang Sói."]
 [QUEST_UPDATE: name="Tìm kho báu", status="hoàn thành"]
-[NPC_NEW: name="Lão Ăn Mày", description="Một ông lão bí ẩn...", personality="Khôn ngoan", tags="bí ẩn"]
+[NPC_NEW: name="Lão Ăn Mày", description="Một ông lão bí ẩn...", category="Nhân Vật", personality="Khôn ngoan", tags="bí ẩn"]
 [NPC_UPDATE: name="Lão Ăn Mày", thoughtsOnPlayer="Bắt đầu cảm thấy nghi ngờ bạn.", physicalState="Tay trái của ông ta bị gãy."]
-[FACTION_UPDATE: name="Hắc Long Bang", description="Một bang phái tà ác.", tags="tà ác"]
-[LOCATION_DISCOVERED: name="Hang Sói", description="Một hang động tối tăm.", tags="nguy hiểm"]
-[LORE_DISCOVERED: name="Lời Tiên Tri Cổ", description="Lời tiên tri về người anh hùng...", tags="lịch sử, quan trọng"]
-[COMPANION_NEW: name="Sói Con", description="Một con sói nhỏ đi theo bạn.", personality="Trung thành", tags="động vật"]
+[FACTION_UPDATE: name="Hắc Long Bang", description="Một bang phái tà ác.", category="Thế Lực", tags="tà ác"]
+[LOCATION_DISCOVERED: name="Hang Sói", description="Một hang động tối tăm.", category="Địa Danh", tags="nguy hiểm"]
+[LORE_DISCOVERED: name="Lời Tiên Tri Cổ", description="Lời tiên tri về người anh hùng...", category="Truyền Thuyết", tags="lịch sử, quan trọng"]
+[COMPANION_NEW: name="Sói Con", description="Một con sói nhỏ đi theo bạn.", category="Thú Cưng", personality="Trung thành", tags="động vật"]
 [COMPANION_REMOVE: name="Sói Con"]
 [MEMORY_ADD: content="Một ký ức cốt lõi mới rất quan trọng."]
 
@@ -98,10 +109,11 @@ Bên trong mỗi thẻ là một danh sách các cặp key-value, phân cách b�
 [WORLD_TIME_SET: year=1, month=1, day=1, hour=8, minute=0]
 [REPUTATION_TIERS_SET: tiers="Ma Đầu,Kẻ Bị Truy Nã,Vô Danh,Thiện Nhân,Anh Hùng"] (5 cấp, không có dấu cách, phân cách bằng dấu phẩy)
 `;
+}
 
 export const getStartGamePrompt = (config: WorldConfig) => {
     const gmInstruction = getGameMasterSystemInstruction(config);
-    const tagInstructions = getTagInstructions();
+    const tagInstructions = getTagInstructions([]); // Start game không có custom categories
     const pronounPayload = buildPronounPayload(config.storyContext.genre);
     const timePayload = buildTimePayload(config.storyContext.genre);
     const nsfwPayload = buildNsfwPayload(config);
@@ -123,7 +135,7 @@ ${JSON.stringify(config, null, 2)}`;
     *   BẮT BUỘC tạo 5 cấp bậc danh vọng (\`[REPUTATION_TIERS_SET]\`) phù hợp với thế giới.
     *   BẮT BUỘC quyết định thời gian bắt đầu logic (\`[WORLD_TIME_SET]\`) dựa trên thể loại, bối cảnh, và **LUẬT THỜI GIAN** đã cung cấp.
     *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
-    *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`[ITEM_ADD]\`, \`[NPC_NEW]\`).
+    *   Nếu trong đoạn mở đầu có vật phẩm hoặc NPC mới, hãy dùng các thẻ định nghĩa tương ứng (\`[ITEM_ADD]\`, \`[NPC_NEW]\`) và nhớ thêm tham số \`category\`.
 
 **OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) chứa đầy đủ 4 phần XML: <thinking>, <world_sim>, <narration>, và <data_tags>.`;
 
@@ -159,10 +171,17 @@ ${(config.allowAdultContent && !getSettings().safetySettings.enabled) ? academic
     return { prompt: fullPrompt, systemInstruction: undefined };
 };
 
-export const getNextTurnPrompt = async (gameState: GameState, fullContext: any, relevantKnowledge: string, relevantMemories: string, codeExtractedTime?: TimePassed) => {
-    const { worldConfig, history, worldTime, reputation, reputationTiers, character, season, weather } = gameState;
+export const getNextTurnPrompt = async (
+    gameState: GameState, 
+    fullContext: any, 
+    relevantKnowledge: string, 
+    relevantMemories: string, 
+    graphContext: string, // Thêm tham số graph context
+    codeExtractedTime?: TimePassed
+) => {
+    const { worldConfig, history, worldTime, reputation, reputationTiers, character, season, weather, customCategories } = gameState;
     const gmInstruction = getGameMasterSystemInstruction(worldConfig);
-    const tagInstructions = getTagInstructions();
+    const tagInstructions = getTagInstructions(customCategories); // Pass custom categories
     const pronounPayload = buildPronounPayload(worldConfig.storyContext.genre);
     const reputationPayload = buildReputationPayload();
     const nsfwPayload = buildNsfwPayload(worldConfig);
@@ -191,21 +210,30 @@ export const getNextTurnPrompt = async (gameState: GameState, fullContext: any, 
     
     const worldStateContextParts: string[] = ['--- BỐI CẢNH TOÀN DIỆN ---'];
 
-    // Lớp 1: Dữ liệu Ưu tiên (Trạng thái Vật lý & Hồ sơ Tương tác)
+    // Lớp 1: Dữ liệu Ưu tiên (Trạng thái Vật lý & Hồ sơ Tương tác & Graph Relation)
     let physicalStateContext = '';
     if (fullContext.encounteredNPCs && Array.isArray(fullContext.encounteredNPCs)) {
         for (const npc of fullContext.encounteredNPCs) {
             if (npc.physicalState) {
                 physicalStateContext += `\n*   GHI NHỚ VẬT LÝ VỀ ${npc.name}: ${npc.physicalState}`;
             }
+            // Thêm cảm xúc nếu có
+            if (npc.emotionalState) {
+                physicalStateContext += `\n*   CẢM XÚC CỦA ${npc.name}: ${npc.emotionalState.current} (Cường độ: ${npc.emotionalState.value}/100)`;
+            }
         }
     }
     if (physicalStateContext) {
-        worldStateContextParts.push(`--- DỮ LIỆU CỨNG VỀ TRẠNG THÁI VẬT LÝ ---${physicalStateContext}\n--- KẾT THÚC DỮ LIỆU CỨNG ---`);
+        worldStateContextParts.push(`--- DỮ LIỆU CỨNG VỀ TRẠNG THÁI VẬT LÝ & CẢM XÚC ---${physicalStateContext}\n--- KẾT THÚC DỮ LIỆU CỨNG ---`);
     }
 
     worldStateContextParts.push(buildNpcMemoryFlagContext(gameState, playerActionContent)); // Dữ liệu cứng về Mối quan hệ
     worldStateContextParts.push(relevantMemories); // Hồ sơ Tương tác hoặc Ký ức RAG
+    
+    // Lớp Graph RAG
+    if (graphContext) {
+        worldStateContextParts.push(`--- GRAPH MỐI QUAN HỆ (STORY GRAPH) ---\n${graphContext}\n--- KẾT THÚC GRAPH ---`);
+    }
 
     // Lớp 2: RAG cho Kiến thức Nền
     worldStateContextParts.push(`*   Kiến thức Nền liên quan:\n    ${relevantKnowledge || "Không có."}`);
@@ -256,6 +284,8 @@ export const getNextTurnPrompt = async (gameState: GameState, fullContext: any, 
         *   BẮT BUỘC tạo 4 gợi ý hành động (\`[SUGGESTION]\`) đa dạng.
         *   BẮT BUỘC ước tính thời gian trôi qua và xuất thẻ \`[TIME_PASS]\`.
         *   Nếu diễn biến làm thay đổi Cột mốc, xuất thẻ \`[MILESTONE_UPDATE]\`.
+        *   Nếu có NPC xuất hiện, HÃY sử dụng thẻ \`[NPC_EMOTION]\` để cập nhật cảm xúc của họ một cách nhẹ nhàng.
+        *   **QUAN TRỌNG:** Sử dụng tham số \`category\` trong các thẻ ([ITEM_ADD], [NPC_NEW]...) để phân loại dữ liệu chính xác.
 
 **OUTPUT:** Phản hồi của bạn PHẢI là một chuỗi văn bản thô (raw string) chứa đầy đủ 4 phần XML: <thinking>, <world_sim>, <narration>, và <data_tags>.`;
 

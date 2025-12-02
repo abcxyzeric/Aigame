@@ -1,4 +1,5 @@
 
+
 import { Type } from "@google/genai";
 import { AiPerformanceSettings, EncyclopediaData, GameState, GameTurn } from "../../types";
 
@@ -47,7 +48,7 @@ export const getRetrieveRelevantSummariesPrompt = (context: string, allSummaries
         }, required: ['relevant_summaries']
     };
 
-    const prompt = `Bạn là một hệ thống truy xuất thông tin thông minh (RAG). Dựa vào 'Tình huống hiện tại', hãy phân tích danh sách 'Kho lưu trữ ký ức' bên dưới và trả về CHÍNH XÁC NỘI DUNG của ${topK} bản tóm tắt liên quan nhất, giúp cung cấp bối cảnh cần thiết cho diễn biến tiếp theo. Nếu không có gì liên quan, trả về một mảng trống.
+    const prompt = `Bạn là một hệ thống truy xuất thông tin thông minh (RAG). Dựa vào 'Tình huống hiện tại', hãy phân tích danh sách 'Kho lưu trữ ký ức' bên dưới và trả về CHÍNH XÁC NỘI DUNG của ${topK} bản tóm tắt liên quan nhất, giúp cung cấp bối cảnh cho diễn biến tiếp theo. Nếu không có gì liên quan, trả về một mảng trống.
 
 ## Tình huống hiện tại:
 ${context}
@@ -295,6 +296,59 @@ Trả về một đối tượng JSON duy nhất chứa một trường "dedupli
 "deduplicationPairs" này là một MẢNG (array) các đối tượng, mỗi đối tượng chứa hai trường: "idToDelete" (ID của mục cần XÓA) và "idToKeep" (ID của mục cần GIỮ LẠI).
 Ví dụ: { "deduplicationPairs": [ { "idToDelete": "HLV Lộ Na", "idToKeep": "Lộ Na" }, { "idToDelete": "Thanh Tâm Liên - Tuyệt phẩm", "idToKeep": "Thanh Tâm Liên" } ] }.
 Nếu không có mục nào trùng lặp, trả về một mảng rỗng.`;
+
+    return { prompt, schema };
+};
+
+export const getPiggybackAnalysisPrompt = (lastTurnContent: string, previousContext: string) => {
+    const graphNodeSchema = {
+        type: Type.OBJECT, properties: {
+            id: { type: Type.STRING, description: "Tên thực thể (Name). Phải là duy nhất." },
+            type: { type: Type.STRING, enum: ["NPC", "Location", "Item", "Event", "Faction", "Concept"] },
+            label: { type: Type.STRING, description: "Nhãn hiển thị." },
+        }, required: ['id', 'type', 'label']
+    };
+
+    const graphEdgeSchema = {
+        type: Type.OBJECT, properties: {
+            source: { type: Type.STRING, description: "ID của thực thể nguồn." },
+            target: { type: Type.STRING, description: "ID của thực thể đích." },
+            relation: { type: Type.STRING, description: "Động từ mô tả mối quan hệ (VD: ghét, yêu, sở hữu, ở tại, tấn công)." },
+            description: { type: Type.STRING, description: "Mô tả chi tiết hơn về mối quan hệ này trong bối cảnh hiện tại." }
+        }, required: ['source', 'target', 'relation']
+    };
+
+    const eqUpdateSchema = {
+        type: Type.OBJECT, properties: {
+            npcName: { type: Type.STRING },
+            emotion: { type: Type.STRING, description: "Trạng thái cảm xúc (Vui, Buồn, Giận...)." },
+            value: { type: Type.NUMBER, description: "Cường độ cảm xúc (0-100)." }
+        }, required: ['npcName', 'emotion', 'value']
+    };
+
+    const schema = {
+        type: Type.OBJECT, properties: {
+            nodes: { type: Type.ARRAY, items: graphNodeSchema, description: "Danh sách các thực thể quan trọng xuất hiện hoặc được nhắc đến." },
+            edges: { type: Type.ARRAY, items: graphEdgeSchema, description: "Danh sách các mối quan hệ mới hoặc được cập nhật giữa các thực thể." },
+            eqUpdates: { type: Type.ARRAY, items: eqUpdateSchema, description: "Danh sách cập nhật cảm xúc của các NPC trong cảnh." }
+        }
+    };
+
+    const prompt = `Bạn là một AI phân tích dữ liệu nền (Background Worker).
+Nhiệm vụ của bạn là phân tích đoạn văn bản lượt chơi vừa rồi để trích xuất cấu trúc đồ thị (Story Graph) và trạng thái cảm xúc (EQ).
+
+--- BỐI CẢNH TRƯỚC ĐÓ ---
+${previousContext}
+
+--- NỘI DUNG LƯỢT CHƠI MỚI ---
+${lastTurnContent}
+
+**YÊU CẦU:**
+1. **Trích xuất Nodes (Thực thể):** Tìm các NPC, Địa điểm, Vật phẩm quan trọng.
+2. **Trích xuất Edges (Quan hệ):** Xác định mối quan hệ giữa các thực thể dựa trên hành động trong lượt chơi. Ví dụ: "A tấn công B" -> A -[tấn công]-> B. "A đi đến C" -> A -[ở tại]-> C.
+3. **Phân tích EQ:** Xác định trạng thái cảm xúc của các NPC nếu có thay đổi rõ rệt.
+
+Trả về kết quả dưới dạng JSON.`;
 
     return { prompt, schema };
 };

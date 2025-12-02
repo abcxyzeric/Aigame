@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/QuestProcessor.ts
 import { GameState, Quest, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
@@ -24,12 +25,12 @@ export function processQuestUpdate(currentState: GameState, params: any): { newS
         description: params.description || existingQuest?.description || '', // Giữ lại mô tả cũ nếu chỉ cập nhật trạng thái
         status: status,
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-        customCategory: params.category,
+        customCategory: params.category, // Capture category
     };
 
     const updatedQuests = mergeAndDeduplicateByName(currentState.quests || [], [newQuestData]);
 
-    const vectorContent = `Nhiệm vụ: ${newQuestData.name}\nMô tả: ${newQuestData.description}\nTrạng thái: ${newQuestData.status}`;
+    const vectorContent = `Nhiệm vụ: ${newQuestData.name}\nMô tả: ${newQuestData.description}\nTrạng thái: ${newQuestData.status}\nPhân loại: ${newQuestData.customCategory || 'Chưa rõ'}`;
     const vectorUpdate: VectorUpdate = {
         id: newQuestData.name,
         type: 'Quest',

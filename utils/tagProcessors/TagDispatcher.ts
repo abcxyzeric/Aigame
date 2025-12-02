@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/TagDispatcher.ts
 import { GameState, VectorUpdate } from '../../types';
 import { ParsedTag } from './types';
@@ -9,7 +10,7 @@ import { processFactionUpdate, processEntityDiscovered } from './EntityProcessor
 import { processPlayerStatsInit, processWorldTimeSet, processReputationTiersSet } from './InitProcessor';
 import { processMemoryAdd } from './MemoryProcessor';
 import { processMilestoneUpdate } from './MilestoneProcessor';
-import { processNpcNewOrUpdate, processNpcThoughtsUpdate, processMemoryFlag } from './NpcProcessor';
+import { processNpcNewOrUpdate, processNpcThoughtsUpdate, processMemoryFlag, processNpcEmotion } from './NpcProcessor';
 import { processQuestUpdate } from './QuestProcessor';
 import { processReputationChange } from './ReputationProcessor';
 import { processSkillLearned } from './SkillProcessor';
@@ -110,6 +111,9 @@ export function dispatchTags(currentState: GameState, tags: ParsedTag[]): { fina
                     break;
                 case 'NPC_UPDATE':
                     processResult = processNpcThoughtsUpdate(acc.state, tag.params);
+                    break;
+                case 'NPC_EMOTION': // NEW TAG
+                    processResult = processNpcEmotion(acc.state, tag.params);
                     break;
                 case 'FACTION_UPDATE':
                     processResult = processFactionUpdate(acc.state, tag.params);

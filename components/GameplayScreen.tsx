@@ -313,6 +313,10 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // 1. Thêm lượt tường thuật mới vào lịch sử
             let updatedState = { ...prev, history: [...prev.history, narrationTurn] };
             
+            // --- PIGGYBACK BUFFER MANAGEMENT ---
+            // Clear the old buffer because getNextTurn has already processed/sent it
+            updatedState.pendingVectorBuffer = [];
+
             // Handle new summary if generated
             if (newSummary) {
                 narrationTurn.metadata = { isSummaryTurn: true }; // Mark this turn as generating a summary
@@ -333,9 +337,17 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
             // 3. Gọi dispatcher để xử lý tất cả các thay đổi trạng thái và thu thập các cập nhật vector
             const { finalState, vectorUpdates } = dispatchTags(updatedState, stateChangingTags);
             
-            // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
-            if (finalState.worldId) {
-                aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+            // --- PIGGYBACK QUEUEING ---
+            // Thay vì gọi aiService.processVectorUpdates ngay, ta đẩy vào buffer cho lượt sau
+            if (vectorUpdates.length > 0) {
+                if (!finalState.pendingVectorBuffer) finalState.pendingVectorBuffer = [];
+                vectorUpdates.forEach(update => {
+                    finalState.pendingVectorBuffer!.push({
+                        id: update.id,
+                        type: update.type,
+                        content: update.content
+                    });
+                });
             }
             
             // 4. Cập nhật gợi ý
@@ -438,10 +450,19 @@ const GameplayScreen: React.FC<GameplayScreenProps> = ({ initialGameState, onBac
       // Bắt đầu với trạng thái ban đầu và áp dụng các thẻ khởi tạo
       const { finalState, vectorUpdates } = dispatchTags(gameState, stateChangingTags);
       
-      // Xử lý cập nhật vector ở chế độ nền (truyền worldId)
-      if (finalState.worldId) {
-        aiService.processVectorUpdates(vectorUpdates, finalState.worldId);
+      // --- PIGGYBACK QUEUEING START ---
+      // Xử lý cập nhật vector bằng cách đẩy vào hàng đợi thay vì gọi API ngay
+      if (vectorUpdates.length > 0) {
+          if (!finalState.pendingVectorBuffer) finalState.pendingVectorBuffer = [];
+          vectorUpdates.forEach(update => {
+              finalState.pendingVectorBuffer!.push({
+                  id: update.id,
+                  type: update.type,
+                  content: update.content
+              });
+          });
       }
+      // --- PIGGYBACK QUEUEING END ---
 
       let updatedGameState = finalState;
       

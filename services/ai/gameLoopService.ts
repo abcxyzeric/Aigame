@@ -1,4 +1,6 @@
 
+
+
 import { generate, generateJson } from '../core/geminiClient';
 import { GameState, WorldConfig, TimePassed, PendingVectorItem, GameTurn } from '../../types';
 import { ParsedTag } from '../../utils/tagProcessors';
@@ -7,6 +9,7 @@ import * as ragService from './ragService';
 import { getSettings } from '../settingsService';
 import * as dbService from '../dbService';
 import * as embeddingService from './embeddingService';
+import * as backgroundService from './backgroundService'; // Import background service
 import { cosineSimilarity } from '../../utils/vectorUtils';
 import { calculateKeywordScore, reciprocalRankFusion } from '../../utils/searchUtils';
 import { parseResponse } from '../../utils/tagProcessors';
@@ -294,6 +297,24 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
         relevantKnowledge = await ragService.retrieveRelevantKnowledge(ragQueryText, worldConfig.backgroundKnowledge, 3, queryEmbedding);
     }
     
+    // Bước 3.5: Lấy Graph Context (StoryGraph)
+    // Tìm kiếm các quan hệ xung quanh các NPC/Thực thể có trong hành động
+    let graphContext = "";
+    if (gameState.worldId) {
+        const entitiesInAction = [
+            ...(relevantContext.encounteredNPCs || []),
+            ...(relevantContext.companions || []),
+            ...(relevantContext.inventory || [])
+        ].map(e => e.name);
+        
+        if (entitiesInAction.length > 0) {
+            graphContext = await backgroundService.fetchGraphContext(gameState.worldId, entitiesInAction);
+            if (DEBUG_MODE && graphContext) {
+                console.log(`%c[GRAPH RAG]`, 'color: #d8b4fe;', graphContext);
+            }
+        }
+    }
+
     // Bước 4: Lắp ráp prompt cuối cùng với dữ liệu đã được lọc
     setDebugContext('Gameplay - Main Turn Generation'); // Đặt ngữ cảnh cho Main LLM
     const { prompt, systemInstruction } = await getNextTurnPrompt(
@@ -301,6 +322,7 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
         relevantContext, // <- SỬ DỤNG NGỮ CẢNH ĐÃ LỌC
         relevantKnowledge,
         injectedMemories,
+        graphContext, // <- Tiêm Graph Context
         codeExtractedTime
     );
     
@@ -365,6 +387,12 @@ export const getNextTurn = async (gameState: GameState, codeExtractedTime?: Time
             console.error("Failed to generate auto summary:", e);
         }
     }
+
+    // --- TRIGGER BACKGROUND WORKER (ASYNC PIGGYBACK) ---
+    // Gọi Background Service để phân tích Graph và EQ sau khi đã render xong Narration
+    // Sử dụng context cũ để AI so sánh sự thay đổi
+    const previousContextSummary = `Hành động: ${lastPlayerAction.content}`; 
+    backgroundService.runPiggybackAnalysis(gameState, finalNarration, previousContextSummary);
 
     // Return undefined for worldSim to ensure component doesn't show separate modal
     return { ...parsed, narration: finalNarration, worldSim: undefined, newSummary };

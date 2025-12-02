@@ -28,7 +28,7 @@ export function processNpcNewOrUpdate(currentState: GameState, params: any): { n
         personality: params.personality,
         thoughtsOnPlayer: params.thoughtsOnPlayer || 'Chưa có',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-        customCategory: params.category,
+        customCategory: params.category, // Capture custom category
         locationId: currentState.currentLocationId, // Tự động gán vị trí hiện tại
         physicalState: params.physicalState || '', // Thêm trạng thái vật lý
     };
@@ -36,7 +36,7 @@ export function processNpcNewOrUpdate(currentState: GameState, params: any): { n
     const updatedNpcs = mergeAndDeduplicateByName(currentState.encounteredNPCs || [], [newNpcData]);
     
     // Khi tạo vector, sử dụng fallback an toàn để tránh in ra 'undefined'
-    const vectorContent = `NPC: ${newNpcData.name}\nMô tả: ${newNpcData.description || 'Chưa rõ'}\nTính cách: ${newNpcData.personality || 'Chưa rõ'}\nSuy nghĩ về người chơi: ${newNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${newNpcData.physicalState || 'Bình thường'}`;
+    const vectorContent = `NPC: ${newNpcData.name}\nMô tả: ${newNpcData.description || 'Chưa rõ'}\nPhân loại: ${newNpcData.customCategory || 'Chưa rõ'}\nTính cách: ${newNpcData.personality || 'Chưa rõ'}\nSuy nghĩ về người chơi: ${newNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${newNpcData.physicalState || 'Bình thường'}`;
     const vectorUpdate: VectorUpdate = {
         id: newNpcData.name,
         type: 'NPC',
@@ -82,6 +82,7 @@ export function processNpcThoughtsUpdate(currentState: GameState, params: any): 
             thoughtsOnPlayer: params.thoughtsOnPlayer || originalNpc.thoughtsOnPlayer,
             locationId: currentState.currentLocationId,
             physicalState: params.physicalState || originalNpc.physicalState,
+            customCategory: params.category || originalNpc.customCategory, // Update category if provided
         };
         updatedNpcs[existingNpcIndex] = updatedNpc;
         finalNpcData = updatedNpc;
@@ -121,6 +122,7 @@ export function processNpcThoughtsUpdate(currentState: GameState, params: any): 
                 locationId: currentState.currentLocationId,
                 physicalState: params.physicalState || '',
                 memoryFlags: {},
+                customCategory: params.category, // New category for new NPC
             };
             updatedNpcs.push(newNpc);
             finalNpcData = newNpc;
@@ -129,7 +131,7 @@ export function processNpcThoughtsUpdate(currentState: GameState, params: any): 
 
     // Luôn tạo yêu cầu cập nhật vector cho NPC đã được thay đổi hoặc tạo mới
     if (finalNpcData) {
-        const vectorContent = `NPC: ${finalNpcData.name}\nMô tả: ${finalNpcData.description}\nTính cách: ${finalNpcData.personality}\nSuy nghĩ về người chơi: ${finalNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${finalNpcData.physicalState || 'Bình thường'}`;
+        const vectorContent = `NPC: ${finalNpcData.name}\nMô tả: ${finalNpcData.description}\nPhân loại: ${finalNpcData.customCategory || 'Chưa rõ'}\nTính cách: ${finalNpcData.personality}\nSuy nghĩ về người chơi: ${finalNpcData.thoughtsOnPlayer}\nTrạng thái vật lý: ${finalNpcData.physicalState || 'Bình thường'}`;
         const vectorUpdate: VectorUpdate = {
             id: finalNpcData.name,
             type: 'NPC',
@@ -186,6 +188,43 @@ export function processMemoryFlag(currentState: GameState, params: any): { newSt
     }
 
     // Ghi nhớ cứng không cần cập nhật vector vì nó được tiêm trực tiếp vào context
+    return {
+        newState: {
+            ...currentState,
+            encounteredNPCs: updatedNpcs,
+        },
+        vectorUpdates: [],
+    };
+}
+
+/**
+ * Xử lý cập nhật cảm xúc NPC (EQ).
+ * @param currentState
+ * @param params 
+ */
+export function processNpcEmotion(currentState: GameState, params: any): { newState: GameState, vectorUpdates: VectorUpdate[] } {
+    if (!params.name || !params.state) {
+        return { newState: currentState, vectorUpdates: [] };
+    }
+
+    const sanitizedName = sanitizeEntityName(params.name);
+    const npcNameLower = sanitizedName.toLowerCase();
+    
+    const updatedNpcs = (currentState.encounteredNPCs || []).map(npc => {
+        if (npc.name.toLowerCase() === npcNameLower) {
+            return {
+                ...npc,
+                emotionalState: {
+                    current: params.state,
+                    value: Number(params.value) || 50
+                }
+            };
+        }
+        return npc;
+    });
+
+    // EQ changes are transient and don't necessarily need immediate vector updates unless critical
+    // We update state for immediate UI feedback (if any) and next turn context injection.
     return {
         newState: {
             ...currentState,

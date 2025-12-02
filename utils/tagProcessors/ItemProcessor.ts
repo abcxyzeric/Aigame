@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/ItemProcessor.ts
 import { GameState, GameItem, VectorUpdate } from '../../types';
 import { sanitizeEntityName } from '../textProcessing';
@@ -37,6 +38,10 @@ export function processItemAdd(currentState: GameState, params: any): { newState
         if (params.description) {
             updatedItem.description = params.description;
         }
+        // Cập nhật category nếu có
+        if (params.category) {
+            updatedItem.customCategory = params.category;
+        }
         newInventory[existingItemIndex] = updatedItem;
     } else {
         // Vật phẩm mới, thêm vào túi đồ
@@ -45,12 +50,12 @@ export function processItemAdd(currentState: GameState, params: any): { newState
             quantity: params.quantity,
             description: params.description || '',
             tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-            customCategory: params.category,
+            customCategory: params.category, // Capture custom category from tag
         };
         newInventory.push(newItem);
 
         // Tạo yêu cầu cập nhật vector cho vật phẩm mới
-        const vectorContent = `Vật phẩm: ${newItem.name}\nMô tả: ${newItem.description}`;
+        const vectorContent = `Vật phẩm: ${newItem.name}\nMô tả: ${newItem.description}\nPhân loại: ${newItem.customCategory || 'Chưa rõ'}`;
         const vectorUpdate: VectorUpdate = {
             id: newItem.name,
             type: 'Item',

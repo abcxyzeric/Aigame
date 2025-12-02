@@ -180,6 +180,10 @@ export interface EncounteredNPC {
     customCategory?: string; // Phân loại động từ AI
     locationId?: string; // Vị trí của NPC
     physicalState?: string; // Trạng thái vật lý/ngoại hình hiện tại
+    emotionalState?: { // Trạng thái cảm xúc hiện tại
+        current: string; // VD: "Giận dữ", "Vui vẻ"
+        value: number; // 0-100 (Cường độ)
+    };
 }
 
 export interface EncounteredFaction {
@@ -214,6 +218,22 @@ export interface PendingVectorItem {
   content: string; // Nội dung văn bản cần vector hóa
 }
 
+// --- STORY GRAPH TYPES (GRAPH RAG) ---
+export interface GraphNode {
+    id: string; // Tên thực thể (Unique ID)
+    type: string; // NPC, Location, Item, Event, Concept
+    label: string; // Tên hiển thị
+    data?: any; // Dữ liệu phụ
+}
+
+export interface GraphEdge {
+    source: string; // ID node nguồn
+    target: string; // ID node đích
+    relation: string; // Mối quan hệ (VD: "ghét", "sở hữu", "ở tại")
+    weight?: number; // Trọng số quan hệ (1-10)
+    description?: string; // Mô tả chi tiết mối quan hệ
+}
+
 export interface GameState {
   worldId?: number; // Dấu vân tay định danh cho phiên chơi
   worldConfig: WorldConfig;
@@ -236,9 +256,13 @@ export interface GameState {
   weather: string;
   npcDossiers?: Record<string, NpcDossier>; // Hồ sơ tương tác với NPC, key là tên NPC (lowercase)
   currentLocationId?: string; // Vị trí hiện tại của người chơi
+  customCategories?: string[]; // Danh sách các danh mục tùy chỉnh do người chơi tạo
   
   // Hàng đợi các mục cần vector hóa (Ký gửi cho lượt sau)
   pendingVectorBuffer?: PendingVectorItem[];
+  
+  // Không cần lưu graph trong GameState vì nó quá lớn, sẽ lưu trong IndexedDB riêng
+  // Nhưng có thể lưu cache nhỏ nếu cần
 }
 
 export interface SaveSlot extends GameState {
@@ -327,6 +351,8 @@ export interface EncyclopediaData {
   companions: Companion[];
   quests: Quest[];
   skills: { name: string; description: string; }[];
+  initialEntities?: InitialEntity[]; // Thêm để xuất/nhập đầy đủ
+  customCategories?: string[]; // Thêm để xuất/nhập đầy đủ
 }
 
 export interface EncyclopediaOptimizationResponse {

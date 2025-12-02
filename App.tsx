@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import HomeScreen from './components/HomeScreen';
 import WorldCreationScreen from './components/WorldCreationScreen';
@@ -87,6 +88,7 @@ const App: React.FC = () => {
       season: initialSeason,
       weather: initialWeather,
       npcDossiers: {}, // Khởi tạo hồ sơ NPC
+      customCategories: [], // Khởi tạo danh sách category tùy chỉnh
     });
     setCurrentScreen('gameplay');
   }, []);
@@ -133,6 +135,7 @@ const App: React.FC = () => {
       season: '', // Sẽ được tính toán bên dưới
       weather: '', // Sẽ được tính toán bên dưới
       npcDossiers: {}, // Fallback cho file lưu cũ
+      customCategories: [], // Fallback cho file lưu cũ
       ...state,
       worldConfig: {
         ...worldConfigWithLore,

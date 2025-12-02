@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/CompanionProcessor.ts
 import { GameState, Companion, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
@@ -22,12 +23,12 @@ export function processCompanionNew(currentState: GameState, params: any): { new
         description: params.description || '',
         personality: params.personality || '',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-        customCategory: params.category,
+        customCategory: params.category, // Capture custom category
     };
     
     const updatedCompanions = mergeAndDeduplicateByName(currentState.companions || [], [newCompanion]);
 
-    const vectorContent = `Đồng hành: ${newCompanion.name}\nMô tả: ${newCompanion.description}\nTính cách: ${newCompanion.personality}`;
+    const vectorContent = `Đồng hành: ${newCompanion.name}\nMô tả: ${newCompanion.description}\nPhân loại: ${newCompanion.customCategory || 'Chưa rõ'}\nTính cách: ${newCompanion.personality}`;
     const vectorUpdate: VectorUpdate = {
         id: newCompanion.name,
         type: 'Companion',

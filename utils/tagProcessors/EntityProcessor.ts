@@ -1,3 +1,4 @@
+
 // utils/tagProcessors/EntityProcessor.ts
 import { GameState, EncounteredFaction, InitialEntity, VectorUpdate } from '../../types';
 import { mergeAndDeduplicateByName } from '../arrayUtils';
@@ -21,12 +22,12 @@ export function processFactionUpdate(currentState: GameState, params: any): { ne
         name: sanitizedName,
         description: params.description || '',
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-        customCategory: params.category,
+        customCategory: params.category, // Capture category
     };
 
     const updatedFactions = mergeAndDeduplicateByName(currentState.encounteredFactions || [], [newFaction]);
 
-    const vectorContent = `Thế lực: ${newFaction.name}\nMô tả: ${newFaction.description}`;
+    const vectorContent = `Thế lực: ${newFaction.name}\nMô tả: ${newFaction.description}\nPhân loại: ${newFaction.customCategory || 'Chưa rõ'}`;
     const vectorUpdate: VectorUpdate = {
         id: newFaction.name,
         type: 'Faction',
@@ -63,7 +64,7 @@ export function processEntityDiscovered(currentState: GameState, params: any, ty
         description: params.description || '',
         personality: params.personality || '', // Mặc dù không phổ biến, vẫn hỗ trợ
         tags: params.tags ? (typeof params.tags === 'string' ? params.tags.split(',').map((t: string) => t.trim()) : params.tags) : [],
-        customCategory: params.category,
+        customCategory: params.category, // Capture category
         // Tự động gán vị trí hiện tại của người chơi cho thực thể này khi nó được khám phá.
         // Điều này hữu ích để biết lore này được tìm thấy ở đâu.
         locationId: currentState.currentLocationId,
@@ -71,7 +72,7 @@ export function processEntityDiscovered(currentState: GameState, params: any, ty
 
     const updatedEntities = mergeAndDeduplicateByName(currentState.discoveredEntities || [], [newEntity]);
 
-    const vectorContent = `${type}: ${newEntity.name}\nMô tả: ${newEntity.description}`;
+    const vectorContent = `${type}: ${newEntity.name}\nMô tả: ${newEntity.description}\nPhân loại: ${newEntity.customCategory || 'Chưa rõ'}`;
     const vectorUpdate: VectorUpdate = {
         id: newEntity.name,
         type: type,

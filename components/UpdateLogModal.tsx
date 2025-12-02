@@ -13,10 +13,12 @@ const UpdateLogModal: React.FC<UpdateLogModalProps> = ({ isOpen, onClose }) => {
 
   const updates = [
     {
-        version: "1.7.1 (Nâng cấp Quản lý Dữ liệu)",
+        version: "1.7.4 (Đại tu Bách Khoa: Phân Loại Động & Backup)",
         notes: [
-            "**Di chuyển Dữ liệu Linh hoạt:** Tính năng 'Chỉnh sửa / Di chuyển' trong Bách Khoa Toàn Thư được nâng cấp mạnh mẽ. Giờ đây bạn có thể di chuyển bất kỳ thực thể nào vào các Tab Động (do AI tạo) một cách dễ dàng thông qua menu chọn nhanh.",
-            "**Tự động Chuyển đổi Loại:** Khi di chuyển một thực thể vào Tab Động (ví dụ: chuyển từ 'NPC' sang 'Yêu Thú'), hệ thống sẽ tự động cập nhật phân loại của thực thể đó để tương thích với Tab mới, giúp dữ liệu luôn ngăn nắp."
+            "**Hệ Thống Danh Mục Tùy Chỉnh:** Người chơi giờ đây có thể tự tạo và quản lý các danh mục riêng (VD: 'Cảnh Giới', 'Thần Thú') trong Bách Khoa Toàn Thư. Các danh mục này sẽ hiển thị dưới dạng Tab riêng biệt, giúp phân loại thông tin linh hoạt hơn.",
+            "**AI Thông Minh Hơn:** AI dẫn truyện đã được cập nhật để nhận biết các danh mục bạn tạo. Khi sinh ra thực thể mới, AI sẽ ưu tiên đưa chúng vào các danh mục tùy chỉnh phù hợp nhất (ví dụ: đưa 'Trúc Cơ Kỳ' vào tab 'Cảnh Giới') thay vì các nhóm mặc định.",
+            "**Xuất/Nhập Dữ Liệu Toàn Diện:** Tính năng Xuất/Nhập (Backup) trong Bách Khoa đã được nâng cấp để sao lưu TOÀN BỘ dữ liệu: bao gồm vật phẩm, kỹ năng, NPC, nhiệm vụ, phe phái, các thực thể ban đầu và cả danh mục tùy chỉnh. Đảm bảo an toàn tuyệt đối cho dữ liệu của bạn.",
+            "**Di chuyển Dữ liệu Linh hoạt:** Tính năng 'Chỉnh sửa / Di chuyển' cho phép bạn di chuyển bất kỳ thực thể nào vào các Tab Động một cách dễ dàng. Hệ thống sẽ tự động cập nhật phân loại của thực thể đó để tương thích với Tab mới."
         ]
     },
     {

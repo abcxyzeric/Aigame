@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { GameState, InitialEntity, EncounteredNPC, Companion, GameItem, Quest, EncounteredFaction, EncyclopediaData } from '../types';
 import Icon from './common/Icon';
@@ -57,6 +59,7 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     const [isAiOptimizing, setIsAiOptimizing] = useState(false);
     const [notification, setNotification] = useState({ isOpen: false, title: '', messages: [''] });
     const importFileRef = useRef<HTMLInputElement>(null);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     const { processedData, dynamicCategories } = useMemo(() => {
         if (!isOpen) return { processedData: {}, dynamicCategories: [] };
@@ -96,7 +99,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             knowledge: gameState.worldConfig.backgroundKnowledge || [],
         };
 
-        const dynamicCats = [...new Set(allEntities.map(e => (e as any).customCategory).filter(Boolean))].sort();
+        // Kết hợp danh mục tùy chỉnh do người chơi tạo và danh mục từ thực thể
+        const entitiesCategories = [...new Set(allEntities.map(e => (e as any).customCategory).filter(Boolean))];
+        const userCategories = gameState.customCategories || [];
+        const dynamicCats = [...new Set([...entitiesCategories, ...userCategories])].sort();
 
         const finalData: Record<string, AllEntities[]> = { ...baseData };
 
@@ -104,6 +110,9 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             finalData[cat] = allEntities.filter(e => (e as any).customCategory === cat);
         });
 
+        // Filter out items in fixed tabs that already belong to a dynamic category to avoid duplication?
+        // Decision: Let's remove them from the generic lists if they have a specific category, 
+        // to encourage using the new tabs. EXCEPT 'knowledge' which is special.
         fixedTabsConfig.forEach(tab => {
             if (tab.key !== 'knowledge' && finalData[tab.key]) {
                  finalData[tab.key] = finalData[tab.key].filter(e => !(e as any).customCategory);
@@ -308,8 +317,10 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             companions: gameState.companions,
             quests: gameState.quests,
             skills: gameState.character.skills,
+            initialEntities: gameState.worldConfig.initialEntities,
+            customCategories: gameState.customCategories
         };
-        fileService.saveJsonToFile(encyclopediaExportData, 'bach_khoa_toan_thu.json');
+        fileService.saveJsonToFile(encyclopediaExportData, 'bach_khoa_toan_thu_full.json');
     };
 
     const handleImportClick = () => {
@@ -334,6 +345,8 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                     });
                 };
 
+                const mergedCustomCategories = Array.from(new Set([...(prev.customCategories || []), ...(importedData.customCategories || [])]));
+
                 return {
                     ...prev,
                     encounteredNPCs: mergeAndDeduplicate(prev.encounteredNPCs, importedData.encounteredNPCs),
@@ -345,7 +358,12 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                     character: {
                         ...prev.character,
                         skills: mergeAndDeduplicate(prev.character.skills, importedData.skills)
-                    }
+                    },
+                    worldConfig: {
+                        ...prev.worldConfig,
+                        initialEntities: mergeAndDeduplicate(prev.worldConfig.initialEntities, importedData.initialEntities)
+                    },
+                    customCategories: mergedCustomCategories
                 };
             });
             setNotification({ isOpen: true, title: 'Thành công', messages: ['Đã nhập và hợp nhất dữ liệu Bách khoa thành công.'] });
@@ -358,6 +376,32 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         if (event.target) {
             event.target.value = '';
         }
+    };
+
+    const handleAddCategory = () => {
+        const categoryName = newCategoryName.trim();
+        if (!categoryName) return;
+        
+        setGameState(prev => {
+            const currentCats = prev.customCategories || [];
+            if (currentCats.includes(categoryName)) return prev;
+            return {
+                ...prev,
+                customCategories: [...currentCats, categoryName].sort()
+            };
+        });
+        setNewCategoryName('');
+    };
+
+    const handleDeleteCategory = (categoryName: string) => {
+        if (!confirm(`Bạn có chắc muốn xóa danh mục "${categoryName}" không? Các thực thể trong danh mục này sẽ không bị xóa mà chỉ mất đi nhãn phân loại.`)) return;
+        setGameState(prev => {
+            const currentCats = prev.customCategories || [];
+            return {
+                ...prev,
+                customCategories: currentCats.filter(c => c !== categoryName)
+            };
+        });
     };
 
     const handleAiOptimize = async () => {
@@ -910,12 +954,42 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                      <div className="flex-grow p-6 overflow-y-auto">
                         <h2 className="text-xl font-bold text-orange-400 mb-4 flex items-center gap-2"><Icon name="settings" className="w-6 h-6"/>Quản Lý Bách Khoa</h2>
                         
+                        {/* Custom Category Management */}
                         <div className="bg-slate-900/50 p-4 rounded-lg mb-6 border border-slate-700">
-                            <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="download" className="w-5 h-5"/>Nhập / Xuất</h3>
-                            <p className="text-sm text-slate-400 mb-4">Lưu trữ toàn bộ dữ liệu Bách khoa hiện tại ra tệp .json hoặc nhập dữ liệu từ một tệp đã có.</p>
+                            <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="expand" className="w-5 h-5"/>Quản lý Danh mục Tùy chỉnh</h3>
+                            <p className="text-sm text-slate-400 mb-4">Tạo các danh mục riêng (VD: "Cảnh Giới", "Pháp Bảo"). AI sẽ tự động ưu tiên phân loại thực thể mới vào các nhóm này.</p>
+                            
+                            <div className="flex gap-2 mb-4">
+                                <input 
+                                    type="text" 
+                                    value={newCategoryName}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                    placeholder="Nhập tên danh mục mới..."
+                                    className="flex-grow bg-slate-800 border border-slate-600 rounded-md px-3 py-2 text-slate-200"
+                                />
+                                <Button onClick={handleAddCategory} variant="info" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="plus" className="w-4 h-4 mr-1"/>Thêm</Button>
+                            </div>
+
+                            {gameState.customCategories && gameState.customCategories.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {gameState.customCategories.map((cat, idx) => (
+                                        <div key={idx} className="bg-slate-800 text-slate-200 text-sm px-3 py-1.5 rounded-full flex items-center gap-2 border border-slate-600">
+                                            <span>{cat}</span>
+                                            <button onClick={() => handleDeleteCategory(cat)} className="text-slate-400 hover:text-red-400"><Icon name="xCircle" className="w-4 h-4"/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-slate-500 italic">Chưa có danh mục tùy chỉnh nào.</p>
+                            )}
+                        </div>
+
+                        <div className="bg-slate-900/50 p-4 rounded-lg mb-6 border border-slate-700">
+                            <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="download" className="w-5 h-5"/>Nhập / Xuất Dữ liệu Đầy đủ</h3>
+                            <p className="text-sm text-slate-400 mb-4">Lưu trữ toàn bộ dữ liệu Bách khoa (bao gồm cả thực thể ban đầu, danh mục, v.v.) ra tệp .json hoặc nhập lại.</p>
                             <div className="flex gap-4">
-                                <Button onClick={handleExport} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="download" className="w-4 h-4 mr-2"/>Xuất</Button>
-                                <Button onClick={handleImportClick} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="upload" className="w-4 h-4 mr-2"/>Nhập</Button>
+                                <Button onClick={handleExport} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="download" className="w-4 h-4 mr-2"/>Xuất Toàn Bộ</Button>
+                                <Button onClick={handleImportClick} variant="secondary" className="!w-auto !py-2 !px-4 !text-sm"><Icon name="upload" className="w-4 h-4 mr-2"/>Nhập Toàn Bộ</Button>
                             </div>
                         </div>
                         
