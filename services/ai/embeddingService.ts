@@ -1,4 +1,7 @@
+
 import { generateEmbeddingsBatch } from '../core/geminiClient';
+import { EntityVector } from '../../types';
+import * as dbService from '../dbService';
 
 const BATCH_SIZE = 100; // Tăng giới hạn batch theo API
 const DELAY_BETWEEN_BATCHES = 1000; // Giảm độ trễ vì ít request hơn
@@ -41,4 +44,25 @@ export async function embedContents(chunks: string[], onProgress: (progress: num
 
   onProgress(1);
   return allEmbeddings;
+}
+
+/**
+ * Tạo vector cho một thực thể duy nhất và lưu ngay vào Database.
+ * Dùng cho tính năng "Tạo Codex" để đồng bộ dữ liệu tức thì.
+ */
+export async function createEntityVector(entityId: string, content: string, worldId: number): Promise<void> {
+    try {
+        const embeddings = await embedContents([content]);
+        if (embeddings.length > 0) {
+            const vector: EntityVector = {
+                id: entityId,
+                worldId: worldId,
+                embedding: embeddings[0]
+            };
+            await dbService.addEntityVector(vector);
+            console.log(`[Embedding] Đã tạo và lưu vector cho thực thể: ${entityId}`);
+        }
+    } catch (error) {
+        console.error(`[Embedding] Lỗi khi tạo vector cho thực thể ${entityId}:`, error);
+    }
 }

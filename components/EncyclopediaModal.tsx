@@ -1,14 +1,15 @@
 
-
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { GameState, InitialEntity, EncounteredNPC, Companion, GameItem, Quest, EncounteredFaction, EncyclopediaData } from '../types';
+import { GameState, InitialEntity, EncounteredNPC, Companion, GameItem, Quest, EncounteredFaction, EncyclopediaData, VectorUpdate, PendingVectorItem } from '../types';
 import Icon from './common/Icon';
 import Button from './common/Button';
+import Accordion from './common/Accordion'; // Import Accordion
 import * as aiService from '../services/aiService';
 import * as fileService from '../services/fileService';
+import * as embeddingService from '../services/ai/embeddingService'; // Import embedding service
 import NotificationModal from './common/NotificationModal';
 import { CORE_ENTITY_TYPES, ENTITY_TYPE_OPTIONS } from '../constants';
+import { SmartCodexResult } from '../services/ai/smartCodexService';
 
 
 interface EncyclopediaModalProps {
@@ -60,6 +61,11 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
     const [notification, setNotification] = useState({ isOpen: false, title: '', messages: [''] });
     const importFileRef = useRef<HTMLInputElement>(null);
     const [newCategoryName, setNewCategoryName] = useState('');
+
+    // --- Smart Codex States ---
+    const [codexCommand, setCodexCommand] = useState('');
+    const [isGeneratingCodex, setIsGeneratingCodex] = useState(false);
+    const [codexPreview, setCodexPreview] = useState<SmartCodexResult | null>(null);
 
     const { processedData, dynamicCategories } = useMemo(() => {
         if (!isOpen) return { processedData: {}, dynamicCategories: [] };
@@ -129,6 +135,8 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             setIsEditing(false);
             setSearchTerm('');
             if (mainView !== 'browse') setMainView('browse');
+            setCodexPreview(null);
+            setCodexCommand('');
         }
     }, [isOpen]);
 
@@ -562,6 +570,148 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
         }
     };
 
+    // --- Smart Codex Functions ---
+    const handleGenerateCodex = async () => {
+        if (!codexCommand.trim()) return;
+        setIsGeneratingCodex(true);
+        setCodexPreview(null);
+        try {
+            const result = await aiService.createCodexFromCommand(codexCommand);
+            setCodexPreview(result);
+        } catch (e) {
+            setNotification({ isOpen: true, title: 'Lỗi AI', messages: ['Không thể tạo Codex. Vui lòng thử lại.'] });
+        } finally {
+            setIsGeneratingCodex(false);
+        }
+    };
+
+    const handleSaveCodex = () => {
+        if (!codexPreview) return;
+        
+        setGameState(prev => {
+            const newState = JSON.parse(JSON.stringify(prev));
+            const data = codexPreview.data;
+            const owner = codexPreview.ownerContext;
+            const type = codexPreview.type;
+
+            // 1. Validator Logic based on Type & Ownership (Client-side)
+            if (type === 'Item') {
+                if (owner.isPlayer) {
+                    // Player owns it -> Inventory
+                    if (!newState.inventory) newState.inventory = [];
+                    newState.inventory.push({
+                        name: data.name,
+                        description: data.description,
+                        quantity: data.quantity || 1,
+                        customCategory: data.customCategory || "Trang Bị",
+                        tags: [...(data.tags || []), "player_owned"],
+                        details: data.details // Stats/Effects
+                    });
+                } else if (owner.npcName) {
+                    // NPC owns it -> Discovered Entities (Lore) + NPC Tag update
+                    if (!newState.discoveredEntities) newState.discoveredEntities = [];
+                    newState.discoveredEntities.push({
+                        name: data.name,
+                        type: 'Vật phẩm',
+                        description: `(Sở hữu bởi ${owner.npcName}) ${data.description}`,
+                        // Logic Code Validate: Tự động gán customCategory = "Trang Phục NPC"
+                        customCategory: "Trang Phục NPC", 
+                        tags: [...(data.tags || []), `owner:${owner.npcName}`],
+                        details: data.details
+                    });
+
+                    // Update NPC description/tags if NPC exists
+                    const npcIndex = (newState.encounteredNPCs || []).findIndex((n: EncounteredNPC) => n.name.toLowerCase().includes(owner.npcName!.toLowerCase()));
+                    if (npcIndex > -1) {
+                        const npc = newState.encounteredNPCs[npcIndex];
+                        npc.tags = [...(npc.tags || []), `sở hữu:${data.name}`];
+                        // Optional: Append to description but keep it clean
+                    }
+                } else {
+                    // No owner -> Discovered Entities
+                    if (!newState.discoveredEntities) newState.discoveredEntities = [];
+                    newState.discoveredEntities.push({
+                        name: data.name,
+                        type: 'Vật phẩm',
+                        description: data.description,
+                        customCategory: data.customCategory || "Vật phẩm",
+                        tags: data.tags,
+                        details: data.details
+                    });
+                }
+            } else if (type === 'Skill') {
+                if (owner.isPlayer) {
+                    if (!newState.character.skills) newState.character.skills = [];
+                    newState.character.skills.push({
+                        name: data.name,
+                        description: data.description
+                    });
+                } else {
+                    if (!newState.discoveredEntities) newState.discoveredEntities = [];
+                    newState.discoveredEntities.push({
+                        name: data.name,
+                        type: 'Công pháp / Kỹ năng',
+                        description: data.description,
+                        customCategory: data.customCategory || "Kỹ năng",
+                        tags: data.tags
+                    });
+                }
+            } else if (type === 'Faction') {
+                if (!newState.encounteredFactions) newState.encounteredFactions = [];
+                newState.encounteredFactions.push({
+                    name: data.name,
+                    description: data.description,
+                    tags: data.tags,
+                    customCategory: data.customCategory || "Thế Lực"
+                });
+            } else if (type === 'NPC') {
+                if (!newState.encounteredNPCs) newState.encounteredNPCs = [];
+                newState.encounteredNPCs.push({
+                    name: data.name,
+                    description: data.description,
+                    personality: data.personality || 'Chưa rõ',
+                    thoughtsOnPlayer: 'Chưa có',
+                    customCategory: data.customCategory || "Nhân Vật",
+                    tags: data.tags
+                });
+            }
+
+            // 2. Update Custom Categories List
+            if (data.customCategory) {
+                const currentCats = newState.customCategories || [];
+                if (!currentCats.includes(data.customCategory)) {
+                    newState.customCategories = [...currentCats, data.customCategory].sort();
+                }
+            }
+            // Auto add "Trang Phục NPC" category if needed
+            if (type === 'Item' && owner.npcName) {
+                 const currentCats = newState.customCategories || [];
+                 if (!currentCats.includes("Trang Phục NPC")) {
+                    newState.customCategories = [...currentCats, "Trang Phục NPC"].sort();
+                }
+            }
+
+            // 3. Piggyback Buffer Vectorization (Zero-Waste Strategy)
+            // Thay vì gọi embeddingService.createEntityVector ngay lập tức, ta đẩy vào hàng đợi
+            const vectorContent = `${type}: ${data.name}\nMô tả: ${data.description}\nPhân loại: ${data.customCategory || (type==='Item' && owner.npcName ? 'Trang Phục NPC' : 'Chưa rõ')}`;
+            
+            const pendingItem: PendingVectorItem = {
+                id: data.name,
+                type: type,
+                content: vectorContent
+            };
+
+            if (!newState.pendingVectorBuffer) newState.pendingVectorBuffer = [];
+            newState.pendingVectorBuffer.push(pendingItem);
+
+            return newState;
+        });
+
+        setCodexPreview(null);
+        setCodexCommand('');
+        setNotification({ isOpen: true, title: 'Thành công', messages: ['Đã tạo xong. Đang chờ đồng bộ vào trí nhớ trong lượt chơi tiếp theo...'] });
+    };
+
     const MainViewTab: React.FC<{ view: 'browse' | 'analyze' | 'manage', label: string, icon: any }> = ({ view, label, icon }) => {
         const isActive = mainView === view;
         return (
@@ -984,6 +1134,78 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
                             )}
                         </div>
 
+                        {/* --- SMART CODEX ARCHITECT SECTION --- */}
+                        <div className="mb-6 bg-slate-900/50 p-4 rounded-lg border border-fuchsia-500">
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-lg font-bold text-fuchsia-400 flex items-center">
+                                    <Icon name="magic" className="w-5 h-5 mr-2" />
+                                    Lệnh tạo codex
+                                </h3>
+                            </div>
+                            <div className="p-2 space-y-4">
+                                <div className="text-sm text-slate-300 bg-slate-800 p-3 rounded-md mb-2">
+                                    <p className="font-semibold mb-1 text-fuchsia-300">Hướng dẫn sử dụng:</p>
+                                    <ul className="list-disc list-inside space-y-1 text-slate-400">
+                                        <li><strong>Xác định loại:</strong> Mô tả rõ bạn muốn tạo Vật phẩm, Kỹ năng, hay NPC.</li>
+                                        <li><strong>Gán chủ sở hữu:</strong>
+                                            <ul className="list-[circle] list-inside ml-4 mt-1">
+                                                <li>Cho bản thân: Dùng từ "của tôi", "cho tôi" (Vật phẩm -&gt; Túi đồ).</li>
+                                                <li>Cho NPC: Dùng từ "của [Tên NPC]", "cho [Tên NPC]" (Vật phẩm -&gt; Bách khoa).</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Ví dụ cụ thể:</strong>
+                                            <ul className="list-[square] list-inside ml-4 mt-1 italic text-slate-500">
+                                                <li>"Tạo một thanh Huyết Long Kiếm cấp Thần Thoại cho tôi, tăng 500% sát thương."</li>
+                                                <li>"Tạo kỹ năng Vạn Kiếm Quy Tông cho tôi, triệu hồi hàng vạn thanh kiếm."</li>
+                                                <li>"Tạo bộ giáp Kim Cang Bất Hoại cho NPC Lão Hạc."</li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <textarea
+                                        value={codexCommand}
+                                        onChange={(e) => setCodexCommand(e.target.value)}
+                                        placeholder="Ví dụ: Tạo bộ đồ vest đen cho NPC John Wick, có khả năng chống đạn..."
+                                        className="w-full bg-slate-900/70 border border-slate-600 rounded-md px-3 py-2 text-slate-200 focus:ring-2 focus:ring-fuchsia-500 focus:border-fuchsia-500 transition resize-y min-h-[80px]"
+                                    />
+                                </div>
+                                <div className="flex justify-end">
+                                    <Button onClick={handleGenerateCodex} disabled={isGeneratingCodex || !codexCommand.trim()} variant="special" className="!w-auto !py-2 !px-4 !text-sm">
+                                        {isGeneratingCodex ? 'Đang Thiết Kế...' : 'Kiến Tạo Ngay'}
+                                    </Button>
+                                </div>
+
+                                {/* Preview Area */}
+                                {codexPreview && (
+                                    <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 animate-fade-in mt-4">
+                                        <h4 className="text-sm font-bold text-green-400 mb-2">Xem Trước & Xác Nhận</h4>
+                                        <div className="space-y-2 text-sm mb-4">
+                                            <p><strong className="text-slate-400">Tên:</strong> <span className="text-slate-200">{codexPreview.data.name}</span></p>
+                                            <p><strong className="text-slate-400">Loại:</strong> <span className="text-slate-200">{codexPreview.type}</span></p>
+                                            <p><strong className="text-slate-400">Phân loại:</strong> <span className="text-slate-200">{codexPreview.data.customCategory}</span></p>
+                                            <p><strong className="text-slate-400">Sở hữu:</strong> <span className="text-slate-200">{codexPreview.ownerContext.isPlayer ? 'Người Chơi' : (codexPreview.ownerContext.npcName || 'Chưa rõ')}</span></p>
+                                            <div className="bg-slate-800 p-2 rounded">
+                                                <p className="text-slate-300 italic">"{codexPreview.data.description}"</p>
+                                            </div>
+                                            {codexPreview.data.details && (
+                                                <div className="text-xs text-slate-400 mt-2 p-2 bg-slate-900 rounded">
+                                                    {codexPreview.data.details.stats && <p>Chỉ số: {codexPreview.data.details.stats}</p>}
+                                                    {codexPreview.data.details.effects && <p>Hiệu ứng: {codexPreview.data.details.effects}</p>}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex justify-end gap-3">
+                                            <button onClick={() => setCodexPreview(null)} className="text-slate-400 hover:text-white px-3 py-1">Hủy</button>
+                                            <Button onClick={handleSaveCodex} variant="success" className="!w-auto !py-1 !px-4 !text-sm">
+                                                Lưu vào Bách Khoa
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="bg-slate-900/50 p-4 rounded-lg mb-6 border border-slate-700">
                             <h3 className="text-lg font-semibold text-slate-300 mb-3 flex items-center gap-2"><Icon name="download" className="w-5 h-5"/>Nhập / Xuất Dữ liệu Đầy đủ</h3>
                             <p className="text-sm text-slate-400 mb-4">Lưu trữ toàn bộ dữ liệu Bách khoa (bao gồm cả thực thể ban đầu, danh mục, v.v.) ra tệp .json hoặc nhập lại.</p>
@@ -1011,6 +1233,13 @@ export const EncyclopediaModal: React.FC<EncyclopediaModalProps> = ({ isOpen, on
             }
             .animate-fade-in-up {
                 animation: fade-in-up 0.3s ease-out forwards;
+            }
+            .animate-fade-in {
+                animation: fadeIn 0.5s ease-in-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
             }
             `}</style>
         </div>

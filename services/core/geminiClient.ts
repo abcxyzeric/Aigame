@@ -31,13 +31,15 @@ export const printRequestStats = (actionName: string) => {
     if (!DEBUG_MODE) return;
     const totalTurnRequests = Object.values(requestStats).reduce((a, b) => a + b, 0);
     console.group(`📊 [DEBUG STATS] Báo cáo tài nguyên cho: ${actionName}`);
+    
     if (totalTurnRequests === 0) {
         console.log('%c✅ Không tốn request nào.', 'color: #4ade80; font-weight: bold;');
     } else {
+        console.log('%cChi tiết Request theo Nguồn & Model:', 'color: #fbbf24; font-weight: bold;');
         console.table(requestStats);
-        console.log(`%cTổng request lượt này: ${totalTurnRequests}`, 'color: #fbbf24; font-weight: bold;');
+        console.log(`%cTổng request trong tác vụ này: ${totalTurnRequests}`, 'color: #fbbf24; font-weight: bold; font-size: 1.1em;');
     }
-    console.log(`%cTổng request toàn phiên chơi: ${totalSessionRequests.count}`, 'color: #60a5fa;');
+    console.log(`%cTổng request toàn phiên chơi (Session Total): ${totalSessionRequests.count}`, 'color: #60a5fa; font-style: italic;');
     console.groupEnd();
 };
 // -------------------------------------

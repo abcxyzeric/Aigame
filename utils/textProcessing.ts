@@ -72,7 +72,15 @@ export const processNarration = (narration: string): string => {
     // Bước 3: Dọn dẹp các lỗi định dạng phổ biến khác (ví dụ: khoảng trắng thừa trước thẻ đóng)
     cleanedText = cleanedText.replace(/\s+<\/(entity|important|status|exp|thought)>/g, '</$1>');
 
-    // Bước 4: Giải mã các từ bị làm mờ (ví dụ: [t-h-ú-c] -> thúc)
+    // Bước 4: VỆ SINH THẺ LẠ (Whitelist Filter) - QUAN TRỌNG
+    // Loại bỏ bất kỳ thẻ nào có dạng <...> hoặc </...> NẾU tên thẻ KHÔNG nằm trong danh sách cho phép.
+    // Danh sách cho phép: entity, important, status, exp, thought.
+    // Regex: Tìm < hoặc </, theo sau là tên thẻ KHÔNG phải whitelist, rồi đến các thuộc tính và >
+    // (?!(?:...)\b): Negative Lookahead - Đảm bảo chuỗi tiếp theo KHÔNG phải là các từ trong nhóm.
+    // [a-zA-Z][^>]*: Bắt đầu bằng chữ cái (tên thẻ rác) và các ký tự còn lại cho đến >.
+    cleanedText = cleanedText.replace(/<\/?(?!(?:entity|important|status|exp|thought)\b)[a-zA-Z][^>]*>/gi, '');
+
+    // Bước 5: Giải mã các từ bị làm mờ (ví dụ: [t-h-ú-c] -> thúc)
     cleanedText = deobfuscateText(cleanedText);
 
     return cleanedText.trim();

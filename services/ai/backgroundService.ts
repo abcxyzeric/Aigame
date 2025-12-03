@@ -1,5 +1,5 @@
 
-import { generateJson, setDebugContext } from '../core/geminiClient';
+import { generateJson, setDebugContext, printRequestStats } from '../core/geminiClient';
 import { GameState, GraphNode, GraphEdge, EncounteredNPC } from '../../types';
 import { getPiggybackAnalysisPrompt } from '../../prompts/analysisPrompts';
 import * as dbService from '../dbService';
@@ -59,7 +59,18 @@ export async function runPiggybackAnalysis(gameState: GameState, lastNarration: 
             // (Nâng cao: Có thể update thẳng vào EncounteredNPC trong DB nếu ta tách bảng NPC ra khỏi SaveSlot,
             // nhưng hiện tại NPC nằm trong SaveSlot blob. Vì vậy EQ update ở đây chủ yếu để phục vụ Graph Relation).
 
-            console.log(`[Background Worker] Analyzed Turn. Found ${analysisResult.nodes?.length || 0} nodes, ${analysisResult.edges?.length || 0} edges.`);
+            console.groupCollapsed(`🧠 [BACKGROUND AI] Phân tích EQ & Graph (World ID: ${worldId})`);
+            console.log(`[Nodes Found]: ${analysisResult.nodes?.length || 0}`);
+            if (analysisResult.nodes?.length) console.table(analysisResult.nodes);
+            
+            console.log(`[Edges Found]: ${analysisResult.edges?.length || 0}`);
+            if (analysisResult.edges?.length) console.table(analysisResult.edges);
+            
+            console.log(`[EQ Updates]: ${analysisResult.eqUpdates?.length || 0}`);
+            if (analysisResult.eqUpdates?.length) console.table(analysisResult.eqUpdates);
+            console.groupEnd();
+
+            printRequestStats('Background Worker Completed');
 
         } catch (error) {
             console.warn('[Background Worker] Failed to run analysis:', error);
